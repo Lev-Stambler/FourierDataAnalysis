@@ -1,0 +1,108 @@
+#import "../levs-commands/main_commands.typ": *
+#show: thmrules
+#show: eqrules
+#set math.equation(numbering: none)
+
+#let TotalSpace = $calT^(otimes n)$
+#let Size = $|calT|^n$
+#let pScale = $p_"scale"$
+#let Inf = "Inf"
+#let normC = $frac(|calD|, |calT|^n)$
+#let normCInv = $frac(|calD|, |calT|^n)^(-1)$
+#let orig = "OG"
+#let origCoeff(S) = $hat(f)_orig (#S)$
+
+= Core Idea
+Ideally, we'd like to take the useful tools of Fourier Analysis (which assumes a product space) and generalize them to any distribution.
+Though, we do not have a formal method of reasoning about this, we do not think that it is quite possible.
+
+Rather, we will attempt to think about analysis as over a _dataset:_ i.e. we will think of our distribution as being defined by a finite-sized dataset, $calD$, and the probability vector will be defined as $
+p(x) = cases(frac(1, |calD|) " if " x in calD, 0 "otherwise") " " .
+$
+
+More formally, we will be over a space $calT^n$ (think of $calT$ as either $RR$ or the space of tokens etc.) and $calD subset calT^n$.
+Then, we will be focusing on functions $f in calT^n -> RR$. $f$ can either be a trained model, ideal labeling function on the dataset, or some other efficiently computable function.
+
+Then, we want to reason about Fourier coefficients as $
+hat(f) (S) = EE_(x ~ calD) [f(x) chi^(-1)_S (x)].
+$
+Further, we will abuse notation to denote $calD : calT^n -> {0, 1}$ as the indicator function for the inclusion within the dataset.
+We will write $hat(f)_orig (S)$ to denote the normal ("original") Fourier coefficient:
+$
+origCoeff(S) = EE_(x ~ calT^n) [f(x) chi^(-1)_S (x)].
+$
+
+Importantly, notice that $
+hat(f) (S) = normCInv origCoeff(calD circ f) = normCInv dot frac(1, |calT|^n) sum_(x in calD) f(x) chi_S (x).
+$
+where $circ$ is the element wise composition.
+#TODO[I think we need to use $chi^(-1)$?]
+
+We conveniently have our first lemma.
+#lemma[
+  For all $x in calD$,
+  $
+  f(x) = normC sum_S hat(f) (S) chi_S (x)
+  $
+]
+#proof[
+  First, note that $f(x) = calD(x) dot f(x)$ for $x in calD$ and then $hat()_orig(S) = normC dot $
+]
+
+Let $calD$ be some distribution over alphabet (tokens) $calT$ with $n$ elements.
+I.e. $calD subset.eq calT^(otimes n)$.
+Importantly, we do not require that non-zero elements of $calD$ factorize into a product distribution, nor do we require that $calD$ is uniform over its elements.
+Then, we define $p : calT^(otimes n) -> RR$ to be the probability function for $calD$.
+
+
+Then, note that for a function defined over $f : calT^(otimes n) -> SS^m$ (with $SS^m$ being the $m$-dimensional sphere), $sum_x p(x) dot f(x) = EE_(x ~ calD) [f(x)]$ and $Size dot EE_(x ~ TotalSpace)[p(x) dot f(x)] = EE_(x ~ calD) [f(x)]$.
+For ease of notation, let $pScale = Size dot p$
+
+So then, we have, for Fourier transform coefficient $calF$,
+$
+calF(pScale dot f)(S) &= EE_(x ~ TotalSpace) [pScale dot f(x) dot chi^(-1)_S (x)].
+                      &= EE_(x ~ calD) [f(x) dot chi^(-1)_S (x)] \
+$
+We will write $hat(f)(S)$ to denote $EE_(x ~ TotalSpace) [p dot f(x) dot chi^(-1)_S (x)]$ which we note to be the Fourier coefficient on $S$ for function $p dot f(x)$.
+
+== In Distribution Testing Definitions
+Surprisingly, if want to characterize the complexity (or sensitivity or one of many Fourier properties) of our function $f$ over distribution $calD$ and in-distribution testing, we can more or less use standard analysis.
+
+In more detail, we will model our modified function $g : Size -> RR^+^m union {0}$ as $
+g(x) = cases(f(x) " if " x in calD, 0 " otherwise")
+$
+And, taking the standard inner-product (TODO: we are over sphere/ real numbers, first take the inner-product then the other thing!)
+
+Note that $g$ is required to differentiate between in and out-of distribution.
+#h3([Influence and Related Operators])
+We would like coordinate wise influence to be defined in the standard way, but adopted to our setting:
+$
+Inf^i_calD [g] = Expec_(x in calD) [(g - sfE^i_calD g)^2]
+$
+where $sfE^i_calD$ is the $i$-th coordinate expectation operator:
+$
+[E^i_calD g] (x) = Expec_(x_i in calT) [g(x^(i mapsto x_i))].
+$
+In words, the $i$-th expectation operator "averages out" the $i$-th coordinate over the dataset while the Influence measures the difference.
+
+#TODO[define distribution coeffs!]
+#TODO[This prob dist thing doesn't work??? Just have a subset thingy for now!!!]
+Then, we have the following proposition:
+#proposition[
+$
+E^i_calD g = sum_(s : s_i != 0) hat(pScale dot f) (s) hat(f)_calD 
+$
+]
+
+#lemma[
+  We can re-write the influence as an inner-product
+  $
+  Inf^i_calD [f] = iprod(p dot (g - E^i_calD g), g) = iprod(p dot (g - E^i_calD g), g - E^i_calD g)
+  $
+]
+#proof[
+  The second equality follows directly from the definition.
+  The first is because $
+   iprod(p dot (g - E^i_calD g), g - E^i_calD g) &= EE_x [g^2] - 2 EE_x [g dot E^i_calD f] + EE_x [(E^i_calD f) ^2]
+  $
+]

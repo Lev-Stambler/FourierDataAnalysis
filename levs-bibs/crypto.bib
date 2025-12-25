@@ -1,0 +1,569 @@
+@misc{ananthMultikeyFullyHomomorphicEncryption2020a,
+	title = {Multi-Key {{Fully-Homomorphic Encryption}} in the {{Plain Model}}},
+	author = {Ananth, Prabhanjan and Jain, Abhishek and Jin, ZhengZhong and Malavolta, Giulio},
+	year = {2020},
+	number = {2020/180},
+	urldate = {2025-08-08},
+	abstract = {The notion of multi-key fully homomorphic encryption (multi-key FHE) [L{\"o}pez-Alt, Tromer, Vaikuntanathan, STOC'12] was proposed as a generalization of fully homomorphic encryption to the multiparty setting. In a multi-key FHE scheme for \$n\$ parties, each party can individually choose a key pair and use it to encrypt its own private input. Given \$n\$ ciphertexts computed in this manner, the parties can homomorphically evaluate a circuit \$C\$ over them to obtain a new ciphertext containing the output of \$C\$, which can then be decrypted via a decryption protocol. The key efficiency property is that the size of the (evaluated) ciphertext is independent of the size of the circuit. Multi-key FHE with one-round decryption [Mukherjee and Wichs, Eurocrypt'16], has found several powerful applications in cryptography over the past few years. However, an important drawback of all such known schemes is that they require a trusted setup. In this work, we address the problem of constructing multi-key FHE in the plain model. We obtain the following results: - A multi-key FHE scheme with one-round decryption based on the hardness of learning with errors (LWE), ring LWE, and decisional small polynomial ratio (DSPR) problems. - A variant of multi-key FHE where we relax the decryption algorithm to be non-compact -- i.e., where the decryption complexity can depend on the size of \$C\$ -- based on the hardness of LWE. We call this variant multi-homomorphic encryption (MHE). We observe that MHE is already sufficient for some applications of multi-key FHE.},
+	keywords = {Fully Homomorphic Encryption,Multiparty Computation},
+	annotation = {Publication info: A major revision of an IACR publication in TCC 2020},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/6CUX48CK/Ananth et al. - 2020 - Multi-key Fully-Homomorphic Encryption in the Plain Model.pdf}
+}
+
+@misc{chenEfficientMultiKeyHomomorphic2019,
+	title = {Efficient {{Multi-Key Homomorphic Encryption}} with {{Packed Ciphertexts}} with {{Application}} to {{Oblivious Neural Network Inference}}},
+	author = {Chen, Hao and Dai, Wei and Kim, Miran and Song, Yongsoo},
+	year = {2019},
+	number = {2019/524},
+	urldate = {2025-08-08},
+	abstract = {Homomorphic Encryption (HE) is a cryptosystem which supports computation on encrypted data. L{\"o}pez-Alt et al. (STOC 2012) proposed a generalized notion of HE, called Multi-Key Homomorphic Encryption (MKHE), which is capable of performing arithmetic operations on ciphertexts encrypted under different keys. In this paper, we present multi-key variants of two HE schemes with packed ciphertexts. We present new relinearization algorithms which are simpler and faster than previous method by Chen et al. (TCC 2017). We then generalize the bootstrapping techniques for HE to obtain multi-key fully homomorphic encryption schemes. We provide a proof-of-concept implementation of both MKHE schemes using Microsoft SEAL. For example, when the dimension of base ring is 8192, homomorphic multiplication between multi-key BFV (resp. CKKS) ciphertexts associated with four parties followed by a relinearization takes about 116 (resp. 67) milliseconds. Our MKHE schemes have a wide range of applications in secure computation between multiple data providers. As a benchmark, we homomorphically classify an image using a pre-trained neural network model, where input data and model are encrypted under different keys. Our implementation takes about 1.8 seconds to evaluate one convolutional layer followed by two fully connected layers on an encrypted image from the MNIST dataset.},
+	keywords = {multi-key homomorphic encryption,neural networks,packed ciphertext,ring learning with errors},
+	annotation = {Publication info: Published elsewhere. The 26th ACM Conference on Computer and Communications Security (CCS 2019)},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/V48D9DBF/Chen et al. - 2019 - Efficient Multi-Key Homomorphic Encryption with Packed Ciphertexts with Application to Oblivious Neu.pdf}
+}
+
+@incollection{dunjkoComposableSecurityDelegated2014,
+	title = {Composable Security of Delegated Quantum Computation},
+	author = {Dunjko, Vedran and Fitzsimons, Joseph F. and Portmann, Christopher and Renner, Renato},
+	year = {2014},
+	eprint = {1301.3662},
+	primaryclass = {quant-ph},
+	pages = {406--425},
+	issn = {0302-9743, 1611-3349},
+	doi = {10.1007/978-3-662-45608-8_22},
+	urldate = {2025-07-24},
+	abstract = {Delegating difficult computations to remote large computation facilities, with appropriate security guarantees, is a possible solution for the ever-growing needs of personal computing power. For delegated computation protocols to be usable in a larger context---or simply to securely run two protocols in parallel---the security definitions need to be composable. Here, we define composable security for delegated quantum computation. We distinguish between protocols which provide only blindness---the computation is hidden from the server---and those that are also verifiable---the client can check that it has received the correct result. We show that the composable security definition capturing both these notions can be reduced to a combination of several distinct "trace-distance-type" criteria---which are, individually, non-composable security definitions. Additionally, we study the security of some known delegated quantum computation protocols, including Broadbent, Fitzsimons and Kashefi's Universal Blind Quantum Computation protocol. Even though these protocols were originally proposed with insufficient security criteria, they turn out to still be secure given the stronger composable definitions.},
+	archiveprefix = {arXiv},
+	keywords = {Computer Science - Cryptography and Security,Computer Science - Information Theory,Mathematics - Information Theory,Quantum Physics},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/WIPZ8NED/Dunjko et al. - 2014 - Composable security of delegated quantum computation.pdf;/home/lev/snap/zotero-snap/common/Zotero/storage/ZMYBKD7A/1301.html}
+}
+
+@misc{hirtAdaptiveSecurityMultiParty2021,
+	title = {Adaptive {{Security}} of {{Multi-Party Protocols}}, {{Revisited}}},
+	author = {Hirt, Martin and {Liu-Zhang}, Chen-Da and Maurer, Ueli},
+	year = {2021},
+	number = {2021/1175},
+	urldate = {2025-08-01},
+	abstract = {The goal of secure multi-party computation (MPC) is to allow a set of parties to perform an arbitrary computation task, where the security guarantees depend on the set of parties that are corrupted. The more parties are corrupted, the less is guaranteed, and typically the guarantees are completely lost when the number of corrupted parties exceeds a certain corruption bound. Early and also many recent protocols are only statically secure in the sense that they provide no security guarantees if the adversary is allowed to choose adaptively which parties to corrupt. Security against an adversary with such a strong capability is often called adaptive security and a significant body of literature is devoted to achieving adaptive security, which is known as a difficult problem. In particular, a main technical obstacle in this context is the so-called ``commitment problem'', where the simulator is unable to consistently explain the internal state of a party with respect to its pre-corruption outputs. As a result, protocols typically resort to the use of cryptographic primitives like non-committing encryption, incurring a substantial efficiency loss. This paper provides a new, clean-slate treatment of adaptive security in MPC, exploiting the specification concept of constructive cryptography (CC). A new natural security notion, called CC-adaptive security, is proposed, which is technically weaker than standard adaptive security but nevertheless captures security against a fully adaptive adversary. Known protocol examples separating between adaptive and static security are also insecure in our notion. Moreover, our notion avoids the commitment problem and thereby the need to use non-committing or equivocal tools. We exemplify this by showing that the protocols by Cramer, Damgard and Nielsen (EUROCRYPT'01) for the honest majority setting, and (the variant without non-committing encryption) by Canetti, Lindell, Ostrovsky and Sahai (STOC'02) for the dishonest majority setting, achieve CC-adaptive security. The latter example is of special interest since all UC-adaptive protocols in the dishonest majority setting require some form of non-committing or equivocal encryption.},
+	keywords = {composability,definitions,Multi-party protocols},
+	annotation = {Publication info: A minor revision of an IACR publication in TCC 2021},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/QXUYW4ES/Hirt et al. - 2021 - Adaptive Security of Multi-Party Protocols, Revisited.pdf}
+}
+
+@misc{jainThresholdFullyHomomorphic2017,
+	title = {Threshold {{Fully Homomorphic Encryption}}},
+	author = {Jain, Aayush and Rasmussen, Peter M. R. and Sahai, Amit},
+	year = {2017},
+	number = {2017/257},
+	urldate = {2025-07-07},
+	abstract = {We formally define and give the first construction of (leveled) threshold fully homomorphic encryption for any access structure induced by a monotone boolean formula and in particular for the threshold access structure. Our construction is based on the learning with errors assumption and can be instantiated with any existing homomorphic encryption scheme that satisfies fairly general conditions, such as Gentry, Sahai, Waters (CRYPTO 2013) and Brakerski, Gentry, Vaikuntanathan (ITCS 2012). From threshold homomorphic encryption, we construct function secret sharing and distributed pseudorandom functions for the aforementioned access structures. No such constructions were known prior to this work.},
+	keywords = {Fully Homomorphic Encryption,Function Secret Sharing,Threshold Cryptography},
+	annotation = {Publication info: Preprint. MINOR revision.},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/JGXUNPKT/Jain et al. - 2017 - Threshold Fully Homomorphic Encryption.pdf}
+}
+
+@article{kapourniotisUnifyingQuantumVerification2024,
+	title = {Unifying {{Quantum Verification}} and {{Error-Detection}}: {{Theory}} and {{Tools}} for {{Optimisations}}},
+	shorttitle = {Unifying {{Quantum Verification}} and {{Error-Detection}}},
+	author = {Kapourniotis, Theodoros and Kashefi, Elham and Leichtle, Dominik and Music, Luka and Ollivier, Harold},
+	year = {2024},
+	month = jul,
+	journal = {Quantum Science and Technology},
+	volume = {9},
+	number = {3},
+	eprint = {2206.00631},
+	primaryclass = {quant-ph},
+	pages = {035036},
+	issn = {2058-9565},
+	doi = {10.1088/2058-9565/ad466d},
+	urldate = {2025-07-24},
+	abstract = {With the advent of cloud-based quantum computing, it has become vital to provide strong guarantees that computations delegated by clients to quantum service providers have been executed faithfully. Secure - blind and verifiable - Delegated Quantum Computing (SDQC) has emerged as one of the key approaches to address this challenge, yet current protocols lack at least one of the following three ingredients: composability, noise-robustness and modularity. To tackle this question, our paper lays out the fundamental structure of SDQC protocols, namely mixing two components: the computation which the client would like the server to perform and tests that are designed to detect a server's malicious behaviour. Using this abstraction, our main technical result is a set of sufficient conditions on these components which imply the security and noise-robustness of generic SDQC protocols in the composable Abstract Cryptography framework. This is done by establishing a correspondence between these security properties and the error-detection capabilities of the test computations. Changing the types of tests and how they are mixed with the client's computation automatically yields new SDQC protocols with different security and noise-robustness capabilities. This approach thereby provides the desired modularity as our sufficient conditions on test computations simplify the steps required to prove the security of the protocols and allows to focus on the design and optimisation of test rounds to specific situations. We showcase this by systematising the search for improved SDQC protocols for Bounded-error Quantum Polynomial-time computations. The resulting protocols do not require more hardware on the server's side than what is necessary to blindly delegate the computation without verification, and they outperform all previously known results.},
+	archiveprefix = {arXiv},
+	keywords = {Quantum Physics},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/P293EMQF/Kapourniotis et al. - 2024 - Unifying Quantum Verification and Error-Detection Theory and Tools for Optimisations.pdf;/home/lev/snap/zotero-snap/common/Zotero/storage/RR69CXXK/2206.html}
+}
+
+@misc{katzUniversallyComposableSynchronous2011,
+	title = {Universally {{Composable Synchronous Computation}}},
+	author = {Katz, Jonathan and Maurer, Ueli and Tackmann, Bjoern and Zikas, Vassilis},
+	year = {2011},
+	number = {2011/310},
+	urldate = {2025-08-05},
+	abstract = {In synchronous networks, protocols can achieve security guarantees that are not possible in an asynchronous world: i.e., they can simultaneously achieve input completeness (all honest parties' inputs are included in the computation) and guaranteed termination (honest parties do not ``hang'' indefinitely). In practice truly syn- chronous networks rarely exist, but synchrony can be emulated if channels have (known) latency and parties have loosely synchronized clocks. The framework of universal composability (UC) is inherently asynchronous, but several approaches for adding synchrony to the framework have been proposed. However, we show that the existing proposals do not provide the expected guarantees. Given this, we propose a ``clean slate'' approach to defining synchrony in the UC framework by introducing functionalities exactly meant to model, respectively, bounded-delay networks and loosely synchronized clocks. We show that the expected guarantees of synchronous computation can be realized given these functionalities, and that previous models can all be expressed within our new framework.},
+	annotation = {Publication info: A minor revision of an IACR publication in TCC 2013},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/K82P5GJ3/Katz et al. - 2011 - Universally Composable Synchronous Computation.pdf}
+}
+
+@misc{kerberCompositionKnowledgeAssumptions2021,
+	title = {Composition with {{Knowledge Assumptions}}},
+	author = {Kerber, Thomas and Kiayias, Aggelos and Kohlweiss, Markulf},
+	year = {2021},
+	number = {2021/165},
+	urldate = {2025-08-01},
+	abstract = {Zero-knowledge succinct non-interactive arguments (zk-SNARKs) rely on knowledge assumptions for their security. Meanwhile, as the complexity and scale of cryptographic systems continues to grow, the composition of secure protocols is of vital importance. The current gold standards of composable security, the Universal Composability and Constructive Cryptography frameworks cannot capture knowledge assumptions, as their core proofs of composition prohibit white-box extraction. In this paper, we present a formal model allowing the composition of knowledge assumptions. Despite showing impossibility for the general case, we demonstrate the model's usefulness when limiting knowledge assumptions to few instances of protocols at a time. We finish by providing the first instance of a simultaneously succinct and composable zk-SNARK, by using existing results within our framework.},
+	keywords = {composition,knowledge assumptions,zero knowledge},
+	annotation = {Publication info: Preprint. MINOR revision.},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/HU5YCP9P/Kerber et al. - 2021 - Composition with Knowledge Assumptions.pdf}
+}
+
+@misc{liu-zhangSynchronousConstructiveCryptography2020,
+	title = {Synchronous {{Constructive Cryptography}}},
+	author = {{Liu-Zhang}, Chen-Da and Maurer, Ueli},
+	year = {2020},
+	number = {2020/1226},
+	urldate = {2025-08-05},
+	abstract = {This paper proposes a simple synchronous composable security framework as an instantiation of the Constructive Cryptography framework, aiming to capture minimally, without unnecessary artefacts, exactly what is needed to state synchronous security guarantees. The objects of study are specifications (i.e., sets) of systems, and traditional security properties like consistency and validity can naturally be understood as specifications, thus unifying composable and property-based definitions. The framework's simplicity is in contrast to current composable frameworks for synchronous computation which are built on top of an asynchronous framework (e.g. the UC framework), thus not only inheriting artefacts and complex features used to handle asynchronous communication, but adding additional overhead to capture synchronous communication. As a second, independent contribution we demonstrate how secure (synchronous) multi-party computation protocols can be understood as constructing a computer that allows a set of parties to perform an arbitrary, on-going computation. An interesting aspect is that the instructions of the computation need not be fixed before the protocol starts but can also be determined during an on-going computation, possibly depending on previous outputs.},
+	annotation = {Publication info: Published by the IACR in TCC 2020},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/ELU59PYX/Liu-Zhang and Maurer - 2020 - Synchronous Constructive Cryptography.pdf}
+}
+
+@incollection{maurerConstructiveCryptographyNew2012,
+	title = {Constructive {{Cryptography}} -- {{A New Paradigm}} for {{Security Definitions}} and {{Proofs}}},
+	booktitle = {Theory of {{Security}} and {{Applications}}},
+	author = {Maurer, Ueli},
+	editor = {M{\"o}dersheim, Sebastian and Palamidessi, Catuscia},
+	year = {2012},
+	volume = {6993},
+	pages = {33--56},
+	publisher = {Springer Berlin Heidelberg},
+	address = {Berlin, Heidelberg},
+	doi = {10.1007/978-3-642-27375-9_3},
+	urldate = {2025-08-01},
+	abstract = {Constructive cryptography, an application of abstract cryptography proposed by Maurer and Renner, is a new paradigm for defining the security of cryptographic schemes such as symmetric encryption, message authentication codes, public-key encryption, key-agreement protocols, and digital signature schemes, and for proving the security of protocols making use of such schemes. Such a cryptographic scheme can be seen (and defined) as constructing a certain resource (e.g. a channel or key) with certain security properties from another (weaker) such resource. For example, a secure encryption scheme constructs a secure channel from an authenticated channel and a secret key.},
+	copyright = {http://www.springer.com/tdm},
+	isbn = {978-3-642-27374-2 978-3-642-27375-9},
+	langid = {english},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/FFNIFBVV/Maurer - 2012 - Constructive Cryptography – A New Paradigm for Security Definitions and Proofs.pdf}
+}
+
+@misc{maurerIndifferentiabilityConstructiveCryptography2016,
+	title = {From {{Indifferentiability}} to {{Constructive Cryptography}} (and {{Back}})},
+	author = {Maurer, Ueli and Renner, Renato},
+	year = {2016},
+	number = {2016/903},
+	urldate = {2025-08-01},
+	abstract = {The concept of indifferentiability of systems, a generalized form of indistinguishability, was proposed in 2004 to provide a simplified and generalized explanation of impossibility results like the non-instantiability of random oracles by hash functions due to Canetti, Goldreich, and Halevi (STOC 1998). But indifferentiability is actually a constructive notion, leading to possibility results. For example, Coron \{{\textbackslash}em et al.\} (Crypto 2005) argued that the soundness of the construction \$C(f)\$ of a hash function from a compression function \$f\$ can be demonstrated by proving that \$C(R)\$ is indifferentiable from a random oracle if \$R\$ is an ideal random compression function. The purpose of this short paper is to describe how the indifferentiability notion was a precursor to the theory of constructive cryptography and thereby to provide a simplified and generalized treatment of indifferentiability as a special type of constructive statement.},
+	annotation = {Publication info: Published by the IACR in TCC 2016},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/K29FULIJ/Maurer and Renner - 2016 - From Indifferentiability to Constructive Cryptography (and Back).pdf}
+}
+
+@article{mueller-quadeComposabilityQuantumCryptography2009,
+	title = {Composability in Quantum Cryptography},
+	author = {{Mueller-Quade}, Joern and Renner, Renato},
+	year = {2009},
+	month = aug,
+	journal = {New Journal of Physics},
+	volume = {11},
+	number = {8},
+	eprint = {1006.2215},
+	primaryclass = {quant-ph},
+	pages = {085006},
+	issn = {1367-2630},
+	doi = {10.1088/1367-2630/11/8/085006},
+	urldate = {2025-08-08},
+	abstract = {In this article, we review several aspects of composability in the context of quantum cryptography. The first part is devoted to key distribution. We discuss the security criteria that a quantum key distribution protocol must fulfill to allow its safe use within a larger security application (e.g., for secure message transmission). To illustrate the practical use of composability, we show how to generate a continuous key stream by sequentially composing rounds of a quantum key distribution protocol. In a second part, we take a more general point of view, which is necessary for the study of cryptographic situations involving, for example, mutually distrustful parties. We explain the universal composability framework and state the composition theorem which guarantees that secure protocols can securely be composed to larger applications},
+	archiveprefix = {arXiv},
+	keywords = {Computer Science - Cryptography and Security,Quantum Physics},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/DCAZ2Q4G/Mueller-Quade and Renner - 2009 - Composability in quantum cryptography.pdf;/home/lev/snap/zotero-snap/common/Zotero/storage/YN3YC6GH/1006.html}
+}
+
+@misc{parkFINALLYMultiKeyFHE2024,
+	title = {{{FINALLY}}: {{A Multi-Key FHE Scheme Based}} on {{NTRU}} and {{LWE}}},
+	shorttitle = {{{FINALLY}}},
+	author = {Park, Jeongeun and Leeuwen, Barry Van and Zajonc, Oliver},
+	year = {2024},
+	number = {2024/1505},
+	urldate = {2025-07-07},
+	abstract = {Multi-key fully homomorphic encryption (MKFHE), a generalization of fully homomorphic encryption (FHE), enables a computation over encrypted data under multiple keys. The first MKFHE schemes were based on the NTRU primitive, however these early NTRU based FHE schemes were found to be insecure due to the problem of over-stretched parameters. Recently, in the case of standard (non-multi key) FHE a secure version, called FINAL, of NTRU has been found. In this work we extend FINAL to an MKFHE scheme, this allows us to benefit from some of the performance advantages provided by NTRU based primitives. Thus, our scheme provides competitive performance against current state-of-the-art multi-key TFHE, in particular reducing the computational complexity from quadratic to linear in the number of keys.},
+	keywords = {FHE,LWE,Multi-key FHE,NTRU},
+	annotation = {Publication info: Published by the IACR in CIC 2024},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/XEW6VKCZ/Park et al. - 2024 - FINALLY A Multi-Key FHE Scheme Based on NTRU and LWE.pdf}
+}
+
+@misc{portmannCryptographicSecurityQuantum2014,
+	title = {Cryptographic Security of Quantum Key Distribution},
+	author = {Portmann, Christopher and Renner, Renato},
+	year = {2014},
+	month = sep,
+	number = {arXiv:1409.3525},
+	eprint = {1409.3525},
+	primaryclass = {quant-ph},
+	publisher = {arXiv},
+	doi = {10.48550/arXiv.1409.3525},
+	urldate = {2025-08-08},
+	abstract = {This work is intended as an introduction to cryptographic security and a motivation for the widely used Quantum Key Distribution (QKD) security definition. We review the notion of security necessary for a protocol to be usable in a larger cryptographic context, i.e., for it to remain secure when composed with other secure protocols. We then derive the corresponding security criterion for QKD. We provide several examples of QKD composed in sequence and parallel with different cryptographic schemes to illustrate how the error of a composed protocol is the sum of the errors of the individual protocols. We also discuss the operational interpretations of the distance metric used to quantify these errors.},
+	archiveprefix = {arXiv},
+	keywords = {Computer Science - Cryptography and Security,Computer Science - Information Theory,Mathematics - Information Theory,Quantum Physics},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/7AXYE4MR/Portmann and Renner - 2014 - Cryptographic security of quantum key distribution.pdf;/home/lev/snap/zotero-snap/common/Zotero/storage/FR57AZAG/1409.html}
+}
+
+@misc{poshtvanSelectivelyBlindQuantum2025,
+	title = {Selectively {{Blind Quantum Computation}}},
+	author = {Poshtvan, Abbas and Lapiha, Oleksandra and Doosti, Mina and Leichtle, Dominik and Music, Luka and Kashefi, Elham},
+	year = {2025},
+	month = apr,
+	number = {arXiv:2504.17612},
+	eprint = {2504.17612},
+	primaryclass = {quant-ph},
+	publisher = {arXiv},
+	doi = {10.48550/arXiv.2504.17612},
+	urldate = {2025-08-08},
+	abstract = {Known protocols for secure delegation of quantum computations from a client to a server in an information theoretic setting require quantum communication. In this work, we investigate methods to reduce communication overhead. First, we establish an impossibility result by proving that server-side local processes cannot decrease quantum communication requirements of secure delegation protocols. We develop no-go results that prohibit such processes within an information theoretic framework. Second, we present a possibility result by introducing Selectively Blind Quantum Computing (SBQC), a novel functionality that allows the client to hide one among a known set of possible computations. We characterize how differences between computations in the protected set influence the number of qubits sent during our SBQC implementation, yielding a communication-optimal protocol. This approach reduces qubit communication drastically and demonstrates the trade-off between information leaked to the server and communication cost.},
+	archiveprefix = {arXiv},
+	keywords = {Quantum Physics},
+	file = {/home/lev/snap/zotero-snap/common/Zotero/storage/ZEZGUKS7/Poshtvan et al. - 2025 - Selectively Blind Quantum Computation.pdf;/home/lev/snap/zotero-snap/common/Zotero/storage/K38V7RUJ/2504.html}
+}
+
+@inproceedings{broadbent2013quantum,
+	title={Quantum one-time programs},
+	author={Broadbent, Anne and Gutoski, Gus and Stebila, Douglas},
+	booktitle={Annual Cryptology Conference},
+	pages={344--360},
+	year={2013},
+	organization={Springer}
+}
+
+@article{behera2021noise,
+	title={Noise-tolerant quantum tokens for MAC},
+	author={Behera, Amit and Sattath, Or and Shinar, Uriel},
+	journal={arXiv preprint arXiv:2105.05016},
+	year={2021}
+}
+
+
+@article{groth2012new,
+	title={New techniques for noninteractive zero-knowledge},
+	author={Groth, Jens and Ostrovsky, Rafail and Sahai, Amit},
+	journal={Journal of the ACM (JACM)},
+	volume={59},
+	number={3},
+	pages={1--35},
+	year={2012},
+	publisher={ACM New York, NY, USA}
+}
+
+@inproceedings{canetti2001universally,
+	title={Universally composable commitments},
+	author={Canetti, Ran and Fischlin, Marc},
+	booktitle={Annual International Cryptology Conference},
+	pages={19--40},
+	year={2001},
+	organization={Springer}
+}
+
+@article{jadoul2025multiparty,
+	title={Multiparty FHE Redefined: A Framework for Unlimited Participants},
+	author={Jadoul, Robin and van Leeuwen, Barry and Zajonc, Oliver},
+	journal={Cryptology ePrint Archive},
+	year={2025}
+}
+
+@article{park2024finally,
+	title={FINALLY: A multi-key FHE scheme based on NTRU and LWE},
+	author={Park, Jeongeun and Van Leeuwen, Barry and Zajonc, Oliver},
+	journal={IACR Communications in Cryptology (CiC)},
+	volume={1},
+	number={3},
+	year={2024},
+	publisher={International Association for Cryptologic Research}
+}
+
+@article{mukherjee2025revisiting,
+	title={Revisiting Module Lattice-based Homomorphic Encryption and Application to Secure-MPC},
+	author={Mukherjee, Anisha and Roy, Sujoy Sinha},
+	journal={Cryptology ePrint Archive},
+	year={2025}
+}
+
+@article{grilo2017simple,
+	title={A simple protocol for verifiable delegation of quantum computation in one round},
+	author={Grilo, Alex B},
+	journal={arXiv preprint arXiv:1711.09585},
+	year={2017}
+}
+
+@inproceedings{goldwasser2008one,
+	title={One-time programs},
+	author={Goldwasser, Shafi and Kalai, Yael Tauman and Rothblum, Guy N},
+	booktitle={Annual International Cryptology Conference},
+	pages={39--56},
+	year={2008},
+	organization={Springer}
+}
+
+
+@inproceedings{bellareFoundationsGarbledCircuits2012,
+	title = {Foundations of Garbled Circuits},
+	booktitle = {Proceedings of the 2012 {{ACM}} Conference on {{Computer}} and Communications Security},
+	author = {Bellare, Mihir and Hoang, Viet Tung and Rogaway, Phillip},
+	year = {2012},
+	month = oct,
+	pages = {784--796},
+	publisher = {ACM},
+	address = {Raleigh North Carolina USA},
+	doi = {10.1145/2382196.2382279},
+	urldate = {2025-04-22},
+	isbn = {978-1-4503-1651-4},
+	langid = {english},
+	file = {/home/lev/Zotero/storage/2VRMPKDL/Bellare et al. - 2012 - Foundations of garbled circuits.pdf}
+}
+
+
+@inproceedings{yaoHowGenerateExchange1986,
+	title = {How to Generate and Exchange Secrets},
+	booktitle = {27th {{Annual Symposium}} on {{Foundations}} of {{Computer Science}} (Sfcs 1986)},
+	author = {Yao, Andrew Chi-Chih},
+	year = {1986},
+	month = oct,
+	pages = {162--167},
+	issn = {0272-5428},
+	doi = {10.1109/SFCS.1986.25},
+	urldate = {2025-04-22},
+	abstract = {In this paper we introduce a new tool for controlling the knowledge transfer process in cryptographic protocol design. It is applied to solve a general class of problems which include most of the two-party cryptographic problems in the literature. Specifically, we show how two parties A and B can interactively generate a random integer N = p{$\cdot$}q such that its secret, i.e., the prime factors (p, q), is hidden from either party individually but is recoverable jointly if desired. This can be utilized to give a protocol for two parties with private values i and j to compute any polynomially computable functions f(i,j) and g(i,j) with minimal knowledge transfer and a strong fairness property. As a special case, A and B can exchange a pair of secrets sA, sB, e.g. the factorization of an integer and a Hamiltonian circuit in a graph, in such a way that sA becomes computable by B when and only when sB becomes computable by A. All these results are proved assuming only that the problem of factoring large intergers is computationally intractable.},
+	keywords = {Circuits,Computer science,Cryptographic protocols,Cryptography,History,Knowledge transfer,Polynomials,Privacy,Probability distribution,Turing machines},
+	file = {/home/lev/Zotero/storage/ASMS9VVL/Yao - 1986 - How to generate and exchange secrets.pdf}
+}
+
+
+@article{shamirHowShareSecret1979,
+	author = {Shamir, Adi},
+	title = {How to share a secret},
+	year = {1979},
+	issue_date = {Nov. 1979},
+	publisher = {Association for Computing Machinery},
+	address = {New York, NY, USA},
+	volume = {22},
+	number = {11},
+	issn = {0001-0782},
+	url = {https://doi.org/10.1145/359168.359176},
+	doi = {10.1145/359168.359176},
+	abstract = {In this paper we show how to divide data D into n pieces in such a way that D is easily reconstructable from any k pieces, but even complete knowledge of k - 1 pieces reveals absolutely no information about D. This technique enables the construction of robust key management schemes for cryptographic systems that can function securely and reliably even when misfortunes destroy half the pieces and security breaches expose all but one of the remaining pieces.},
+	journal = {Commun. ACM},
+	month = nov,
+	pages = {612–613},
+	numpages = {2},
+	keywords = {cryptography, interpolation, key management}
+}
+
+@inproceedings{blakley1979safeguarding,
+  title={Safeguarding cryptographic keys},
+  author={Blakley, George Robert},
+  booktitle={Managing requirements knowledge, international workshop on},
+  pages={313--313},
+  year={1979},
+  organization={IEEE Computer Society}
+}
+
+@article{ben2023quantum,
+  title={Quantum tokens for digital signatures},
+  author={Ben-David, Shalev and Sattath, Or},
+  journal={Quantum},
+  volume={7},
+  pages={901},
+  year={2023},
+  publisher={Verein zur F{\"o}rderung des Open Access Publizierens in den Quantenwissenschaften}
+}
+
+@inproceedings{aaronson2012quantum,
+  title={Quantum money from hidden subspaces},
+  author={Aaronson, Scott and Christiano, Paul},
+  booktitle={Proceedings of the forty-fourth annual ACM symposium on Theory of computing},
+  pages={41--60},
+  year={2012}
+}
+
+@misc{PseduROM,
+      author = {Aayush Jain and Huijia Lin and Ji Luo and Daniel Wichs},
+      title = {The Pseudorandom Oracle Model and Ideal Obfuscation},
+      howpublished = {Cryptology {ePrint} Archive, Paper 2022/1204},
+      year = {2022},
+      doi = {10.1007/978-3-031-38551-3_8},
+      url = {https://eprint.iacr.org/2022/1204}
+}
+
+@article{stambler2025quantum,
+  title={Quantum One-Time Memories from Stateless Hardware, Random Access Codes, and Simple Nonconvex Optimization},
+  author={Stambler, Lev},
+  journal={arXiv preprint arXiv:2501.04168},
+  year={2025}
+}
+
+@article{stambler2025information,
+  title={Information Theoretic One-Time Programs from Geometrically Local QNC0 Adversaries},
+  author={Stambler, Lev},
+  journal={arXiv preprint arXiv:2503.22016},
+  year={2025}
+}
+
+
+@inproceedings{liu2023depth,
+  title={Depth-Bounded Quantum Cryptography with Applications to One-Time Memory and More.},
+  author={Liu, Qipeng},
+  booktitle={14th Innovations in Theoretical Computer Science Conference (ITCS 2023)},
+  year={2023}
+}
+
+
+
+@article{gupte2024quantum,
+  title={Quantum one-time programs, revisited},
+  author={Gupte, Aparna and Liu, Jiahui and Raizes, Justin and Roberts, Bhaskar and Vaikuntanathan, Vinod},
+  journal={arXiv preprint arXiv:2411.01876},
+  year={2024}
+}
+
+@article{gunn2024quantum,
+  title={Quantum one-time protection of any randomized algorithm},
+  author={Gunn, Sam and Movassagh, Ramis},
+  journal={arXiv preprint arXiv:2411.03305},
+  year={2024}
+}
+
+
+
+@article{chung2019cryptography,
+  title={Cryptography with disposable backdoors},
+  author={Chung, Kai-Min and Georgiou, Marios and Lai, Ching-Yi and Zikas, Vassilis},
+  journal={Cryptography},
+  volume={3},
+  number={3},
+  pages={22},
+  year={2019},
+  publisher={MDPI}
+}
+
+
+
+
+@inproceedings{liu2014building,
+  title={Building one-time memories from isolated qubits},
+  author={Liu, Yi-Kai},
+  booktitle={Proceedings of the 5th conference on Innovations in theoretical computer science},
+  pages={269--286},
+  year={2014}
+}
+
+@inproceedings{liu2014single,
+  title={Single-shot security for one-time memories in the isolated qubits model},
+  author={Liu, Yi-Kai},
+  booktitle={Advances in Cryptology--CRYPTO 2014: 34th Annual Cryptology Conference, Santa Barbara, CA, USA, August 17-21, 2014, Proceedings, Part II 34},
+  pages={19--36},
+  year={2014},
+  organization={Springer}
+}
+
+
+@inproceedings{liu2015privacy,
+  title={Privacy amplification in the isolated qubits model},
+  author={Liu, Yi-Kai},
+  booktitle={Advances in Cryptology-EUROCRYPT 2015: 34th Annual International Conference on the Theory and Applications of Cryptographic Techniques, Sofia, Bulgaria, April 26-30, 2015, Proceedings, Part II 34},
+  pages={785--814},
+  year={2015},
+  organization={Springer}
+}
+
+@article{stambler2025cryptography,
+  title={Cryptography without Long-Term Quantum Memory and Global Entanglement: Classical Setups for One-Time Programs, Copy Protection, and Stateful Obfuscation},
+  author={Stambler, Lev},
+  journal={arXiv preprint arXiv:2504.21842},
+  year={2025}
+}
+
+@article{roehsner2021probabilistic,
+  title={Probabilistic one-time programs using quantum entanglement},
+  author={Roehsner, Marie-Christine and Kettlewell, Joshua A and Fitzsimons, Joseph and Walther, Philip},
+  journal={npj Quantum Information},
+  volume={7},
+  number={1},
+  pages={98},
+  year={2021},
+  publisher={Nature Publishing Group UK London}
+}
+
+
+@inproceedings{dwork2006differential,
+  title={Differential privacy},
+  author={Dwork, Cynthia},
+  booktitle={International colloquium on automata, languages, and programming},
+  pages={1--12},
+  year={2006},
+  organization={Springer}
+}
+
+@article{lopez2017multikey,
+  title={Multikey fully homomorphic encryption and applications},
+  author={L{\'o}pez-Alt, Adriana and Tromer, Eran and Vaikuntanathan, Vinod},
+  journal={SIAM Journal on Computing},
+  volume={46},
+  number={6},
+  pages={1827--1892},
+  year={2017},
+  publisher={SIAM}
+}
+
+@inproceedings{chen2025universally,
+  title={Universally composable non-interactive zero-knowledge from sigma protocols via a new straight-line compiler},
+  author={Chen, Megan and Dey, Pousali and Ganesh, Chaya and Mukherjee, Pratyay and Sarkar, Pratik and Sasmal, Swagata},
+  booktitle={IACR International Conference on Public-Key Cryptography},
+  pages={381--417},
+  year={2025},
+  organization={Springer}
+}
+
+@techreport{pagnia1999impossibility,
+  title={On the impossibility of fair exchange without a trusted third party},
+  author={Pagnia, Henning and G{\"a}rtner, Felix C and others},
+  year={1999},
+  institution={Technical Report TUD-BS-1999-02, Darmstadt University of Technology~…}
+}
+
+@inproceedings{castro1999practical,
+  title={Practical byzantine fault tolerance},
+  author={Castro, Miguel and Liskov, Barbara and others},
+  booktitle={OsDI},
+  volume={99},
+  number={1999},
+  pages={173--186},
+  year={1999}
+}
+
+@inproceedings{yin2019hotstuff,
+  title={HotStuff: BFT consensus with linearity and responsiveness},
+  author={Yin, Maofan and Malkhi, Dahlia and Reiter, Michael K and Gueta, Guy Golan and Abraham, Ittai},
+  booktitle={Proceedings of the 2019 ACM symposium on principles of distributed computing},
+  pages={347--356},
+  year={2019}
+}
+
+@misc{ethereum_consensus_specs,
+  author       = {{Ethereum Foundation}},
+  title        = {Ethereum Consensus Layer Specifications},
+  year         = {2025},
+  publisher    = {GitHub},
+  howpublished = {\url{https://github.com/ethereum/consensus-specs}},
+  note         = {Accessed: 2025-09-11}
+}
+
+@inproceedings{manulis2024fully,
+  title={Fully homomorphic encryption beyond IND-CCA1 security: integrity through verifiability},
+  author={Manulis, Mark and Nguyen, J{\'e}r{\^o}me},
+  booktitle={Annual International Conference on the Theory and Applications of Cryptographic Techniques},
+  pages={63--93},
+  year={2024},
+  organization={Springer}
+}
+
+@inproceedings{liu2025bitgc,
+  title={BitGC: garbled circuits with 1 bit per gate},
+  author={Liu, Hanlin and Wang, Xiao and Yang, Kang and Yu, Yu},
+  booktitle={Annual International Conference on the Theory and Applications of Cryptographic Techniques},
+  pages={437--466},
+  year={2025},
+  organization={Springer}
+}
+@article{barhoush2023powerful,
+  title={Powerful Primitives in the Bounded Quantum Storage Model},
+  author={Barhoush, Mohammed and Salvail, Louis},
+  journal={arXiv preprint arXiv:2302.05724},
+  year={2023}
+}
