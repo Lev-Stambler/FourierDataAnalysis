@@ -12,8 +12,9 @@
 #let orig = "OG"
 #let origCoeff(S) = $hat(f)_orig (#S)$
 #let inD = $"In"calD$
+#let bI = $bold(I)$
 
-= Core Idea
+= Core Idea: Datasets and Basic In-Distribution Testing
 Ideally, we'd like to take the useful tools of Fourier Analysis (which assumes a product space) and generalize them to any distribution.
 Though, we do not have a formal method of reasoning about this, we do not think that it is quite possible.
 
@@ -102,6 +103,49 @@ We can now define influence:
 
 ]
 
+Just as in #TODO[cite], we can define total influence and get some convenient corollaries:
+#definition[
+  Total Influence, $bI_inD$
+][
+  $
+  bI_inD [f] = sum_(i in [n]) Inf_inD^i [f].
+  $
+]
+We immediately get:
+#proposition[
+  $
+  bI_inD [f] = sum_S \# S " " hat(f) (S)^2
+  $
+  which, for finite groups, we get
+  $
+  bI_inD [f] = sum_S k dot W^k [f].
+  $
+]
+as in page 213 of #TODO[a] where $\# S = |"supp" (S)| = "supp" (S) = {i : S_i != 0}$.
+
+Finally, we introduce one more definition which will capture the closeness of two functions, $f, g$ over $calD$.
+
+#definition[In-Distribution Closeness, $eps_calD$-closeness][
+  We say that a function $g$ is $eps_calD$ close to $f$ if:
+  $
+  Expec_(x in calD) [(f(x) - g(x))^2] &<= eps \
+  $
+  or equivalently,
+  $
+  normCInv Expec_(x in TotalSpace) [(calD circ f(x) - calD circ g(x))^2] <= eps.
+  $
+]
+
+== Immediate Consequences
+#h3([
+  Learning from Random Examples
+])
+
+#h3([
+  One-Way Property Testing for Computable via Decision Tree
+])
+
+#if false [
 We continue onwards to prove that 
 
 Let $calD$ be some distribution over alphabet (tokens) $calT$ with $n$ elements.
@@ -119,6 +163,7 @@ calF(pScale dot f)(S) &= EE_(x ~ TotalSpace) [pScale dot f(x) dot chi^(-1)_S (x)
                       &= EE_(x ~ calD) [f(x) dot chi^(-1)_S (x)] \
 $
 We will write $hat(f)(S)$ to denote $EE_(x ~ TotalSpace) [p dot f(x) dot chi^(-1)_S (x)]$ which we note to be the Fourier coefficient on $S$ for function $p dot f(x)$.
+]
 
 == In Distribution Testing Definitions
 Surprisingly, if want to characterize the complexity (or sensitivity or one of many Fourier properties) of our function $f$ over distribution $calD$ and in-distribution testing, we can more or less use standard analysis.
