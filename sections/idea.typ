@@ -140,6 +140,14 @@ Finally, we introduce one more definition which will capture the closeness of tw
 #h3([
   Learning from Random Examples
 ])
+We can already adopt learning low-degree functions from random examples to our setting.
+Specifically, if the in-distribution Fourier mass is concentrated on low-degree terms, we can learn the function from random examples drawn from $calD$.
+
+#TODO[this is auto-gened, check over and make right!]
+#theorem[
+  Let $f : calT^n -> RR$ be a function such that $sum_(S : |S| > d) hat(f) (S)^2 <= eps^2 / 4$.
+  Then, there exists an algorithm which, given $O(frac(n^d, eps^2) log(n))$ random examples from $calD$, outputs a function $g$ which is $eps_calD$ close to $f$ with probability at least $2/3$.
+]
 
 #h3([
   One-Way Property Testing for Computable via Decision Tree
