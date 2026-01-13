@@ -4,6 +4,4 @@
 #set math.equation(numbering: none)
 
 = Introduction
-#lorem(200)
-
-#lorem(200)
+#TODO[intro here]

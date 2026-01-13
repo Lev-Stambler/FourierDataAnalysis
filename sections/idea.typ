@@ -28,7 +28,7 @@ Then, we will be focusing on functions $f in calT^n -> RR$. $f$ can either be a 
 Then, we want to reason about Fourier coefficients as $
 hat(f) (S) = EE_(x ~ calD) [f(x) chi^(-1)_S (x)].
 $
-Further, we will abuse notation to denote $calD : calT^n -> {0, 1}$ as the indicator function for the inclusion within the dataset.
+Further, we will abuse notation to denote $calD : calT^n -> {0, 1}$ as the indicator function for the inclusion within the dataset (i.e. an in-distribution tester).
 We will write $hat(f)_orig (S)$ to denote the normal ("original") Fourier coefficient:
 $
 origCoeff(S) = EE_(x ~ calT^n) [f(x) chi^(-1)_S (x)].
@@ -55,14 +55,16 @@ We conveniently have our first lemma.
 ]
 
 == In Distribution Testing and Related Notions
-Quite quickly, we run into a "design" decision: do we want our notion of analysis to include in-distribution testing (being able to distinguish whether an element is in $x$ or not), or whether we want to _only_ define things like influence over $calD$. 
-We will do both, but start with the in-distribution notion because, as we will see, it is simpler and a warmup for the later.
-We will append our notation with $inD$ to denote the in-distribution case.
+Unfortunately, we were not able to find a good way to define property testing, _soley_ over the distribution.
+Rather, we will need to test both in-distribution and out-of-distribution samples.
+Still, we will only need to test out-of-distribution samples in a very limited way: samples which are only hamming distance $1$ away from in-distribution samples for most of our properties.
+
+To denote the need for in-distribution testing, we will append our notation with $inD$ to denote the in-distribution case.
 
 #definition[Distribution-Testing Coordinate Averaging][
-  Let $E_inD^i$ for $i in n$ be the $i$-th in distribution operator:
+  Let $E_inD^i$ for $i in n$ be the $i$-th in distribution operator for $x in calD$:
   $
-  E_inD^i [ f(x) ] = EE_(a in calT) [calD(x_i mapsto a) circ f (x^(x_i mapsto a))].
+  E_inD^i [ f ] (x) = EE_(a in calT) [calD(x_i mapsto a) circ f (x^(x_i mapsto a))].
   $
 ]<defn:indistr-coord-avg>
 Note that @defn:indistr-coord-avg _zeros out_ any coordinate setting which does not remain within the dataset.
@@ -71,31 +73,32 @@ Intuitively, we can think about $E_inD^i$ as the generic coordinate averaging op
 We can now define influence:
 #definition[$i$-th Coordinate Distribution-Testing Influence Operator][
   $
-  Inf_inD^i f = EE_(x in calD) [(f(x) - E_inD^i (x))^2].
+  Inf_inD^i f = EE_(x in calD) [(f(x) - E_inD^i f (x))^2].
   $
 ]
 
 #proposition[
-  We now prove that basic identities still hold:
+  We now prove that basic identities still hold as in O'Donnell's Analysis of Boolean Functions @o2021analysis:
   $
-  Inf_inD^i &= iprod(f, f - E_inD^i)_calD, \
-  E_inD^i_inD^i &= normC sum_(S, S_i = 0) hat(f) (S) chi_S (x)  \
-  Inf_inD^i &= sum_(S, S_i != 0) hat(f) (S)^2.
+  Inf_inD^i f &= normC iprod(f, f - E_inD^i), \
+  E_inD^i_inD^i f &= normC sum_(S, S_i = 0) hat(f) (S) chi_S (x)  \
+  Inf_inD^i f &= normC sum_(S, S_i != 0) hat(f) (S)^2.
   $
 ]
 #proof[
   We start with the second equality. #TODO[check constants]
   Note that, $
-  E_inD^i_inD^i (x) = EE_(a in calT) [calD(x_i mapsto a) circ f (x^(x_i mapsto a))] \
-                   = normC sum_(S, S_i = 0) hat(f) (S) chi_S (x).
+  E_inD^i_inD^i (x) &= EE_(a in calT) [calD(x_i mapsto a) circ f (x^(x_i mapsto a))] \
+                   &= sum_(S, S_i = 0) origCoeff(f) (S) chi_S (x) \
+                   &= normC sum_(S, S_i = 0) hat(f) (S) chi_S (x).
   $
 
   The first equality holds as we note that, $
-  Inf_inD^i f &= iprod(f(x) - E_inD^i (x), f(x) - E_inD^i (x)) \
-              &= EE [f(x)^2] - 2 E_x [f(x) E_inD^i (x)] + EE_calD [E_inD^i (x)^2].
+  Inf_inD^i f &= normC^(-1) iprod(f(x) - E_inD^i (x), f(x) - E_inD^i (x)) \
+              &= normC^(-1) (EE [f(x)^2] - 2 E_x [f(x) E_inD^i (x)] + EE_calD [E_inD^i (x)^2]).
   $
   #TODO[norm constant]
-  Then, note that by the second equality and Parseval's theorem, $E_x [f(x) E_inD^i (x)] = sum_(S, S_i = 0) hat(f) (S)^2$ and $EE_calD [E_inD^i (x)^2] = sum_(S, S_i = 0) hat(f) (S)^2$ as desired.
+  Then, note that by the second equality and Parseval's theorem, $E_(x ~ calT^n) [f(x) E_inD^i (x)] = sum_(S, S_i = 0) origCoeff(S)^2$ and $EE_calD [E_inD^i (x)^2] = sum_(S, S_i = 0) hat(f) (S)^2$ as desired.
 
   Finally, we note that as $Inf_inD^i f = EE_calD [f(x)^2] - EE_calD [E_inD^i (x)^2]$, we can see that $
   EE_calD [f(x)^2] - E_x [f(x) E_inD^i (x)] = sum_S hat(f) (S)^2 - sum_(S, S_i = 0) hat(f) (S)^2 = sum_(S, S_i != 0) hat(f) (S)^2.
@@ -143,7 +146,7 @@ Finally, we introduce one more definition which will capture the closeness of tw
 We can already adopt learning low-degree functions from random examples to our setting.
 Specifically, if the in-distribution Fourier mass is concentrated on low-degree terms, we can learn the function from random examples drawn from $calD$.
 
-#TODO[this is auto-gened, check over and make right!]
+#TODO[this is auto-gened, check over and make right! CLAUDE CHECK]
 #theorem[
   Let $f : calT^n -> RR$ be a function such that $sum_(S : |S| > d) hat(f) (S)^2 <= eps^2 / 4$.
   Then, there exists an algorithm which, given $O(frac(n^d, eps^2) log(n))$ random examples from $calD$, outputs a function $g$ which is $eps_calD$ close to $f$ with probability at least $2/3$.
