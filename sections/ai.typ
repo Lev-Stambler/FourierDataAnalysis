@@ -242,8 +242,28 @@ The key insight is relating dataset coefficients to "original" Gaussian coeffici
 
 #definition[Total Dataset Influence][
   $
-  bIG_calD [f] = sum_(i = 1)^n Inf_calD^i [f] = sum_(alpha in NN^n) |alpha| dot hat(f)_calD (alpha)^2.
+  bIG_calD [f] = sum_(i = 1)^n Inf_calD^i [f].
   $
+]
+
+#definition[Hermite Weight at Level $k$][
+  $
+  W^k_calD [f] = sum_(|alpha| = k) hat(f)_calD (alpha)^2.
+  $
+]
+
+#proposition[Total Influence via Hermite Spectrum][
+  $
+  bIG_calD [f] = sum_(alpha in NN^n) |alpha| dot hat(f)_calD (alpha)^2 = sum_(k >= 1) k dot W^k_calD [f].
+  $
+]
+#proof[
+  Summing Proposition 5.8 (Influence via Hermite Coefficients) over all $i in [n]$:
+  $
+  bIG_calD [f] = sum_(i = 1)^n Inf_calD^i [f] = sum_(i = 1)^n sum_(alpha : alpha_i >= 1) hat(f)_calD (alpha)^2.
+  $
+  Each $alpha$ with $|alpha| = k$ appears in exactly $k$ of the inner sums (once for each $i$ where $alpha_i >= 1$).
+  Thus $bIG_calD [f] = sum_alpha |alpha| dot hat(f)_calD (alpha)^2 = sum_(k >= 1) k dot W^k_calD [f]$.
 ]
 
 #definition[Dataset Closeness][
@@ -252,6 +272,17 @@ The key insight is relating dataset coefficients to "original" Gaussian coeffici
   EE_(x ~ calD) [(f(x) - g(x))^2] <= eps.
   $
 ]
+
+#lemma[Parseval for Dataset Closeness][
+  $
+  EE_(x ~ calD) [(f(x) - g(x))^2] = sum_(alpha in NN^n) (hat(f)_calD (alpha) - hat(g)_calD (alpha))^2.
+  $
+]
+#proof[
+  Apply Parseval to $f - g$: by Definition 5.2, $hat((f - g))_calD (alpha) = hat(f)_calD (alpha) - hat(g)_calD (alpha)$.
+]
+
+This lemma reduces proving $eps$-closeness to bounding the sum of squared coefficient differences.
 
 == Hypercontractivity
 
@@ -287,49 +318,24 @@ This principle allows us to transfer results between Boolean and Gaussian settin
 == Learning Low-Degree Functions
 
 #theorem[Learning Low-Degree Hermite Functions][
-  Let $f : RR^n -> RR$ be bounded with $|f(x)| <= 1$ and satisfy $sum_(|alpha| > d) hat(f)_calD (alpha)^2 <= eps^2 / 4$.
-  Given $m = O(n^d / eps^2 dot log n)$ random samples from $calD$, there exists an algorithm that outputs $g$ with
-  $
-  EE_(x ~ calD) [(f(x) - g(x))^2] <= eps
-  $
-  with probability at least $2 / 3$.
+  Let $f : RR^n -> RR$ be bounded with total influence $bIG_calD [f] <= I$.
+  Given $d >= 4 I / eps^2$ and $m = O(n^d / eps^2 dot log n)$ samples from $calD$, one can output $g$ that is $eps$-close to $f$ with probability $>= 2 / 3$.
 ]
 #proof[
-  *Algorithm:* Draw $m$ i.i.d. samples $x^((1)), dots, x^((m)) ~ calD$.
-  For each multi-index $alpha$ with $|alpha| <= d$, compute the empirical estimate
+  *High-degree weight bound:* By Proposition (Total Influence via Hermite Spectrum),
   $
-  tilde(f)(alpha) = 1 / m sum_(j = 1)^m f(x^((j))) Hermite_alpha (x^((j))).
+  bIG_calD [f] = sum_(k >= 1) k dot W^k_calD [f] >= sum_(k > d) k dot W^k_calD [f] >= d dot sum_(k > d) W^k_calD [f].
   $
+  Thus $sum_(k > d) W^k_calD [f] <= bIG_calD [f] / d <= I / d <= eps^2 / 4$ when $d >= 4 I / eps^2$.
+
+  *Algorithm:* For each $|alpha| <= d$, estimate $hat(f)_calD (alpha)$ (Definition 5.2) by
+  $tilde(f)(alpha) = 1 / m sum_(j = 1)^m f(x^((j))) Hermite_alpha (x^((j)))$.
   Output $g = sum_(|alpha| <= d) tilde(f)(alpha) Hermite_alpha$.
 
-  *Analysis:* Decompose the error as
+  *Analysis:* By Parseval for Dataset Closeness (Lemma 5.11):
   $
-  EE_calD [(f - g)^2] &= EE_calD [(f - f_(<=d) + f_(<=d) - g)^2] \
-                      &<= 2 EE_calD [(f - f_(<=d))^2] + 2 EE_calD [(f_(<=d) - g)^2]
+  EE_calD [(f - g)^2] = underbrace(sum_(k > d) W^k_calD [f], <= eps^2 / 4) + underbrace(sum_(|alpha| <= d) (hat(f)_calD (alpha) - tilde(f)(alpha))^2, <= eps^2 / 4 "w.h.p.").
   $
-  where $f_(<=d) = sum_(|alpha| <= d) hat(f)_calD (alpha) Hermite_alpha$ is the degree-$d$ truncation.
-
-  *Term 1 (Truncation error):* By Parseval and the assumption,
-  $
-  EE_calD [(f - f_(<=d))^2] = sum_(|alpha| > d) hat(f)_calD (alpha)^2 <= eps^2 / 4.
-  $
-
-  *Term 2 (Estimation error):* We have
-  $
-  EE_calD [(f_(<=d) - g)^2] = sum_(|alpha| <= d) (hat(f)_calD (alpha) - tilde(f)(alpha))^2.
-  $
-  For each $alpha$, the estimate $tilde(f)(alpha)$ is an average of $m$ i.i.d. bounded random variables (since $|f dot Hermite_alpha|$ is bounded).
-  By Hoeffding's inequality, for any $delta > 0$:
-  $
-  Pr[|tilde(f)(alpha) - hat(f)_calD (alpha)| > delta] <= 2 exp(-Omega(m delta^2)).
-  $
-
-  The number of multi-indices with $|alpha| <= d$ is at most $binom(n + d, d) <= (n + d)^d <= (2n)^d$.
-  Setting $delta = eps / (2 sqrt((2n)^d))$ and taking a union bound, with $m = O(n^d / eps^2 dot log n)$ samples we get
-  $
-  sum_(|alpha| <= d) (hat(f)_calD (alpha) - tilde(f)(alpha))^2 <= eps^2 / 4
-  $
-  with probability at least $2 / 3$.
-
-  *Conclusion:* Combining both terms, $EE_calD [(f - g)^2] <= 2 dot eps^2 / 4 + 2 dot eps^2 / 4 = eps^2 <= eps$.
+  Total: $EE_calD [(f - g)^2] <= eps^2 / 2 < eps$.
 ]
+
