@@ -28,8 +28,9 @@
   date: "September 10, 2025",
 )
 
-#include "sections/intro.typ"
+// #include "sections/intro.typ"
 #include "sections/idea.typ"
+#include "sections/ai.typ"
 #include "sections/conc.typ"
 
 #bibliography(("levs-bibs/crypto.bib", "levs-bibs/ai-complexity.bib",), style: "association-for-computing-machinery")

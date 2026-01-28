@@ -7,15 +7,17 @@
 #let Size = $|calT|^n$
 #let pScale = $p_"scale"$
 #let Inf = "Inf"
-#let normC = $frac(|calD|, |calT|^n)$
-#let normCInv = $frac(|calD|, |calT|^n)^(-1)$
+#let normC = $C_calD$
+#let normCInv = $C_calD^(-1)$
 #let orig = "OG"
 #let origCoeff(S) = $hat(f)_orig (#S)$
-#let inD = $"In"calD$
+#let inD = $calD$
 #let bI = $bold(I)$
 
 = Core Idea: Datasets and Basic In-Distribution Testing
-Ideally, we'd like to take the useful tools of Fourier Analysis (which assumes a product space) and generalize them to any distribution.
+Ideally, we'd like to take the useful tools of Fourier Analysis (which assumes a product space) and generalize them to any distribution where the underlying super-space is a product space #footnote[
+  This includes, but is not limited too, language datasets over tokens, images over pixels, and other similar data modalities.
+].
 Though, we do not have a formal method of reasoning about this, we do not think that it is quite possible.
 
 Rather, we will attempt to think about analysis as over a _dataset:_ i.e. we will think of our distribution as being defined by a finite-sized dataset, $calD$, and the probability vector will be defined as $
@@ -35,54 +37,60 @@ origCoeff(S) = EE_(x ~ calT^n) [f(x) chi^(-1)_S (x)].
 $
 
 Importantly, notice that $
-hat(f) (S) = normCInv origCoeff(calD circ f) = normCInv dot frac(1, |calT|^n) sum_(x in calD) f(x) chi_S (x).
+hat(f) (S) = frac(1, |calD|) sum_(x in calD) f(x) chi_S (x) = frac(|calT^n|, |calD|) dot origCoeff(calD circ f) 
 $
 where $circ$ is the element wise composition.
 #TODO[I think we need to use $chi^(-1)$?]
 
+$frac(calT^n, |calD|)$ is a normalizing constant which we will frequently arise.
+As such, we will denote $frac(|calT|^n, |calD|)$ as $C_calD$ and its inverse as $C_calD^(-1)$ for ease of notation.
+
 We conveniently have our first lemma.
+
 #lemma[
   For all $x in calD$,
   $
-  f(x) = normC sum_S hat(f) (S) chi_S (x)
+  f(x) = normCInv sum_S hat(f) (S) chi_S (x)
   $
 ]
 #proof[
-  First, note that $f(x) = calD(x) dot f(x)$ for $x in calD$ and then $hat(calD circ f)_orig (S) = normC dot hat(f) (S)$ and as such, using the standard Fourier identity
+  First, note that $f(x) = calD(x) dot f(x)$ for $x in calD$ and then $hat(calD circ f)_orig (S) = normCInv dot hat(f) (S)$ and as such, using the standard Fourier identity
   $
-  calD(x) dot f(x) = sum_S hat(calD circ f) (S) chi_S (x) = normC sum_S hat(f) (S).
+  calD(x) dot f(x) = sum_S hat(calD circ f) (S) chi_S (x) = normCInv sum_S hat(f) (S).
   $
 ]
+
+
 
 == In Distribution Testing and Related Notions
 Unfortunately, we were not able to find a good way to define property testing, _soley_ over the distribution.
 Rather, we will need to test both in-distribution and out-of-distribution samples.
 Still, we will only need to test out-of-distribution samples in a very limited way: samples which are only hamming distance $1$ away from in-distribution samples for most of our properties.
 
-To denote the need for in-distribution testing, we will append our notation with $inD$ to denote the in-distribution case.
+To denote the need for in-distribution testing, we will append $calD$ as a subscript to various operators.
 
 #definition[Distribution-Testing Coordinate Averaging][
-  Let $E_inD^i$ for $i in n$ be the $i$-th in distribution operator for $x in calD$:
+  Let $E_calD^i$ for $i in n$ be the $i$-th in distribution operator for $x in calD$:
   $
-  E_inD^i [ f ] (x) = EE_(a in calT) [calD(x_i mapsto a) circ f (x^(x_i mapsto a))].
+  E_calD^i [ f ] (x) = EE_(a in calT) [calD(x_i mapsto a) circ f (x^(x_i mapsto a))].
   $
 ]<defn:indistr-coord-avg>
 Note that @defn:indistr-coord-avg _zeros out_ any coordinate setting which does not remain within the dataset.
-Intuitively, we can think about $E_inD^i$ as the generic coordinate averaging operator for a function which will test whether an input is in the dataset and output $0$ if it is not.
+Intuitively, we can think about $E_calD^i$ as the generic coordinate averaging operator for a function which will test whether an input is in the dataset and output $0$ if it is not.
 
 We can now define influence:
 #definition[$i$-th Coordinate Distribution-Testing Influence Operator][
   $
-  Inf_inD^i f = EE_(x in calD) [(f(x) - E_inD^i f (x))^2].
+  Inf_calD^i f = EE_(x in calD) [(f(x) - E_calD^i f (x))^2].
   $
 ]
 
 #proposition[
   We now prove that basic identities still hold as in O'Donnell's Analysis of Boolean Functions @o2021analysis:
   $
-  Inf_inD^i f &= normC iprod(f, f - E_inD^i), \
-  E_inD^i_inD^i f &= normC sum_(S, S_i = 0) hat(f) (S) chi_S (x)  \
-  Inf_inD^i f &= normC sum_(S, S_i != 0) hat(f) (S)^2.
+  Inf_calD^i f &= normC iprod(calD circ f, calD circ (f - E_D^i)), \
+  E_D^i_calD^i f &= normC sum_(S, S_i = 0) hat(f) (S) chi_S (x)  \
+  Inf_calD^i f &= normC sum_(S, S_i != 0) hat(f) (S)^2.
   $
 ]
 #proof[
@@ -217,3 +225,16 @@ $
    iprod(p dot (g - E^i_calD g), g - E^i_calD g) &= EE_x [g^2] - 2 EE_x [g dot E^i_calD f] + EE_x [(E^i_calD f) ^2]
   $
 ]
+
+
+#TODO[What happens if you take $f = calD$?]
+#TODO[
+  Is there a monotonic question of degree over dataset vs degree over full space?
+  (you can then know if a model class can learn it or not)
+  (!!!! This is a good idea. People would care a lot more !!!!)
+  Look into: Statistical Learning theory: _distribution agnostic learning theory_
+]
+
+// Active Fourier Auditor for Estimating
+// Distributional Properties of ML Models
+// https://arxiv.org/pdf/2410.08111
