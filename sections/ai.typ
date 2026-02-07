@@ -8,19 +8,137 @@
 #let hermite = $h$
 #let Hermite = $H$
 #let Urho = $U_rho$
-#let bIG = $bold(I)$
+#let bIS = $bold(S)$
 #let normC = $C_calD$
 #let normCInv = $C_calD^(-1)$
-#let Inf = "Inf"
+#let Sens = "Sens"
 #let inD = $calD$
 #let origCoeff(alpha) = $hat(f)_"orig" (#alpha)$
+#let basis = $phi$
 
-= Gaussian Space Analysis
+= Orthonormal Basis Analysis
 
-We reformulate the Fourier-analytic framework over Gaussian space, following O'Donnell @o2021analysis Chapter 11.
-The key insight is that Hermite polynomials serve as the orthonormal basis for $L^2 (RR^n, gamn)$, analogous to characters $chi_S$ on the Boolean cube.
+We develop a Fourier-analytic framework over general probability spaces equipped with an orthonormal basis. This generalizes both Boolean Fourier analysis (Haar basis) and Gaussian space analysis (Hermite polynomials).
 
-== Gaussian Space Foundations
+== General Framework
+
+#definition[Probability Space with Orthonormal Basis][
+  Let $Omega$ be a measurable space with probability measure $mu$, and let $I$ be an index set.
+  An _orthonormal basis_ for $L^2 (Omega, mu)$ is a collection ${basis_alpha}_(alpha in I)$ of functions $basis_alpha : Omega -> RR$ satisfying:
+  1. *Orthonormality:* $iprod(basis_alpha, basis_beta)_mu = EE_(x ~ mu) [basis_alpha (x) basis_beta (x)] = delta_(alpha beta)$.
+  2. *Completeness:* Every $f in L^2 (Omega, mu)$ can be written as $f = sum_(alpha in I) hat(f)(alpha) basis_alpha$.
+]
+
+#definition[Fourier Coefficients][
+  For $f in L^2 (Omega, mu)$, the _Fourier coefficient_ at index $alpha$ is
+  $
+  hat(f)(alpha) = iprod(f, basis_alpha)_mu = EE_(x ~ mu) [f(x) basis_alpha (x)].
+  $
+]
+
+#theorem[Fourier Expansion][
+  Every $f in L^2 (Omega, mu)$ has a unique expansion
+  $
+  f = sum_(alpha in I) hat(f)(alpha) basis_alpha
+  $
+  with convergence in $L^2$.
+]
+
+#lemma[Parseval's Identity][
+  For any $f in L^2 (Omega, mu)$,
+  $
+  norm(f)_2^2 = EE_(x ~ mu) [f(x)^2] = sum_(alpha in I) hat(f)(alpha)^2.
+  $
+]
+#proof[
+  Expanding $f$ in the orthonormal basis and using bilinearity of the inner product:
+  $
+  EE_(x ~ mu) [f(x)^2] &= iprod(f, f)_mu \
+                       &= iprod(sum_alpha hat(f)(alpha) basis_alpha, sum_beta hat(f)(beta) basis_beta)_mu \
+                       &= sum_alpha sum_beta hat(f)(alpha) hat(f)(beta) iprod(basis_alpha, basis_beta)_mu \
+                       &= sum_alpha sum_beta hat(f)(alpha) hat(f)(beta) delta_(alpha beta) \
+                       &= sum_alpha hat(f)(alpha)^2.
+  $
+  The interchange of sum and integral is justified by $L^2$ convergence.
+]
+
+#corollary[Parseval for Differences][
+  For $f, g in L^2 (Omega, mu)$,
+  $
+  EE_(x ~ mu) [(f(x) - g(x))^2] = sum_(alpha in I) (hat(f)(alpha) - hat(g)(alpha))^2.
+  $
+]
+#proof[
+  Define $h = f - g$.
+  By linearity of the Fourier transform, $hat(h)(alpha) = hat(f)(alpha) - hat(g)(alpha)$.
+  Applying Parseval's identity to $h$:
+  $
+  EE_(x ~ mu) [(f(x) - g(x))^2] = norm(h)_2^2 = sum_alpha hat(h)(alpha)^2 = sum_alpha (hat(f)(alpha) - hat(g)(alpha))^2.
+  $
+]
+
+== Sensitivity
+
+For product spaces $Omega = Omega_1 times dots.c times Omega_n$ with product measure $mu = mu_1 times.o dots.c times mu_n$, we can define coordinate-wise sensitivity.
+
+#definition[Coordinate Averaging][
+  For $x in Omega^n$ and coordinate $i in [n]$, define
+  $
+  E^i [f] (x) = EE_(a ~ mu_i) [f(x^(i arrow.l a))]
+  $
+  where $x^(i arrow.l a)$ denotes $x$ with the $i$-th coordinate replaced by $a$.
+]
+
+#definition[Coordinate Sensitivity][
+  The _sensitivity of coordinate $i$_ on $f in L^2 (Omega^n, mu)$ is
+  $
+  Sens_i [f] = EE_(x ~ mu) [(f(x) - E^i [f] (x))^2].
+  $
+]
+
+#definition[Total Sensitivity][
+  The _total sensitivity_ of $f$ is
+  $
+  bIS [f] = sum_(i = 1)^n Sens_i [f].
+  $
+]
+
+In the literature, sensitivity is often called _influence_.
+We use "sensitivity" to emphasize its interpretation as measuring how much $f$ depends on each coordinate.
+
+== Examples of Orthonormal Bases
+
+=== Haar Basis (Boolean Cube)
+
+#definition[Boolean Cube][
+  The Boolean cube is $Omega = {-1, 1}^n$ with the uniform measure $mu(x) = 2^(-n)$ for all $x$.
+]
+
+#definition[Haar Basis / Parity Functions][
+  For $S subset.eq [n]$, define the _parity function_
+  $
+  chi_S (x) = product_(i in S) x_i.
+  $
+  The collection ${chi_S}_(S subset.eq [n])$ forms an orthonormal basis for $L^2 ({-1, 1}^n, mu)$.
+]
+
+#proposition[Haar Orthonormality][
+  $iprod(chi_S, chi_T) = delta_(S T)$.
+]
+#proof[
+  We have $chi_S (x) chi_T (x) = chi_(S Delta T) (x)$ where $S Delta T$ is the symmetric difference.
+  For $S != T$, there exists $i in S Delta T$, so $EE [chi_(S Delta T)] = EE [x_i] dot EE [chi_(S Delta T without {i})] = 0$.
+  For $S = T$, $chi_(S Delta T) = chi_emptyset = 1$.
+]
+
+#proposition[Boolean Sensitivity][
+  For $f : {-1, 1}^n -> RR$,
+  $
+  Sens_i [f] = sum_(S : i in S) hat(f)(S)^2.
+  $
+]
+
+=== Probabilist's Hermite (Gaussian Space)
 
 #definition[Standard Gaussian Measure][
   The _standard Gaussian measure_ gam on $RR$ has density
@@ -30,26 +148,6 @@ The key insight is that Hermite polynomials serve as the orthonormal basis for $
   The $n$-dimensional Gaussian measure $gamn$ on $RR^n$ is the product measure $gam^(times.o n)$.
 ]
 
-#definition[Gaussian Inner Product][
-  For $f, g in L^2 (RR^n, gamn)$, the inner product is
-  $
-  iprod(f, g)_gamn = EE_(x ~ gamn) [f(x) g(x)].
-  $
-]
-
-#definition[Dataset in Gaussian Space][
-  Let $calD subset RR^n$ be a finite dataset.
-  We define the uniform distribution over $calD$ by
-  $
-  p(x) = cases(1 / (|calD|) &"if" x in calD, 0 &"otherwise").
-  $
-  We abuse notation and write $calD : RR^n -> {0, 1}$ for the indicator function of $calD$.
-]
-
-== Hermite Polynomials
-
-The Hermite polynomials form a complete orthonormal basis for $L^2 (RR, gam)$.
-
 #definition[Univariate Hermite Polynomials][
   The _probabilist's Hermite polynomials_ $hermite_j : RR -> RR$ are the orthonormalized polynomials with respect to gam.
   The first few are:
@@ -58,8 +156,8 @@ The Hermite polynomials form a complete orthonormal basis for $L^2 (RR, gam)$.
   $
 ]
 
-#proposition[
-  The Hermite polynomials satisfy $iprod(hermite_j, hermite_k)_gam = delta_(j k)$.
+#proposition[Hermite Orthonormality][
+  $iprod(hermite_j, hermite_k)_gam = delta_(j k)$.
 ]
 
 #definition[Multivariate Hermite Polynomials][
@@ -75,10 +173,24 @@ The Hermite polynomials form a complete orthonormal basis for $L^2 (RR, gam)$.
   $
   f = sum_(alpha in NN^n) hat(f)(alpha) Hermite_alpha
   $
-  where the _Hermite coefficients_ are $hat(f)(alpha) = iprod(f, Hermite_alpha)_gamn = EE_(x ~ gamn) [f(x) Hermite_alpha (x)]$.
+  where $hat(f)(alpha) = iprod(f, Hermite_alpha)_gamn = EE_(x ~ gamn) [f(x) Hermite_alpha (x)]$.
 ]
 
-== Noise Operator
+#proposition[Gaussian Sensitivity via Derivatives][
+  For $f in L^2 (RR^n, gamn)$ with weak derivative $partial_i f$,
+  $
+  Sens_i [f] = EE_(x ~ gamn) [(partial_i f(x))^2] = sum_(alpha : alpha_i >= 1) alpha_i dot hat(f)(alpha)^2.
+  $
+]
+#proof[
+  We have $partial_i Hermite_alpha = sqrt(alpha_i) Hermite_(alpha - e_i)$ where $e_i$ is the $i$-th standard basis vector (the term vanishes if $alpha_i = 0$).
+  By Parseval,
+  $
+  Sens_i [f] = EE [(partial_i f)^2] = sum_(alpha : alpha_i >= 1) alpha_i hat(f)(alpha)^2.
+  $
+]
+
+==== Noise Operator
 
 #definition[$rho$-Correlated Gaussians][
   For $rho in [-1, 1]$, we say $(x, y)$ are _$rho$-correlated Gaussians_ if $x ~ gamn$ and
@@ -107,163 +219,100 @@ The Hermite polynomials form a complete orthonormal basis for $L^2 (RR, gam)$.
   For $y = rho x + sqrt(1 - rho^2) z$ with $z ~ gam$ independent, we have $EE_z [hermite_j (rho x + sqrt(1 - rho^2) z)] = rho^j hermite_j (x)$ by the generating function of Hermite polynomials.
 ]
 
-== Influence in Gaussian Space
+==== Invariance Principle
 
-#definition[Gaussian Influence][
-  The _influence of coordinate $i$_ on $f in L^2 (RR^n, gamn)$ is
-  $
-  Inf_i [f] = EE_(x ~ gamn) [(partial_i f(x))^2]
-  $
-  where $partial_i f = (partial f) / (partial x_i)$ is the partial derivative.
+#theorem[Gaussian Invariance Principle (Informal)][
+  Let $f : {-1, 1}^n -> RR$ be a multilinear polynomial with small sensitivities.
+  Let $g : RR^n -> RR$ be its _Gaussian version_: the function with the same multilinear coefficients, viewed as Hermite coefficients.
+  Then $f(x)$ for $x in {-1, 1}^n$ uniform and $g(z)$ for $z ~ gamn$ have approximately the same distribution.
 ]
 
-#proposition[Hermite Representation of Influence][
-  $
-  Inf_i [f] = sum_(alpha : alpha_i >= 1) alpha_i dot hat(f)(alpha)^2.
-  $
-]
-#proof[
-  We have $partial_i Hermite_alpha = sqrt(alpha_i) Hermite_(alpha - e_i)$ where $e_i$ is the $i$-th standard basis vector (and the term vanishes if $alpha_i = 0$).
-  By Parseval,
-  $
-  Inf_i [f] = EE [(partial_i f)^2] = sum_(alpha : alpha_i >= 1) alpha_i hat(f)(alpha)^2.
-  $
-]
-
-#definition[Total Influence][
-  The _total influence_ of $f$ is
-  $
-  bIG [f] = sum_(i = 1)^n Inf_i [f] = sum_(alpha in NN^n) |alpha| dot hat(f)(alpha)^2.
-  $
-]
+This principle allows us to transfer results between Boolean and Gaussian settings.
 
 == Dataset-Specific Analysis
 
-We now adapt the above to the setting where we have a finite dataset $calD subset RR^n$.
-The key insight is relating dataset coefficients to "original" Gaussian coefficients via the indicator function.
+We now adapt the above to the setting where we have a finite dataset $calD subset Omega^n$.
 
-#definition[Original Hermite Coefficient][
-  For $f : RR^n -> RR$, the _original Hermite coefficient_ is
+#definition[Dataset Distribution][
+  Let $calD subset Omega^n$ be a finite dataset.
+  The uniform distribution over $calD$ is
   $
-  origCoeff(alpha) = EE_(x ~ gamn) [f(x) Hermite_alpha (x)].
+  p(x) = cases(1 / (|calD|) &"if" x in calD, 0 &"otherwise").
   $
 ]
 
-#definition[Dataset Hermite Coefficient][
-  The _dataset Hermite coefficient_ is
+#definition[Dataset Fourier Coefficient][
+  The _dataset Fourier coefficient_ is
   $
-  hat(f)_calD (alpha) = EE_(x ~ calD) [f(x) Hermite_alpha (x)] = 1 / (|calD|) sum_(x in calD) f(x) Hermite_alpha (x).
-  $
-]
-
-#definition[Normalizing Constant][
-  Let $gamn (calD) = EE_(x ~ gamn) [calD (x)]$ be the Gaussian measure of the dataset.
-  The normalizing constant is
-  $
-  normC = 1 / (gamn (calD) dot |calD|).
-  $
-  Importantly, we have the relation
-  $
-  hat(f)_calD (alpha) = normC dot hat(calD circ f)_"orig" (alpha)
-  $
-  where $(calD circ f)(x) = calD (x) dot f(x)$.
-]
-
-#lemma[Reconstruction][
-  For all $x in calD$,
-  $
-  f(x) = normCInv sum_(alpha in NN^n) hat(f)_calD (alpha) Hermite_alpha (x).
-  $
-]
-#proof[
-  For $x in calD$, we have $f(x) = calD (x) dot f(x)$.
-  Applying the standard Hermite expansion to $calD circ f$ over $(RR^n, gamn)$:
-  $
-  calD (x) dot f(x) = sum_alpha hat(calD circ f)_"orig" (alpha) Hermite_alpha (x) = normCInv sum_alpha hat(f)_calD (alpha) Hermite_alpha (x).
+  hat(f)_calD (alpha) = EE_(x ~ calD) [f(x) basis_alpha (x)] = 1 / (|calD|) sum_(x in calD) f(x) basis_alpha (x).
   $
 ]
 
 #definition[Dataset Coordinate Averaging][
   For $x in calD$, define
   $
-  E_calD^i [f] (x) = EE_(a ~ gam) [calD (x^(i mapsto a)) dot f(x^(i mapsto a))]
+  E_calD^i [f] (x) = EE_(a ~ mu_i) [calD (x^(i arrow.l a)) dot f(x^(i arrow.l a))]
   $
-  where $x^(i mapsto a)$ denotes $x$ with the $i$-th coordinate replaced by $a$.
+  where $calD (y) = 1$ if $y in calD$ and $0$ otherwise.
   This operator _zeros out_ any coordinate setting that leaves the dataset.
 ]
 
-#proposition[Hermite Expansion of Coordinate Average][
+#definition[Dataset Sensitivity][
   $
-  E_calD^i [f] (x) = normCInv sum_(alpha : alpha_i = 0) hat(f)_calD (alpha) Hermite_alpha (x).
-  $
-]
-#proof[
-  By the reconstruction lemma, $f(y) = normCInv sum_alpha hat(f)_calD (alpha) Hermite_alpha (y)$ for $y in calD$.
-  The multivariate Hermite polynomial factors as $Hermite_alpha (x^(i mapsto a)) = Hermite_(alpha_(-i)) (x_(-i)) dot hermite_(alpha_i) (a)$.
-  Applying $E_calD^i$:
-  $
-  E_calD^i [f] (x) &= EE_(a ~ gam) [calD (x^(i mapsto a)) dot f(x^(i mapsto a))] \
-                   &= normCInv sum_alpha hat(f)_calD (alpha) Hermite_(alpha_(-i)) (x_(-i)) dot EE_(a ~ gam) [calD (x^(i mapsto a)) hermite_(alpha_i) (a)].
-  $
-  When $alpha_i >= 1$, the integral $EE_(a ~ gam) [hermite_(alpha_i) (a) dot (dots.c)]$ vanishes since $EE_(a ~ gam) [hermite_k (a)] = 0$ for $k >= 1$.
-  Thus only $alpha_i = 0$ terms survive.
-]
-
-#definition[Dataset Influence][
-  $
-  Inf_calD^i [f] = EE_(x ~ calD) [(f(x) - E_calD^i [f] (x))^2].
+  Sens_calD^i [f] = EE_(x ~ calD) [(f(x) - E_calD^i [f] (x))^2].
   $
 ]
 
-#proposition[Influence via Hermite Coefficients][
+#proposition[Sensitivity via Fourier Coefficients][
+  For orthonormal bases with product structure indexed by $(alpha_1, dots, alpha_n)$,
   $
-  Inf_calD^i [f] = sum_(alpha : alpha_i >= 1) hat(f)_calD (alpha)^2.
+  Sens_calD^i [f] = sum_(alpha : alpha_i != 0) hat(f)_calD (alpha)^2.
   $
 ]
 #proof[
   We first show that $EE_calD [f dot E_calD^i f] = EE_calD [(E_calD^i f)^2]$.
-  This follows because $E_calD^i$ is idempotent: applying it twice gives the same result as applying it once, since averaging over $x_i ~ gam$ on a function already independent of $x_i$ has no effect.
+  This follows because $E_calD^i$ is idempotent: applying it twice gives the same result as applying it once, since averaging over $x_i$ on a function already independent of $x_i$ has no effect.
 
   Now expand the definition:
   $
-  Inf_calD^i [f] &= EE_calD [(f - E_calD^i f)^2] \
-                 &= EE_calD [f^2] - 2 EE_calD [f dot E_calD^i f] + EE_calD [(E_calD^i f)^2] \
-                 &= EE_calD [f^2] - EE_calD [(E_calD^i f)^2].
+  Sens_calD^i [f] &= EE_calD [(f - E_calD^i f)^2] \
+                   &= EE_calD [f^2] - 2 EE_calD [f dot E_calD^i f] + EE_calD [(E_calD^i f)^2] \
+                   &= EE_calD [f^2] - EE_calD [(E_calD^i f)^2].
   $
 
-  By Parseval's identity over $calD$, we have $EE_calD [f^2] = sum_alpha hat(f)_calD (alpha)^2$.
-  By the Hermite expansion of $E_calD^i f$ (which only includes terms with $alpha_i = 0$), we get $EE_calD [(E_calD^i f)^2] = sum_(alpha : alpha_i = 0) hat(f)_calD (alpha)^2$.
+  The Fourier expansion of $E_calD^i f$ only includes terms with $alpha_i = 0$.
+  By Parseval: $EE_calD [f^2] = sum_alpha hat(f)_calD (alpha)^2$ and $EE_calD [(E_calD^i f)^2] = sum_(alpha : alpha_i = 0) hat(f)_calD (alpha)^2$.
 
   Therefore:
   $
-  Inf_calD^i [f] = sum_alpha hat(f)_calD (alpha)^2 - sum_(alpha : alpha_i = 0) hat(f)_calD (alpha)^2 = sum_(alpha : alpha_i >= 1) hat(f)_calD (alpha)^2.
+  Sens_calD^i [f] = sum_alpha hat(f)_calD (alpha)^2 - sum_(alpha : alpha_i = 0) hat(f)_calD (alpha)^2 = sum_(alpha : alpha_i != 0) hat(f)_calD (alpha)^2.
   $
 ]
 
-#definition[Total Dataset Influence][
+#definition[Total Dataset Sensitivity][
   $
-  bIG_calD [f] = sum_(i = 1)^n Inf_calD^i [f].
+  bIS_calD [f] = sum_(i = 1)^n Sens_calD^i [f].
   $
 ]
 
-#definition[Hermite Weight at Level $k$][
+#definition[Fourier Weight at Level $k$][
   $
   W^k_calD [f] = sum_(|alpha| = k) hat(f)_calD (alpha)^2.
   $
 ]
 
-#proposition[Total Influence via Hermite Spectrum][
+#proposition[Total Sensitivity via Fourier Spectrum][
   $
-  bIG_calD [f] = sum_(alpha in NN^n) |alpha| dot hat(f)_calD (alpha)^2 = sum_(k >= 1) k dot W^k_calD [f].
+  bIS_calD [f] = sum_(alpha) |alpha| dot hat(f)_calD (alpha)^2 = sum_(k >= 1) k dot W^k_calD [f].
   $
 ]
 #proof[
-  Summing Proposition 5.8 (Influence via Hermite Coefficients) over all $i in [n]$:
+  Summing the sensitivity formula over all $i in [n]$:
   $
-  bIG_calD [f] = sum_(i = 1)^n Inf_calD^i [f] = sum_(i = 1)^n sum_(alpha : alpha_i >= 1) hat(f)_calD (alpha)^2.
+  bIS_calD [f] = sum_(i = 1)^n Sens_calD^i [f] = sum_(i = 1)^n sum_(alpha : alpha_i != 0) hat(f)_calD (alpha)^2.
   $
-  Each $alpha$ with $|alpha| = k$ appears in exactly $k$ of the inner sums (once for each $i$ where $alpha_i >= 1$).
-  Thus $bIG_calD [f] = sum_alpha |alpha| dot hat(f)_calD (alpha)^2 = sum_(k >= 1) k dot W^k_calD [f]$.
+  Each $alpha$ with $|alpha| = k$ appears in exactly $k$ of the inner sums (once for each $i$ where $alpha_i != 0$).
+  Thus $bIS_calD [f] = sum_alpha |alpha| dot hat(f)_calD (alpha)^2 = sum_(k >= 1) k dot W^k_calD [f]$.
 ]
 
 #definition[Dataset Closeness][
@@ -275,67 +324,40 @@ The key insight is relating dataset coefficients to "original" Gaussian coeffici
 
 #lemma[Parseval for Dataset Closeness][
   $
-  EE_(x ~ calD) [(f(x) - g(x))^2] = sum_(alpha in NN^n) (hat(f)_calD (alpha) - hat(g)_calD (alpha))^2.
+  EE_(x ~ calD) [(f(x) - g(x))^2] = sum_(alpha) (hat(f)_calD (alpha) - hat(g)_calD (alpha))^2.
   $
 ]
 #proof[
-  Apply Parseval to $f - g$: by Definition 5.2, $hat((f - g))_calD (alpha) = hat(f)_calD (alpha) - hat(g)_calD (alpha)$.
+  Define $h = f - g$.
+  By linearity, $hat(h)_calD (alpha) = hat(f)_calD (alpha) - hat(g)_calD (alpha)$.
+  Applying Parseval's identity over the dataset distribution:
+  $
+  EE_(x ~ calD) [h(x)^2] &= sum_alpha hat(h)_calD (alpha)^2 = sum_alpha (hat(f)_calD (alpha) - hat(g)_calD (alpha))^2.
+  $
 ]
 
 This lemma reduces proving $eps$-closeness to bounding the sum of squared coefficient differences.
 
-== Hypercontractivity
-
-#theorem[(2,q)-Hypercontractivity][
-  For $q >= 2$ and $rho <= 1 / sqrt(q - 1)$,
-  $
-  norm(Urho f)_q <= norm(f)_2.
-  $
-]
-
-#corollary[Level-$k$ Inequality][
-  If $f$ has Hermite expansion supported on degree at most $k$, then for $q >= 2$:
-  $
-  norm(f)_q <= (q - 1)^(k / 2) norm(f)_2.
-  $
-]
-#proof[
-  Apply hypercontractivity with $rho = 1 / sqrt(q - 1)$; since $f$ is degree-$k$, we have $Urho f = rho^(<=k) f$ where the lowest eigenvalue is $rho^k$.
-]
-
-== Invariance Principle
-
-The Invariance Principle connects Boolean analysis to Gaussian analysis.
-
-#theorem[Gaussian Invariance Principle (Informal)][
-  Let $f : {-1, 1}^n -> RR$ be a multilinear polynomial with small influences.
-  Let $g : RR^n -> RR$ be its _Gaussian version_: the function with the same multilinear coefficients, viewed as Hermite coefficients.
-  Then $f(x)$ for $x in {-1, 1}^n$ uniform and $g(z)$ for $z ~ gamn$ have approximately the same distribution.
-]
-
-This principle allows us to transfer results between Boolean and Gaussian settings, and is crucial for applications like the Majority Is Stablest theorem.
-
 == Learning Low-Degree Functions
 
-#theorem[Learning Low-Degree Hermite Functions][
-  Let $f : RR^n -> RR$ be bounded with total influence $bIG_calD [f] <= I$.
-  Given $d >= 4 I / eps^2$ and $m = O(n^d / eps^2 dot log n)$ samples from $calD$, one can output $g$ that is $eps$-close to $f$ with probability $>= 2 / 3$.
+#theorem[Learning Low-Degree Fourier Functions][
+  Let $f : Omega^n -> RR$ be bounded with total sensitivity $bIS_calD [f] <= S$.
+  Given $d >= 4 S / eps^2$ and $m = O(n^d / eps^2 dot log n)$ samples from $calD$, one can output $g$ that is $eps$-close to $f$ with probability $>= 2 / 3$.
 ]
 #proof[
-  *High-degree weight bound:* By Proposition (Total Influence via Hermite Spectrum),
+  *High-degree weight bound:* By the total sensitivity formula,
   $
-  bIG_calD [f] = sum_(k >= 1) k dot W^k_calD [f] >= sum_(k > d) k dot W^k_calD [f] >= d dot sum_(k > d) W^k_calD [f].
+  bIS_calD [f] = sum_(k >= 1) k dot W^k_calD [f] >= sum_(k > d) k dot W^k_calD [f] >= d dot sum_(k > d) W^k_calD [f].
   $
-  Thus $sum_(k > d) W^k_calD [f] <= bIG_calD [f] / d <= I / d <= eps^2 / 4$ when $d >= 4 I / eps^2$.
+  Thus $sum_(k > d) W^k_calD [f] <= bIS_calD [f] / d <= S / d <= eps^2 / 4$ when $d >= 4 S / eps^2$.
 
-  *Algorithm:* For each $|alpha| <= d$, estimate $hat(f)_calD (alpha)$ (Definition 5.2) by
-  $tilde(f)(alpha) = 1 / m sum_(j = 1)^m f(x^((j))) Hermite_alpha (x^((j)))$.
-  Output $g = sum_(|alpha| <= d) tilde(f)(alpha) Hermite_alpha$.
+  *Algorithm:* For each $|alpha| <= d$, estimate $hat(f)_calD (alpha)$ by
+  $tilde(f)(alpha) = 1 / m sum_(j = 1)^m f(x^((j))) basis_alpha (x^((j)))$.
+  Output $g = sum_(|alpha| <= d) tilde(f)(alpha) basis_alpha$.
 
-  *Analysis:* By Parseval for Dataset Closeness (Lemma 5.11):
+  *Analysis:* By Parseval for Dataset Closeness:
   $
   EE_calD [(f - g)^2] = underbrace(sum_(k > d) W^k_calD [f], <= eps^2 / 4) + underbrace(sum_(|alpha| <= d) (hat(f)_calD (alpha) - tilde(f)(alpha))^2, <= eps^2 / 4 "w.h.p.").
   $
   Total: $EE_calD [(f - g)^2] <= eps^2 / 2 < eps$.
 ]
-
