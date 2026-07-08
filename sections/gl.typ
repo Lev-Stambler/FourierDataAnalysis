@@ -179,14 +179,20 @@ Estimation is the dataset analogue of the classical restriction identity: draw a
   A $sans("SAMP")$ draw $x$ has $x_(Jbar) ~ calD_(Jbar)$ and, conditioned on its context, $x ~ calD_z$; Hoeffding does the rest.
 ]
 
+#definition[Live-Bucket Profile][
+  For a threshold $tau$, the _live-bucket profile_ of $(calD, f)$ is
+  $
+  N_k = |{S subset.eq J_k : Psi(S | J_k) >= tau^2 \/ 4}|, quad quad N = max_(0 <= k <= n) N_k.
+  $
+]<defn:live-buckets>
+
+By Markov on the level mass (property 5) and monotonicity (property 4), $N_k <= min(4 R_k \/ tau^2, space 2 N_(k-1))$, the latter for $k >= 1$; the instances after the theorem show how the repetition structure of $calD$ controls $N$.
+
 #theorem[Dataset Goldreich-Levin from Context Conditioning][
   Given $sans("SAMP")$ and $sans("CSAMP")$ access to $(calD, f)$ with $norm(f)_infinity <= 1$, and $0 < tau <= 1$, $delta in (0,1)$, there is an algorithm that with probability at least $1 - delta$ outputs a list $L$ satisfying:
   + (Completeness) $|dcoeff(S)| >= tau ==> S in L$;
   + (Soundness) $S in L ==> |dcoeff(S)| >= tau \/ 2$;
-  + (Complexity) on the same $1 - delta$ event, the algorithm performs at most $O(n N dot log(n N \/ delta) \/ tau^4)$ sampling experiments and runs in time $"poly"(n, N, 1\/tau, log(1\/delta))$, where
-  $
-  N = max_(0 <= k <= n) N_k, quad N_k = |{S subset.eq J_k : Psi(S | J_k) >= tau^2 \/ 4}|, quad "and" quad N_k <= min(frac(4 R_k, tau^2), 2 N_(k-1)) " (the latter for " k >= 1 ")".
-  $
+  + (Complexity) on the same event, at most $O(n N dot log(n N \/ delta) \/ tau^4)$ sampling experiments and $"poly"(n, N, 1\/tau, log(1\/delta))$ time.
   The algorithm needs no advance knowledge of $N$, never evaluates $f$ outside $calD$, and never tests membership: every string it touches is a datapoint.
 ]<thm:context-gl>
 
@@ -208,7 +214,7 @@ The algorithm is the classical tree search with $Psi$ in place of $W$:
   Hence at most $2 n N$ estimates are performed in total, and the $t$-th costs $O(log(t \/ delta) \/ tau^4) = O(log(n N \/ delta) \/ tau^4)$ experiments.
 ]
 
-(If a deterministic time budget is preferred over a probabilistic one, run with a cap $overline(N)$ on live buckets per level, aborting when it is exceeded, and guess-and-double $overline(N) = 1, 2, 4, dots$ with per-run confidence budget $delta \/ 2^(j+1)$; on the good event with $overline(N) >= N$ no abort occurs, at the cost of $O(log N)$ restarts.)
+(For a deterministic time budget: cap the live buckets per level at $overline(N)$, abort on overflow, and guess-and-double $overline(N)$ with confidence budget halved per run; the run with $overline(N) >= N$ never aborts on the good event, at the cost of $O(log N)$ restarts.)
 
 Three instances of the parameter $N$, spanning the possible regimes (all verified numerically):
 - *Dense datasets.* Always $c_k <= min(|calD|, 2^(n-k))$, so $R_k <= min(2^k, normC)$ and $N <= 4 normC \/ tau^2$: for $normC = "poly"(n)$ the search is polynomial outright — using strictly weaker access than a membership tester.
@@ -233,7 +239,7 @@ This is realistic when $f$ is a cheaply queryable model, and it enables a differ
   $
   — the dataset Fourier coefficients of the constant function $1$.
   Note $b_emptyset = 1$ and $|b_V| <= 1$.
-  For $theta > 0$, write $heavyB = {V : |b_V| >= theta}$ for the *$theta$-heavy bias set*.
+  For $theta in (0, 1]$ — we never take $theta$ larger — write $heavyB = {V : |b_V| >= theta}$ for the *$theta$-heavy bias set*; since $b_emptyset = 1$, always $emptyset in heavyB$, so $|heavyB| >= 1$.
 ]<defn:bias-spectrum>
 
 #lemma[Convolution Identity][
@@ -258,7 +264,7 @@ Conversely, whenever the bias spectrum is _dominated by few heavy terms_, the da
 
 #theorem[Dataset Goldreich-Levin, model-query access][
   Let $f : {-1,1}^n -> [-1,1]$ with $norm(hat(f))_1 <= A$ be given by $sans("QUERY")$ access, and let $calD$ be given by $sans("SAMP")$ access.
-  Let $0 < tau <= 1$, $delta in (0,1)$, fix any $theta <= min(1, tau \/ (4A))$ (so that $emptyset in heavyB$ and $|heavyB| >= 1$), and suppose the $theta$-heavy bias set $heavyB$ of $calD$ is given explicitly (e.g., via @thm:context-gl applied to $f equiv 1$, or from prior structural knowledge).
+  Let $0 < tau <= 1$, $delta in (0,1)$, fix any $theta <= tau \/ (4A)$, and suppose the $theta$-heavy bias set $heavyB$ of $calD$ is given explicitly (e.g., via @thm:context-gl applied to $f equiv 1$, or from prior structural knowledge).
   Then there is an algorithm running in time $"poly"(n, |heavyB|, 1\/tau, log(1\/delta))$, using $"poly"(n, |heavyB|, 1\/tau) dot log(1\/delta)$ queries to $f$ and $O(log(|heavyB| \/ (tau delta)) \/ tau^2)$ samples from $calD$, that with probability at least $1 - delta$ outputs a list $L$ satisfying:
   + (Completeness) $|dcoeff(S)| >= tau ==> S in L$;
   + (Soundness) $S in L ==> |dcoeff(S)| >= tau \/ 2$;
@@ -296,7 +302,7 @@ Note that the algorithm uses only the _set_ $heavyB$, never the values $b_V$; an
 Running the completeness argument purely combinatorially (Parseval bounds the number of $tau'$-heavy global coefficients by $1 \/ tau'^2$) also yields an unconditional structural bound:
 
 #corollary[List-Size Bound under Sparse Bias Spectrum][
-  If $f : {-1,1}^n -> [-1,1]$ with $norm(hat(f))_1 <= A$, and $theta <= min(1, tau \/ (4A))$, then
+  If $f : {-1,1}^n -> [-1,1]$ with $norm(hat(f))_1 <= A$, and $theta <= tau \/ (4A)$, then
   $
   |{S : |dcoeff(S)| >= tau}| <= frac(16 |heavyB|^3, 9 tau^2).
   $
@@ -339,7 +345,7 @@ Classical GL powers the Kushilevitz-Mansour learning algorithm @kushilevitz1993l
 The spectral-norm hypothesis is exactly the $A$ of @thm:dataset-gl --- the same $L^1$-geometry exploited by agnostic decision-tree learning @gopalan2008agnostically --- so the on-distribution analogue of the coefficient-collection step comes for free:
 
 #corollary[Heavy On-Dataset Coefficients of Decision Trees][
-  Let $f : {-1,1}^n -> {-1,1}$ be computable by a decision tree of size $s$ (so $norm(hat(f))_1 <= s$), given by $sans("QUERY")$ access, and let $heavyB$ be the $theta$-heavy bias set of $calD$ for some $theta <= min(1, tau \/ (4s))$.
+  Let $f : {-1,1}^n -> {-1,1}$ be computable by a decision tree of size $s$ (so $norm(hat(f))_1 <= s$), given by $sans("QUERY")$ access, and let $heavyB$ be the $theta$-heavy bias set of $calD$ for some $theta <= tau \/ (4s)$.
   Then all $S$ with $|dcoeff(S)| >= tau$ can be listed in time $"poly"(n, s, |heavyB|, 1\/tau, log(1\/delta))$.
 ]<cor:km-datasets>
 

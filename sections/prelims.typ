@@ -157,7 +157,9 @@ There is no Parseval identity over $calD$; what is true is off by exactly the de
   $
   sum_alpha basis_alpha (x) basis_alpha (x') = |calT|^n dot bb(1)[x = x']
   $
-  (the matrix $M_(alpha, x) = basis_alpha (x) \/ sqrt(|calT|^n)$ has orthonormal rows; since the uniform measure has full support, orthonormality forces $|I| <= |calT|^n$ and completeness forces $|I| = |calT|^n$, so $M$ is _square_ and its columns are orthonormal as well).
+  (the matrix $M_(alpha, x) = basis_alpha (x) \/ sqrt(|calT|^n)$ is square with orthonormal rows, hence orthonormal columns#footnote[
+    Squareness: since the uniform measure has full support, orthonormality forces $|I| <= |calT|^n$, and completeness forces $|I| = |calT|^n$.
+  ]).
   Now expand and swap sums:
   $
   sum_alpha dcoeff(alpha)^2 = frac(1, |calD|^2) sum_(x, x' in calD) f(x) f(x') sum_alpha basis_alpha (x) basis_alpha (x') = frac(|calT|^n, |calD|^2) sum_(x in calD) f(x)^2 = normC dot EE_calD [f^2].
@@ -239,15 +241,17 @@ As a first payoff, the classical Low-Degree Algorithm @o2021analysis survives on
 The scaling matters: in the half-cube example above, the unscaled plug-in reconstruction of $f = x_2$ at degree $2$ returns $chi_2 + chi_(12) = 2 x_2$ on $calD$ — error $1$ with exact coefficients and zero tail — because each character is counted once per alias.
 The frame reconstruction returns $(x_2 + x_1 x_2)\/2 = x_2$ on $calD$, exactly — by part (3) of @lem:dataset-parseval together with the fact that all coefficients outside ${chi_2, chi_(12)}$ vanish there.
 
+Two standing conventions for the statement.
+The one-coordinate basis is assumed _$B$-bounded_ — $norm(basis_j)_infinity <= B$ for all $j$, so that $norm(basis_alpha)_infinity <= B^d$ whenever $\#alpha <= d$; for the parity characters, and for any group-character basis, $B = 1$.
+And we write $N_d = |{alpha : \#alpha <= d}| = sum_(k <= d) binom(n, k) (|calT| - 1)^k <= (1 + n(|calT| - 1))^d$ for the number of low-degree indices.
+
 #theorem[Learning Low-Degree Functions over a Dataset][
-  Suppose the one-coordinate basis is uniformly bounded, $norm(basis_j)_infinity <= B$ for all $j$ (so $norm(basis_alpha)_infinity <= B^d$ whenever $\#alpha <= d$; $B = 1$ for the parity characters, and for any group-character basis).
   Let $f : calD -> [-1, 1]$ and suppose the normalized high-degree weight satisfies
   $
   sum_(k > d) overline(W)^k_calD [f] <= eps / 4
   $
   (e.g., $d >= 4 overline(S) \/ eps$ suffices when $sum_k k dot overline(W)^k_calD [f] <= overline(S)$).
-  Write $N_d = |{alpha : \#alpha <= d}| = sum_(k <= d) binom(n, k) (|calT| - 1)^k <= (1 + n(|calT| - 1))^d$.
-  Given $|calD|$ (hence $normC$) and $m = O(B^(2d) N_d / eps dot log (N_d \/ delta))$ samples from $calD$, one can output $h$ that is $eps_calD$-close to $f$ with probability at least $1 - delta$.
+  Given $|calD|$ and $m = O(B^(2d) N_d / eps dot log (N_d \/ delta))$ samples from $calD$, one can output $h$ that is $eps_calD$-close to $f$ with probability at least $1 - delta$.
 ]<thm:learning-low-degree>
 #proof[
   *Algorithm.* For each $\#alpha <= d$, estimate $dcoeff(alpha)$ by $tilde(f)(alpha) = frac(1, m) sum_(j = 1)^m f(x^((j))) basis_alpha (x^((j)))$; output the _scaled_ reconstruction $h = normCInv sum_(\#alpha <= d) tilde(f)(alpha) basis_alpha$ (this scaling is where knowledge of $|calD|$ enters).
@@ -269,3 +273,27 @@ Two remarks.
 First, the hypothesis is stated in normalized weights, the correct analogue of "$eps$ of Fourier weight above degree $d$"; in raw dataset units it reads $sum_(k > d) sum_(\#alpha = k) dcoeff(alpha)^2 <= normC eps \/ 4$.
 Second, for a _generic_ sparse dataset the hypothesis is genuinely demanding — it asks the lift $calD compose f$ to be low-degree concentrated in $L^2 (mu)$ — and the next section shows this is not an artifact of our proof but a structural fact about datasets.
 Structured datasets (dense ones, or subcube-like ones as in the example above) satisfy it naturally.
+
+== Notation Summary
+
+For reference, the recurring symbols of the paper (the last four families are introduced in the Goldreich-Levin section):
+
+#table(
+  columns: (auto, 1fr),
+  stroke: none,
+  inset: (x: 8pt, y: 4pt),
+  table.hline(stroke: 0.7pt),
+  table.header([*Symbol*], [*Meaning*]),
+  table.hline(stroke: 0.4pt),
+  [$hat(f)(alpha)$], [global Fourier coefficient $EE_(x ~ mu) [f basis_alpha]$],
+  [$dcoeff(alpha)$], [dataset coefficient $EE_(x ~ calD) [f basis_alpha]$ — the estimable correlation],
+  [$ncoeff(alpha) = normC^(-1\/2) dcoeff(alpha)$], [normalized (Parseval-frame) coefficient — the unit for energy and closeness],
+  [$normC = |calT|^n \/ |calD|$], [density constant; frame bound of ${basis_alpha|_calD}$],
+  [$calD compose f$], [the lift: $f$ on $calD$, $0$ elsewhere; $hat((calD compose f)) = normCInv hat(f)_calD$],
+  [$overline(W)^k_calD [f] = sum_(\#alpha = k) ncoeff(alpha)^2$], [normalized level weight; $sum_k overline(W)^k = EE_calD [f^2]$],
+  [$b_V$, $B_theta$], [bias spectrum of $calD$ (dataset coefficients of $1$); its $theta$-heavy set],
+  [$overline(v)_S (z)$, $Psi(S|J)$], [average with context $z$ fixed; conditional bucket weight $EE_z [overline(v)_S (z)^2]$],
+  [$c_k$, $R_k$], [context profile (distinct contexts at level $k$); level mass $sum_S Psi$],
+  [$N_k$, $N$], [live-bucket profile: buckets with $Psi >= tau^2\/4$ at level $k$; its maximum],
+  table.hline(stroke: 0.7pt),
+)
