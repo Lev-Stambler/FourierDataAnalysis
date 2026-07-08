@@ -15,6 +15,8 @@
 #let hermite = $h$
 #let Hermite = $H$
 #let dcoeff(a) = $hat(f)_calD (#a)$
+#let ncoeff(a) = $breve(f)_calD (#a)$
+#let nbasis = $breve(basis)$
 
 = Fourier Analysis on a Dataset
 
@@ -93,6 +95,8 @@ For product spaces there is a standard way to measure how much $f$ depends on a 
   The first claim is orthonormality in the $i$-th factor ($EE_(a ~ mu_i) [basis_(alpha_i) (a)] = iprod(basis_(alpha_i), basis_0) = delta_(alpha_i, 0)$); the rest is Parseval applied to $f - E^i f = sum_(alpha : alpha_i != 0) hat(f)(alpha) basis_alpha$.
 ]
 
+This classical quantity is the spectral form of the total-effect (Sobol) index of variance-based global sensitivity analysis @sobol2001global @hooker2007generalized; estimated over data, it underlies variance-based feature attribution @datta2016algorithmic — a connection the dataset version below makes literal.
+
 == Datasets: the Basic Dictionary
 
 Now for the object of study.
@@ -164,26 +168,38 @@ For a non-uniform finite base measure the same proof gives the weighted form $su
 This is why we fix a finite alphabet.
 
 Since $normC$ is enormous for small datasets, the total dataset Fourier mass is _not_ $EE_calD [f^2]$; a function of unit norm on the dataset carries $normC$ worth of squared coefficients, smeared across aliases.
-Applying @lem:mass to a difference gives the identity we will actually use:
+The constant, however, is not a defect to be endured — it is a normalization to be absorbed.
+In the language of frame theory, @lem:mass says precisely that the restricted characters ${basis_alpha|_calD}$ form a _tight frame_ for $L^2 (calD)$ with frame bound $normC$; dividing each frame vector by $sqrt(normC)$ yields a _Parseval frame_, for which every identity we care about holds over the dataset with no constants at all.
 
-#lemma[Parseval for Dataset Closeness][
-  For $f, g : calD -> RR$,
+#definition[Normalized Dataset Coefficients][
+  The _normalized characters_ and _normalized dataset coefficients_ are
   $
-  EE_(x ~ calD) [(f(x) - g(x))^2] = normCInv sum_alpha (dcoeff(alpha) - hat(g)_calD (alpha))^2 .
+  nbasis_alpha = normC^(-1\/2) basis_alpha, quad quad ncoeff(alpha) = iprod(f, nbasis_alpha)_calD = normC^(-1\/2) dcoeff(alpha).
   $
+]<defn:normalized-coeffs>
+
+#theorem[Parseval and Closeness over the Dataset][
+  For all $f, g : calD -> RR$:
+  + (Parseval) $sum_alpha ncoeff(alpha)^2 = EE_(x ~ calD) [f(x)^2]$;
+  + (Closeness) $EE_(x ~ calD) [(f(x) - g(x))^2] = sum_alpha (ncoeff(alpha) - breve(g)_calD (alpha))^2$;
+  + (Reconstruction) $f(x) = sum_alpha ncoeff(alpha) nbasis_alpha (x)$ for every $x in calD$.
 ]<lem:dataset-parseval>
 #proof[
-  By linearity of $EE_calD$, $hat((f - g))_calD (alpha) = dcoeff(alpha) - hat(g)_calD (alpha)$; apply @lem:mass to $f - g$.
+  (1) is @lem:mass divided by $normC$; (2) is (1) applied to $f - g$, using linearity of $EE_calD$; (3) is @prop:inversion, with the two factors of $normC^(-1\/2)$ recombining into $normCInv$.
 ]
 
+Everything on both sides of @lem:dataset-parseval is over the dataset — no expectation over $calT^n$ appears — and there are no stray constants.
+The normalization is doing exactly one thing: bookkeeping the overcompleteness.
+($L^2 (calD)$ has dimension $|calD|$, yet the frame has $|calT|^n$ vectors, each of norm $normC^(-1\/2)$ over $calD$; aliasing is this overcompleteness made visible.)
+The raw coefficient $dcoeff(alpha) = EE_calD [f basis_alpha]$ remains the _estimable correlation_ — the quantity a sampling algorithm sees, and the natural unit for heavy-coefficient search in the Goldreich-Levin section — while $ncoeff(alpha)$ is the natural unit for energy and closeness; translating between them costs exactly one factor of $sqrt(normC)$.
+
 #definition[$eps_calD$-closeness; Normalized Weights][
-  We say $g$ is _$eps_calD$-close_ to $f$ if $EE_(x ~ calD) [(f(x) - g(x))^2] <= eps$ — equivalently, $normC dot EE_(x ~ mu) [((calD compose f)(x) - (calD compose g)(x))^2] <= eps$.
+  We say $g$ is _$eps_calD$-close_ to $f$ if $EE_(x ~ calD) [(f(x) - g(x))^2] <= eps$.
   The _normalized level weights_ are
   $
-  overline(W)^k_calD [f] = normCInv sum_(\#alpha = k) dcoeff(alpha)^2, quad "so that" quad sum_(k >= 0) overline(W)^k_calD [f] = EE_calD [f^2]
+  overline(W)^k_calD [f] = sum_(\#alpha = k) ncoeff(alpha)^2, quad "so that" quad sum_(k >= 0) overline(W)^k_calD [f] = EE_calD [f^2]
   $
-  by @lem:mass.
-  Closeness is always measured _over the dataset_; only the coefficient side of @lem:dataset-parseval carries the normalization.
+  by @lem:dataset-parseval.
 ]<defn:eps-closeness>
 
 == Averaging and Sensitivity on a Dataset
@@ -203,7 +219,7 @@ On a dataset, resampling a coordinate may leave the data; the natural operator z
 
 #proposition[Dataset Sensitivity Bound][
   $
-  Sens^i_calD [f] <= normC dot EE_(x ~ mu) [((calD compose f) - E^i [calD compose f])^2] = normCInv sum_(alpha : alpha_i != 0) dcoeff(alpha)^2,
+  Sens^i_calD [f] <= normC dot EE_(x ~ mu) [((calD compose f) - E^i [calD compose f])^2] = sum_(alpha : alpha_i != 0) ncoeff(alpha)^2,
   $
   and the inequality is an equality when $(calD compose f) - E^i [calD compose f]$ is supported on $calD$.
   Consequently $bIS_calD [f] := sum_i Sens^i_calD [f] <= sum_(k >= 1) k dot overline(W)^k_calD [f]$.
@@ -215,14 +231,13 @@ On a dataset, resampling a coordinate may leave the data; the natural operator z
 
 The inequality can be strict, and the naive analogue of @prop:global-sensitivity with dataset coefficients (no $normCInv$) is simply false.
 A useful example to remember: $calD = {x : x_1 = 1} subset {-1,1}^n$ and $f = x_2$.
-Then $Sens^2_calD [f] = 1$, while $chi_({2})$ and $chi_({1,2})$ alias on $calD$, so $sum_(alpha : alpha_2 != 0) dcoeff(alpha)^2 = 1 + 1 = 2$; the bound of @prop:dataset-sensitivity gives $2 \/ normC = 1$ (here $normC = 2$) — tight.
+Then $Sens^2_calD [f] = 1$, while $chi_({2})$ and $chi_({1,2})$ alias on $calD$, so $sum_(alpha : alpha_2 != 0) dcoeff(alpha)^2 = 1 + 1 = 2$; in normalized units the bound of @prop:dataset-sensitivity reads $sum_(alpha : alpha_2 != 0) ncoeff(alpha)^2 = 2 \/ normC = 1$ (here $normC = 2$) — tight.
 
 == Learning Low-Degree Functions from Dataset Samples
 
-As a first payoff, the classical Low-Degree Algorithm @o2021analysis survives on datasets, _provided_ the reconstruction is scaled by $normCInv$.
+As a first payoff, the classical Low-Degree Algorithm @o2021analysis survives on datasets, _provided_ the reconstruction is the truncated _frame_ expansion $sum_(\#alpha <= d) ncoeff(alpha) nbasis_alpha$ — equivalently, the raw plug-in reconstruction scaled by $normCInv$.
 The scaling matters: in the half-cube example above, the unscaled plug-in reconstruction of $f = x_2$ at degree $2$ returns $chi_2 + chi_(12) = 2 x_2$ on $calD$ — error $1$ with exact coefficients and zero tail — because each character is counted once per alias.
-The scaled reconstruction returns $(x_2 + x_1 x_2)\/2 = x_2$ on $calD$, exactly.
-In general, the $normC$ of @lem:dataset-parseval cancels against the two factors of $normCInv$ in the scaled output, via @prop:inversion.
+The frame reconstruction returns $(x_2 + x_1 x_2)\/2 = x_2$ on $calD$, exactly, as guaranteed by part (3) of @lem:dataset-parseval.
 
 #theorem[Learning Low-Degree Functions over a Dataset][
   Let $f : calD -> [-1, 1]$ and suppose the normalized high-degree weight satisfies
@@ -248,7 +263,7 @@ In general, the $normC$ of @lem:dataset-parseval cancels against the two factors
   For the second term: each $tilde(f)(alpha)$ averages $m$ i.i.d. terms in $[-1, 1]$ with mean $dcoeff(alpha)$; by Hoeffding and a union bound over the $O(n^d)$ low-degree indices, the stated $m$ makes every deviation at most $eps \/ (2 n^(d \/ 2))$, so the sum is at most $eps^2 \/ 4$ even before the (generous) factor $normCInv <= 1$.
 ]
 
-Two remarks, in the spirit of honesty.
+Two remarks.
 First, the hypothesis is stated in normalized weights, the correct analogue of "$eps^2$ of Fourier weight above degree $d$"; in raw dataset units it reads $sum_(k > d) sum_(\#alpha = k) dcoeff(alpha)^2 <= normC eps^2 \/ 4$.
 Second, for a _generic_ sparse dataset the hypothesis is genuinely demanding — it asks the lift $calD compose f$ to be low-degree concentrated in $L^2 (mu)$ — and the next section shows this is not an artifact of our proof but a structural fact about datasets.
 Structured datasets (dense ones, or subcube-like ones as in the example above) satisfy it naturally.
