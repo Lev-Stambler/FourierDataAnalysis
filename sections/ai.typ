@@ -1,4 +1,5 @@
 #import "../levs-commands/main_commands.typ": *
+#import "../custom_commands.typ": *
 #show: thmrules
 #show: eqrules
 
@@ -263,6 +264,8 @@ We now adapt the above to the setting where we have a finite dataset $calD subse
   $
 ]
 
+#if false [
+// INCORRECT (kept for comparison — see the CLAUDE note below):
 #proposition[Sensitivity via Fourier Coefficients][
   For orthonormal bases with product structure indexed by $(alpha_1, dots, alpha_n)$,
   $
@@ -288,6 +291,21 @@ We now adapt the above to the setting where we have a finite dataset $calD subse
   Sens_calD^i [f] = sum_alpha hat(f)_calD (alpha)^2 - sum_(alpha : alpha_i = 0) hat(f)_calD (alpha)^2 = sum_(alpha : alpha_i != 0) hat(f)_calD (alpha)^2.
   $
 ]
+]
+#CLAUDE[
+  The proposition formerly here (deactivated above, kept for comparison) claimed $Sens_calD^i [f] = sum_(alpha : alpha_i != 0) hat(f)_calD (alpha)^2$.
+  This is *false as an equality*: its proof invokes "Parseval over the dataset distribution," but ${basis_alpha}$ is orthonormal in $L^2 (Omega^n, mu)$, _not_ in $L^2 (calD)$ (see the Mass Identity, @lem:mass, in the Goldreich-Levin section: $sum_alpha hat(f)_calD (alpha)^2 = normC dot EE_calD [f^2]$, not $EE_calD [f^2]$).
+  Counterexample (verified numerically): $calD = {x : x_1 = 1} subset {-1,1}^n$, $f = x_2$, $i = 2$.
+  Then $Sens_calD^2 [f] = 1$, while $sum_(alpha : alpha_2 != 0) hat(f)_calD (alpha)^2 = 2$ (the coefficients at ${2}$ and ${1,2}$ alias on $calD$ and both equal $1$).
+
+  What _is_ true (writing $calD compose f$ for the lift that is $f$ on $calD$ and $0$ elsewhere, so that $hat(calD compose f) (alpha) = normCInv hat(f)_calD (alpha)$; finite alphabet, uniform base measure): $E_calD^i [f] = E^i [calD compose f]$ exactly, and
+  $
+  Sens_calD^i [f] <= normC dot EE_(x ~ mu) [(calD compose f - E^i [calD compose f])^2] = normCInv sum_(alpha : alpha_i != 0) hat(f)_calD (alpha)^2,
+  $
+  with the inequality from dropping the indicator ($EE_calD [q^2] = normC EE_mu [calD dot q^2] <= normC EE_mu [q^2]$) and the equality from honest Parseval in $L^2 (mu)$ applied to the lift.
+  On the counterexample: $1 <= 2 \/ normC = 1$ (here $normC = 2$), tight.
+  A full corrected treatment of the sensitivity machinery is deferred — it is not needed for the Goldreich-Levin section, which is self-contained.
+]
 
 #definition[Total Dataset Sensitivity][
   $
@@ -301,6 +319,8 @@ We now adapt the above to the setting where we have a finite dataset $calD subse
   $
 ]
 
+#if false [
+// INCORRECT (kept for comparison — see the CLAUDE note below):
 #proposition[Total Sensitivity via Fourier Spectrum][
   $
   bIS_calD [f] = sum_(alpha) |alpha| dot hat(f)_calD (alpha)^2 = sum_(k >= 1) k dot W^k_calD [f].
@@ -314,6 +334,15 @@ We now adapt the above to the setting where we have a finite dataset $calD subse
   Each $alpha$ with $|alpha| = k$ appears in exactly $k$ of the inner sums (once for each $i$ where $alpha_i != 0$).
   Thus $bIS_calD [f] = sum_alpha |alpha| dot hat(f)_calD (alpha)^2 = sum_(k >= 1) k dot W^k_calD [f]$.
 ]
+]
+#CLAUDE[
+  Deactivated: this summed the incorrect per-coordinate equality above.
+  The summation argument itself is fine, so what survives is the corresponding inequality with the normalized weights $overline(W)^k_calD [f] := normCInv W^k_calD [f]$ (which satisfy $sum_k overline(W)^k_calD [f] = EE_calD [f^2]$ by @lem:mass):
+  $
+  bIS_calD [f] <= sum_(k >= 1) k dot overline(W)^k_calD [f],
+  $
+  with equality when each $Sens_calD^i$ is replaced by its lifted version.
+]
 
 #definition[Dataset Closeness][
   We say $g$ is _$eps$-close_ to $f$ over $calD$ if
@@ -322,6 +351,8 @@ We now adapt the above to the setting where we have a finite dataset $calD subse
   $
 ]
 
+#if false [
+// INCORRECT (kept for comparison — see the CLAUDE note below):
 #lemma[Parseval for Dataset Closeness][
   $
   EE_(x ~ calD) [(f(x) - g(x))^2] = sum_(alpha) (hat(f)_calD (alpha) - hat(g)_calD (alpha))^2.
@@ -337,9 +368,29 @@ We now adapt the above to the setting where we have a finite dataset $calD subse
 ]
 
 This lemma reduces proving $eps$-closeness to bounding the sum of squared coefficient differences.
+]
+#CLAUDE[
+  The deactivated lemma above is off by exactly the factor $normC$: there is no Parseval identity "over the dataset distribution," and numerically the ratio of its right-hand side to its left-hand side equals $normC$ on random instances.
+  The corrected statement is simply the Mass Identity (@lem:mass) applied to $f - g$:
+]
+
+#lemma[Parseval for Dataset Closeness, corrected][
+  For a finite alphabet with uniform base measure,
+  $
+  EE_(x ~ calD) [(f(x) - g(x))^2] = normCInv sum_(alpha) (hat(f)_calD (alpha) - hat(g)_calD (alpha))^2.
+  $
+]<lem:dataset-closeness-corrected>
+#proof[
+  By linearity $hat((f - g))_calD (alpha) = hat(f)_calD (alpha) - hat(g)_calD (alpha)$; apply @lem:mass to $h = f - g$.
+]
+
+Note the $eps$-closeness on the left is still measured _over the dataset_ — only the coefficient side carries the normalization.
+(For a non-uniform finite base measure the identity holds in the weighted form $sum_alpha hat(h)_calD (alpha)^2 = frac(1, |calD|^2) sum_(x in calD) h(x)^2 \/ mu(x)$; for continuous $Omega$, e.g. Gaussian space, the coefficient sum diverges.)
 
 == Learning Low-Degree Functions
 
+#if false [
+// INCORRECT (kept for comparison — see the CLAUDE note below):
 #theorem[Learning Low-Degree Fourier Functions][
   Let $f : Omega^n -> RR$ be bounded with total sensitivity $bIS_calD [f] <= S$.
   Given $d >= 4 S / eps^2$ and $m = O(n^d / eps^2 dot log n)$ samples from $calD$, one can output $g$ that is $eps$-close to $f$ with probability $>= 2 / 3$.
@@ -361,3 +412,49 @@ This lemma reduces proving $eps$-closeness to bounding the sum of squared coeffi
   $
   Total: $EE_calD [(f - g)^2] <= eps^2 / 2 < eps$.
 ]
+]
+#CLAUDE[
+  The deactivated theorem above fails in two ways, but — as suspected — the constants _do_ cancel once the reconstruction is normalized correctly, and a corrected theorem survives with the same shape.
+
+  _Failure 1 (aliasing, not scaling)._
+  The plug-in output $g = sum_(|alpha| <= d) tilde(f)(alpha) basis_alpha$ counts each character once per alias class.
+  Concrete counterexample with *exact* coefficients and a *satisfied* tail hypothesis (verified numerically): $calD = {x : x_1 = 1} subset {-1,1}^n$, $f = x_2$, $d = 2$.
+  Here $hat(f)_calD ({2}) = hat(f)_calD ({1,2}) = 1$ (aliases on $calD$), the tail $sum_(|S| > 2) hat(f)_calD (S)^2 = 0$, yet $g = chi_2 + chi_(12) = 2 x_2$ on $calD$, so $EE_calD [(f - g)^2] = 1$.
+  _Failure 2._ The analysis uses the incorrect closeness lemma, and additionally conflates the output's design coefficients $tilde(f)(alpha)$ with its dataset coefficients $hat(g)_calD (alpha)$.
+
+  _The fix: scale the reconstruction by $normCInv$._
+  On the counterexample, $normCInv (chi_2 + chi_(12)) = (x_2 + x_1 x_2) \/ 2 = x_2$ on $calD$ — exact recovery.
+  In general the $normC$ from the closeness relation and the $normCInv$ in the reconstruction cancel through the inversion identity $f(x) = normCInv sum_alpha hat(f)_calD (alpha) basis_alpha (x)$ for $x in calD$ (equivalently: the scaled empirical coefficients estimate the _lifted_ coefficients $hat(calD compose f) (alpha) = normCInv hat(f)_calD (alpha)$, and honest Parseval applies to the lift in $L^2 (mu)$).
+  The corrected theorem and proof follow; the closeness guarantee is still over the dataset.
+]
+
+#theorem[Learning Low-Degree Fourier Functions, corrected][
+  Finite alphabet, uniform base measure.
+  Let $f : calD -> [-1, 1]$ and suppose the normalized high-degree weight satisfies
+  $
+  normCInv sum_(k > d) W^k_calD [f] <= eps^2 / 4
+  $
+  (e.g., $d >= 4 overline(S) \/ eps^2$ when $sum_k k dot overline(W)^k_calD [f] <= overline(S)$).
+  Given $m = O(n^d / eps^2 dot log (n^d \/ delta))$ samples from $calD$, one can output $h$ with $EE_(x ~ calD) [(f(x) - h(x))^2] <= eps^2$ with probability $>= 1 - delta$.
+]<thm:learning-low-degree-corrected>
+#proof[
+  *Algorithm:* For each $|alpha| <= d$, estimate $hat(f)_calD (alpha)$ by $tilde(f)(alpha) = frac(1, m) sum_(j = 1)^m f(x^((j))) basis_alpha (x^((j)))$.
+  Output the _scaled_ reconstruction $h = normCInv sum_(|alpha| <= d) tilde(f)(alpha) basis_alpha$.
+
+  *Analysis:* Write $g^arrow.t = calD compose f$ for the lift, with $hat(g^arrow.t) (alpha) = normCInv hat(f)_calD (alpha)$, and note $f = g^arrow.t$ on $calD$.
+  Dropping the indicator and applying Parseval in $L^2 (mu)$:
+  $
+  EE_calD [(f - h)^2] = normC dot EE_mu [calD dot (g^arrow.t - h)^2] &<= normC dot EE_mu [(g^arrow.t - h)^2] \
+  &= normC sum_alpha (hat(g^arrow.t) (alpha) - hat(h) (alpha))^2.
+  $
+  Since $hat(h) (alpha) = normCInv tilde(f)(alpha)$ for $|alpha| <= d$ and $0$ otherwise, the $normC$ cancels against the two factors of $normCInv$:
+  $
+  EE_calD [(f - h)^2] <= underbrace(normCInv sum_(k > d) W^k_calD [f], <= eps^2 / 4 "(hypothesis)") + underbrace(normCInv sum_(|alpha| <= d) (hat(f)_calD (alpha) - tilde(f)(alpha))^2, <= eps^2 / 4 "w.h.p.").
+  $
+  For the second term, each $tilde(f)(alpha)$ is an average of $m$ i.i.d. terms in $[-1,1]$ with mean $hat(f)_calD (alpha)$; by Hoeffding and a union bound over the $O(n^d)$ low-degree indices, $m = O(n^d \/ eps^2 dot log(n^d \/ delta))$ samples make every deviation at most $eps \/ (2 n^(d\/2))$, so the sum is at most $eps^2 / 4$ even before the (generous) $normCInv <= 1$ factor.
+  Total: $EE_calD [(f - h)^2] <= eps^2 / 2 <= eps^2$.
+]
+
+Two remarks.
+First, the hypothesis is stated in _normalized_ weights: $sum_k overline(W)^k_calD [f] = EE_calD [f^2]$ by @lem:mass, so "$eps^2$-of-normalized-tail" is the correct analogue of the classical "$eps^2$-of-Fourier-weight" condition; in raw dataset units the same hypothesis reads $sum_(k > d) W^k_calD [f] <= normC eps^2 \/ 4$.
+Second, for a generic sparse dataset the hypothesis is genuinely strong — the lift $calD compose f$ must be low-degree concentrated in $L^2 (mu)$ — consistent with the obstructions in the Goldreich-Levin section; structured (e.g., dense or subcube-like) datasets satisfy it naturally.

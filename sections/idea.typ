@@ -1,4 +1,5 @@
 #import "../levs-commands/main_commands.typ": *
+#import "../custom_commands.typ": *
 #show: thmrules
 #show: eqrules
 #set math.equation(numbering: none)
@@ -85,6 +86,8 @@ We can now define influence:
   $
 ]
 
+#if false [
+// INCORRECT (kept for comparison — see the CLAUDE note below):
 #proposition[
   We now prove that basic identities still hold as in O'Donnell's Analysis of Boolean Functions @o2021analysis:
   $
@@ -113,6 +116,12 @@ We can now define influence:
   $
 
 ]
+]
+#CLAUDE[
+  Deactivated: the `TODO[check constants]` concern was warranted.
+  What survives (see the corrected treatment in the next section): the averaging operator satisfies $E_calD^i f = normCInv sum_(S : S_i = 0) hat(f) (S) chi_S$ on $calD$ (constant $normCInv$, not $normC$ — via the lift $hat((calD circ f))_orig (S) = normCInv hat(f) (S)$ and standard Fourier analysis in $L^2 (calT^n)$), and the influence obeys the _inequality_ $Inf_calD^i f <= normCInv sum_(S : S_i != 0) hat(f) (S)^2$, with equality for the lifted influence.
+  The equality claimed here fails because there is no Parseval identity over the $calD$-measure; counterexample and details in the CLAUDE notes of the next section.
+]
 
 Just as in #TODO[cite], we can define total influence and get some convenient corollaries:
 #definition[
@@ -122,6 +131,8 @@ Just as in #TODO[cite], we can define total influence and get some convenient co
   bI_inD [f] = sum_(i in [n]) Inf_inD^i [f].
   $
 ]
+#if false [
+// INCORRECT (kept for comparison — see the CLAUDE note below):
 We immediately get:
 #proposition[
   $
@@ -133,6 +144,10 @@ We immediately get:
   $
 ]
 as in page 213 of #TODO[a] where $\# S = |"supp" (S)| = "supp" (S) = {i : S_i != 0}$.
+]
+#CLAUDE[
+  Deactivated: this summed the incorrect per-coordinate equality above; what survives is $bI_inD [f] <= normCInv sum_S \# S " " hat(f) (S)^2$ (see the corrected notes in the next section).
+]
 
 Finally, we introduce one more definition which will capture the closeness of two functions, $f, g$ over $calD$.
 
@@ -143,8 +158,11 @@ Finally, we introduce one more definition which will capture the closeness of tw
   $
   or equivalently,
   $
-  normCInv Expec_(x in TotalSpace) [(calD circ f(x) - calD circ g(x))^2] <= eps.
+  normC Expec_(x in TotalSpace) [(calD circ f(x) - calD circ g(x))^2] <= eps.
   $
+]
+#CLAUDE[
+  Fixed the constant in the "equivalently" line: it previously read $normCInv$, but $Expec_(x in calD) [h^2] = normC dot Expec_(x in TotalSpace) [(calD circ h)^2]$ (the full-space average carries the extra factor $normCInv$ from the zeros off $calD$, which the $normC$ undoes).
 ]
 
 == Immediate Consequences
@@ -154,10 +172,17 @@ Finally, we introduce one more definition which will capture the closeness of tw
 We can already adopt learning low-degree functions from random examples to our setting.
 Specifically, if the in-distribution Fourier mass is concentrated on low-degree terms, we can learn the function from random examples drawn from $calD$.
 
+#if false [
+// INCORRECT (kept for comparison — see the CLAUDE note below):
 #TODO[this is auto-gened, check over and make right! CLAUDE CHECK]
 #theorem[
   Let $f : calT^n -> RR$ be a function such that $sum_(S : |S| > d) hat(f) (S)^2 <= eps^2 / 4$.
   Then, there exists an algorithm which, given $O(frac(n^d, eps^2) log(n))$ random examples from $calD$, outputs a function $g$ which is $eps_calD$ close to $f$ with probability at least $2/3$.
+]
+]
+#CLAUDE[
+  Checked, as requested by the deactivated `CLAUDE CHECK` marker: the auto-generated theorem was not right as stated — the tail hypothesis needs the normalization $normCInv sum_(S : |S| > d) hat(f) (S)^2 <= eps^2 \/ 4$, and the reconstruction must be scaled by $normCInv$ (otherwise aliased coefficients are double-counted; explicit counterexample in the next section).
+  The corrected statement and proof appear as the "Learning Low-Degree Fourier Functions, corrected" theorem (@thm:learning-low-degree-corrected) in the next section.
 ]
 
 #h3([

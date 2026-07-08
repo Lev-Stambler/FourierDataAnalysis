@@ -96,11 +96,7 @@ The first casualty is Parseval.
 ]
 
 Since $normC$ is exponentially large for small datasets, the total dataset Fourier mass is _not_ bounded by $EE_calD [f^2]$: Parseval fails over $calD$ by exactly the factor $normC$.
-#TODO[
-  @lem:mass contradicts the "Parseval for Dataset Closeness" lemma of the previous section, which asserts $EE_(x ~ calD) [(f - g)^2] = sum_alpha (hat(f)_calD (alpha) - hat(g)_calD (alpha))^2$; the right-hand side is in fact $normC$ times the left.
-  The basis ${phi_alpha}$ is orthonormal in $L^2 (Omega^n, mu)$, not in $L^2 (calD)$.
-  The "Learning Low-Degree Fourier Functions" theorem built on that lemma needs to be revisited as well.
-]
+(This factor propagates backwards: the closeness lemma and low-degree learning theorem of the previous section originally omitted it and have been corrected there — see @lem:dataset-closeness-corrected and @thm:learning-low-degree-corrected, where the normalization constants cancel through the $normCInv$-scaled reconstruction.)
 
 Two immediate consequences.
 First, the number of $tau$-heavy coefficients can be as large as $normC dot EE_calD [f^2] \/ tau^2$, i.e., exponential; so no analogue of the list-size bound $|L| <= 4 \/ tau^2$ can hold unconditionally.
@@ -302,11 +298,11 @@ The spectral-norm hypothesis is exactly the $A$ of @thm:dataset-gl, so we get th
 ]<cor:km-datasets>
 
 We emphasize what @cor:km-datasets does _not_ yet give: an $eps_calD$-close sparse approximation to $f$.
-Classically, coefficient collection plus Parseval yields the learning guarantee; over a dataset, Parseval fails (@lem:mass), so bounding $EE_(x ~ calD) [(f - g)^2]$ for a sparse $g$ assembled from the recovered coefficients requires genuinely new arguments.
+Classically, coefficient collection plus Parseval yields the learning guarantee; over a dataset, Parseval fails (@lem:mass) — the corrected closeness identity (@lem:dataset-closeness-corrected) carries a $normCInv$ — so bounding $EE_(x ~ calD) [(f - g)^2]$ for a sparse $g$ assembled from the recovered coefficients requires genuinely new arguments.
 #TODO[
   On-dataset approximation from recovered coefficients.
   One route: $EE_calD [(f-g)^2] = sum_V b_V dot hat((f-g)^2) (V)$ by @lem:convolution applied to $(f-g)^2$ at $S = emptyset$, splitting the sum over $heavyB$ and its complement; the tail is controlled by $theta dot norm(hat((f-g)^2))_1 <= theta (norm(hat(f))_1 + norm(hat(g))_1)^2$, but the heavy-bias terms need per-$V$ control.
-  Relatedly, fix the "Parseval for Dataset Closeness" lemma of the previous section.
+  Compare with the $normCInv$-scaled reconstruction route of @thm:learning-low-degree-corrected.
 ]
 
 == Discussion and Open Directions
