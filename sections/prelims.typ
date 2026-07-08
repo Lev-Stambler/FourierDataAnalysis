@@ -104,7 +104,7 @@ Fix a finite alphabet $calT$ and — for this subsection through the end of the 
 (We remark below on what survives for non-uniform $mu$.)
 
 #definition[Dataset; Dataset Fourier Coefficient][
-  A _dataset_ is a finite set $calD subset calT^n$; we write $x ~ calD$ for a uniformly random element of $calD$ and
+  A _dataset_ is a finite nonempty set $calD subset calT^n$; we write $x ~ calD$ for a uniformly random element of $calD$ and
   $
   dcoeff(alpha) = EE_(x ~ calD) [f(x) basis_alpha (x)] = frac(1, |calD|) sum_(x in calD) f(x) basis_alpha (x)
   $
@@ -157,14 +157,14 @@ There is no Parseval identity over $calD$; what is true is off by exactly the de
   $
   sum_alpha basis_alpha (x) basis_alpha (x') = |calT|^n dot bb(1)[x = x']
   $
-  (the matrix $M_(alpha, x) = basis_alpha (x) \/ sqrt(|calT|^n)$ has orthonormal rows, hence orthonormal columns).
+  (the matrix $M_(alpha, x) = basis_alpha (x) \/ sqrt(|calT|^n)$ has orthonormal rows; since the uniform measure has full support, orthonormality forces $|I| <= |calT|^n$ and completeness forces $|I| = |calT|^n$, so $M$ is _square_ and its columns are orthonormal as well).
   Now expand and swap sums:
   $
   sum_alpha dcoeff(alpha)^2 = frac(1, |calD|^2) sum_(x, x' in calD) f(x) f(x') sum_alpha basis_alpha (x) basis_alpha (x') = frac(|calT|^n, |calD|^2) sum_(x in calD) f(x)^2 = normC dot EE_calD [f^2].
   $
 ]
 
-For a non-uniform finite base measure the same proof gives the weighted form $sum_alpha dcoeff(alpha)^2 = frac(1, |calD|^2) sum_(x in calD) f(x)^2 \/ mu(x)$; for continuous $Omega$ (e.g., Gaussian space) the left side diverges — the empirical measure of a finite dataset has no $L^2 (mu)$ density.
+For a non-uniform finite base measure with full support the same proof gives the weighted form $sum_alpha dcoeff(alpha)^2 = frac(1, |calD|^2) sum_(x in calD) f(x)^2 \/ mu(x)$; for continuous $Omega$ (e.g., Gaussian space) the left side diverges — the empirical measure of a finite dataset has no $L^2 (mu)$ density.
 This is why we fix a finite alphabet.
 
 Since $normC$ is enormous for small datasets, the total dataset Fourier mass is _not_ $EE_calD [f^2]$; a function of unit norm on the dataset carries $normC$ worth of squared coefficients, smeared across aliases.
@@ -190,7 +190,7 @@ In the language of frame theory, @lem:mass says precisely that the restricted ch
 
 Everything on both sides of @lem:dataset-parseval is over the dataset — no expectation over $calT^n$ appears — and there are no stray constants.
 The normalization is doing exactly one thing: bookkeeping the overcompleteness.
-($L^2 (calD)$ has dimension $|calD|$, yet the frame has $|calT|^n$ vectors, each of norm $normC^(-1\/2)$ over $calD$; aliasing is this overcompleteness made visible.)
+($L^2 (calD)$ has dimension $|calD|$, yet the frame has $|calT|^n$ vectors, whose squared norms over $calD$ _average_ exactly $normCInv$ by the kernel diagonal $sum_alpha basis_alpha (x)^2 = |calT|^n$; aliasing is this overcompleteness made visible.)
 The raw coefficient $dcoeff(alpha) = EE_calD [f basis_alpha]$ remains the _estimable correlation_ — the quantity a sampling algorithm sees, and the natural unit for heavy-coefficient search in the Goldreich-Levin section — while $ncoeff(alpha)$ is the natural unit for energy and closeness; translating between them costs exactly one factor of $sqrt(normC)$.
 
 #definition[$eps_calD$-closeness; Normalized Weights][
@@ -237,18 +237,20 @@ Then $Sens^2_calD [f] = 1$, while $chi_({2})$ and $chi_({1,2})$ alias on $calD$,
 
 As a first payoff, the classical Low-Degree Algorithm @o2021analysis survives on datasets, _provided_ the reconstruction is the truncated _frame_ expansion $sum_(\#alpha <= d) ncoeff(alpha) nbasis_alpha$ — equivalently, the raw plug-in reconstruction scaled by $normCInv$.
 The scaling matters: in the half-cube example above, the unscaled plug-in reconstruction of $f = x_2$ at degree $2$ returns $chi_2 + chi_(12) = 2 x_2$ on $calD$ — error $1$ with exact coefficients and zero tail — because each character is counted once per alias.
-The frame reconstruction returns $(x_2 + x_1 x_2)\/2 = x_2$ on $calD$, exactly, as guaranteed by part (3) of @lem:dataset-parseval.
+The frame reconstruction returns $(x_2 + x_1 x_2)\/2 = x_2$ on $calD$, exactly — by part (3) of @lem:dataset-parseval together with the fact that all coefficients outside ${chi_2, chi_(12)}$ vanish there.
 
 #theorem[Learning Low-Degree Functions over a Dataset][
+  Suppose the one-coordinate basis is uniformly bounded, $norm(basis_j)_infinity <= B$ for all $j$ (so $norm(basis_alpha)_infinity <= B^d$ whenever $\#alpha <= d$; $B = 1$ for the parity characters, and for any group-character basis).
   Let $f : calD -> [-1, 1]$ and suppose the normalized high-degree weight satisfies
   $
-  sum_(k > d) overline(W)^k_calD [f] <= eps^2 / 4
+  sum_(k > d) overline(W)^k_calD [f] <= eps / 4
   $
-  (e.g., $d >= 4 overline(S) \/ eps^2$ suffices when $sum_k k dot overline(W)^k_calD [f] <= overline(S)$).
-  Given $m = O(n^d / eps^2 dot log (n^d \/ delta))$ samples from $calD$, one can output $h$ with $EE_(x ~ calD) [(f(x) - h(x))^2] <= eps^2$ with probability at least $1 - delta$.
+  (e.g., $d >= 4 overline(S) \/ eps$ suffices when $sum_k k dot overline(W)^k_calD [f] <= overline(S)$).
+  Write $N_d = |{alpha : \#alpha <= d}| = sum_(k <= d) binom(n, k) (|calT| - 1)^k <= (1 + n(|calT| - 1))^d$.
+  Given $|calD|$ (hence $normC$) and $m = O(B^(2d) N_d / eps dot log (N_d \/ delta))$ samples from $calD$, one can output $h$ that is $eps_calD$-close to $f$ with probability at least $1 - delta$.
 ]<thm:learning-low-degree>
 #proof[
-  *Algorithm.* For each $\#alpha <= d$, estimate $dcoeff(alpha)$ by $tilde(f)(alpha) = frac(1, m) sum_(j = 1)^m f(x^((j))) basis_alpha (x^((j)))$; output the _scaled_ reconstruction $h = normCInv sum_(\#alpha <= d) tilde(f)(alpha) basis_alpha$.
+  *Algorithm.* For each $\#alpha <= d$, estimate $dcoeff(alpha)$ by $tilde(f)(alpha) = frac(1, m) sum_(j = 1)^m f(x^((j))) basis_alpha (x^((j)))$; output the _scaled_ reconstruction $h = normCInv sum_(\#alpha <= d) tilde(f)(alpha) basis_alpha$ (this scaling is where knowledge of $|calD|$ enters).
 
   *Analysis.* Write $g^arrow.t = calD compose f$, so $hat(g^arrow.t)(alpha) = normCInv dcoeff(alpha)$ (@lem:lift) and $f = g^arrow.t$ on $calD$.
   Dropping the indicator and applying Parseval in $L^2 (mu)$:
@@ -258,12 +260,12 @@ The frame reconstruction returns $(x_2 + x_1 x_2)\/2 = x_2$ on $calD$, exactly, 
   $
   Since $hat(h)(alpha) = normCInv tilde(f)(alpha)$ for $\#alpha <= d$ and $0$ otherwise, the $normC$ cancels against the two factors of $normCInv$:
   $
-  EE_calD [(f - h)^2] <= underbrace(sum_(k > d) overline(W)^k_calD [f], <= eps^2 \/ 4 "(hypothesis)") + underbrace(normCInv sum_(\#alpha <= d) (dcoeff(alpha) - tilde(f)(alpha))^2, <= eps^2 \/ 4 "w.h.p.") .
+  EE_calD [(f - h)^2] <= underbrace(sum_(k > d) overline(W)^k_calD [f], <= eps \/ 4 "(hypothesis)") + underbrace(normCInv sum_(\#alpha <= d) (dcoeff(alpha) - tilde(f)(alpha))^2, <= eps \/ 4 "w.h.p.") .
   $
-  For the second term: each $tilde(f)(alpha)$ averages $m$ i.i.d. terms in $[-1, 1]$ with mean $dcoeff(alpha)$; by Hoeffding and a union bound over the $O(n^d)$ low-degree indices, the stated $m$ makes every deviation at most $eps \/ (2 n^(d \/ 2))$, so the sum is at most $eps^2 \/ 4$ even before the (generous) factor $normCInv <= 1$.
+  For the second term: each $tilde(f)(alpha)$ averages $m$ i.i.d. terms bounded by $norm(f)_infinity norm(basis_alpha)_infinity <= B^d$ with mean $dcoeff(alpha)$; by Hoeffding (range $2 B^d$) and a union bound over the $N_d$ low-degree indices, the stated $m$ makes every deviation at most $frac(1, 2) sqrt(eps \/ N_d)$, so the sum is at most $N_d dot eps \/ (4 N_d) = eps \/ 4$ even before the (generous) factor $normCInv <= 1$.
 ]
 
 Two remarks.
-First, the hypothesis is stated in normalized weights, the correct analogue of "$eps^2$ of Fourier weight above degree $d$"; in raw dataset units it reads $sum_(k > d) sum_(\#alpha = k) dcoeff(alpha)^2 <= normC eps^2 \/ 4$.
+First, the hypothesis is stated in normalized weights, the correct analogue of "$eps$ of Fourier weight above degree $d$"; in raw dataset units it reads $sum_(k > d) sum_(\#alpha = k) dcoeff(alpha)^2 <= normC eps \/ 4$.
 Second, for a _generic_ sparse dataset the hypothesis is genuinely demanding — it asks the lift $calD compose f$ to be low-degree concentrated in $L^2 (mu)$ — and the next section shows this is not an artifact of our proof but a structural fact about datasets.
 Structured datasets (dense ones, or subcube-like ones as in the example above) satisfy it naturally.
