@@ -13,7 +13,7 @@ Beyond the open problems listed at the end of the Goldreich-Levin section, some 
 
 #TODO[
   - _Degree monotonicity._ Is there a monotone relationship between the degree (spectral concentration) of $f$ over the dataset and over the full space?
-    A clean statement here would let one read off, from dataset quantities alone, whether a given model class can learn $f$ — connect to distribution-agnostic learning theory.
+    A clean statement here would let one read off, from dataset quantities alone, whether a given model class can learn $f$ — connect to distribution-specific learnability under a fixed measure @benedek1991learnability, to spectral notions of learnability via data-dependent eigenbases @canatar2021spectral @abbe2023sgd, and to dataset difficulty relative to a model family @ethayarajh2022understanding.
   - _The dataset as its own function._ What happens when $f = cal(D)$ (the indicator itself)?
     The bias spectrum is then the whole story; relate its decay to standard notions of dataset complexity.
   - _PAC learning and entropy._ Relate normalized weight profiles $overline(W)^k_cal(D)$ to PAC-learnability on-distribution, and to entropy-type quantities (an analogue of Hartley entropy for datasets).

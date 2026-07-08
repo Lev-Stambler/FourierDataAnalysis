@@ -36,6 +36,7 @@
 // #include "sections/intro.typ"
 #include "sections/prelims.typ"
 #include "sections/gl.typ"
+#include "sections/related.typ"
 #include "sections/conc.typ"
 
 #bibliography(("levs-bibs/crypto.bib", "levs-bibs/ai-complexity.bib",), style: "association-for-computing-machinery")

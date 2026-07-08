@@ -1,7 +1,395 @@
 // AI complexity bibliography file
+//
+// NOTE (added with the related-work integration): bibliographic *fields* below
+// were assembled from verified titles/venues/arXiv-ids (see related-work-survey.md,
+// §10). Citation keys are stable and used across sections/; spot-check author lists
+// and page numbers against the source before camera-ready.
 @book{o2014analysis,
   title={Analysis of boolean functions},
   author={O'Donnell, Ryan},
   year={2014},
   publisher={Cambridge University Press}
+}
+
+// ===================================================================
+// Classical Goldreich--Levin lineage
+// ===================================================================
+@inproceedings{goldreich1989hardcore,
+  title={A hard-core predicate for all one-way functions},
+  author={Goldreich, Oded and Levin, Leonid A.},
+  booktitle={Proceedings of the 21st Annual ACM Symposium on Theory of Computing (STOC)},
+  pages={25--32},
+  year={1989}
+}
+
+@article{kushilevitz1993learning,
+  title={Learning decision trees using the {Fourier} spectrum},
+  author={Kushilevitz, Eyal and Mansour, Yishay},
+  journal={SIAM Journal on Computing},
+  volume={22},
+  number={6},
+  pages={1331--1348},
+  year={1993},
+  publisher={SIAM}
+}
+
+@inproceedings{akavia2003proving,
+  title={Proving hard-core predicates using list decoding},
+  author={Akavia, Adi and Goldwasser, Shafi and Safra, Shmuel},
+  booktitle={44th Annual IEEE Symposium on Foundations of Computer Science (FOCS)},
+  pages={146--157},
+  year={2003},
+  organization={IEEE}
+}
+
+@article{mansour1994learning,
+  title={Learning {Boolean} functions via the {Fourier} transform},
+  author={Mansour, Yishay},
+  journal={Theoretical Advances in Neural Computation and Learning},
+  pages={391--424},
+  year={1994},
+  publisher={Springer}
+}
+
+// ===================================================================
+// Non-uniform / data-adapted Fourier and heavy-coefficient learning
+// ===================================================================
+@inproceedings{heidari2021finding,
+  title={Finding relevant information via a discrete {Fourier} expansion},
+  author={Heidari, Mohsen and Sreedharan, Jithin K. and Shamir, Gil I. and Szpankowski, Wojciech},
+  booktitle={Proceedings of the 38th International Conference on Machine Learning (ICML)},
+  series={PMLR},
+  volume={139},
+  pages={4181--4191},
+  year={2021}
+}
+
+@article{heidari2025learning,
+  title={Learning {DNF} through generalized {Fourier} representations},
+  author={Heidari, Mohsen and Khardon, Roni},
+  journal={arXiv preprint arXiv:2506.01075},
+  year={2025}
+}
+
+@article{oladyshkin2012data,
+  title={Data-driven uncertainty quantification using the arbitrary polynomial chaos expansion},
+  author={Oladyshkin, Sergey and Nowak, Wolfgang},
+  journal={Reliability Engineering \& System Safety},
+  volume={106},
+  pages={179--190},
+  year={2012},
+  publisher={Elsevier}
+}
+
+@inproceedings{furst1991improved,
+  title={Improved learning of {AC0} functions},
+  author={Furst, Merrick L. and Jackson, Jeffrey C. and Smith, Sean W.},
+  booktitle={Proceedings of the 4th Annual Workshop on Computational Learning Theory (COLT)},
+  pages={317--325},
+  year={1991}
+}
+
+@article{jackson1997efficient,
+  title={An efficient membership-query algorithm for learning {DNF} with respect to the uniform distribution},
+  author={Jackson, Jeffrey C.},
+  journal={Journal of Computer and System Sciences},
+  volume={55},
+  number={3},
+  pages={414--440},
+  year={1997},
+  publisher={Elsevier}
+}
+
+@inproceedings{gopalan2008agnostically,
+  title={Agnostically learning decision trees},
+  author={Gopalan, Parikshit and Kalai, Adam Tauman and Klivans, Adam R.},
+  booktitle={Proceedings of the 40th Annual ACM Symposium on Theory of Computing (STOC)},
+  pages={527--536},
+  year={2008}
+}
+
+// ===================================================================
+// Samples-vs-queries barrier (statistical queries, interactive GL)
+// ===================================================================
+@article{kearns1998sq,
+  title={Efficient noise-tolerant learning from statistical queries},
+  author={Kearns, Michael},
+  journal={Journal of the ACM},
+  volume={45},
+  number={6},
+  pages={983--1006},
+  year={1998},
+  publisher={ACM}
+}
+
+@inproceedings{blum1994weakly,
+  title={Weakly learning {DNF} and characterizing statistical query learning using {Fourier} analysis},
+  author={Blum, Avrim and Furst, Merrick and Jackson, Jeffrey and Kearns, Michael and Mansour, Yishay and Rudich, Steven},
+  booktitle={Proceedings of the 26th Annual ACM Symposium on Theory of Computing (STOC)},
+  pages={253--262},
+  year={1994}
+}
+
+@article{blum2003noise,
+  title={Noise-tolerant learning, the parity problem, and the statistical query model},
+  author={Blum, Avrim and Kalai, Adam and Wasserman, Hal},
+  journal={Journal of the ACM},
+  volume={50},
+  number={4},
+  pages={506--519},
+  year={2003},
+  publisher={ACM}
+}
+
+@inproceedings{goldwasser2021interactive,
+  title={Interactive proofs for verifying machine learning},
+  author={Goldwasser, Shafi and Rothblum, Guy N. and Shafer, Jonathan and Yehudayoff, Amir},
+  booktitle={12th Innovations in Theoretical Computer Science Conference (ITCS)},
+  year={2021}
+}
+
+@inproceedings{gur2024power,
+  title={On the power of interactive proofs for learning},
+  author={Gur, Tom and Jahanara, Mohammad Mahdi and Khodabandeh, Mohammad Mahdi and Rajgopal, Ninad and Salamatian, Bahar and Shinkar, Igor},
+  booktitle={Proceedings of the 56th Annual ACM Symposium on Theory of Computing (STOC)},
+  year={2024}
+}
+
+@inproceedings{kocaoglu2014sparse,
+  title={Sparse polynomial learning and graph sketching},
+  author={Kocaoglu, Murat and Shanmugam, Karthikeyan and Dimakis, Alexandros G. and Klivans, Adam},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2014}
+}
+
+// ===================================================================
+// Aliasing / sparse Walsh--Hadamard / sparse set functions
+// ===================================================================
+@article{scheibler2015fast,
+  title={A fast {Hadamard} transform for signals with sublinear sparsity in the transform domain},
+  author={Scheibler, Robin and Haghighatshoar, Saeid and Vetterli, Martin},
+  journal={IEEE Transactions on Information Theory},
+  volume={61},
+  number={4},
+  pages={2115--2132},
+  year={2015},
+  publisher={IEEE}
+}
+
+@article{li2015spright,
+  title={{SPRIGHT}: A fast and robust framework for sparse {Walsh}--{Hadamard} transform},
+  author={Li, Xiao and Bradley, Joseph K. and Pawar, Sameer and Ramchandran, Kannan},
+  journal={arXiv preprint arXiv:1508.06336},
+  year={2015}
+}
+
+@inproceedings{stobbe2012learning,
+  title={Learning {Fourier} sparse set functions},
+  author={Stobbe, Peter and Krause, Andreas},
+  booktitle={Proceedings of the 15th International Conference on Artificial Intelligence and Statistics (AISTATS)},
+  pages={1125--1133},
+  year={2012}
+}
+
+@inproceedings{amrollahi2019efficiently,
+  title={Efficiently learning {Fourier} sparse set functions},
+  author={Amrollahi, Andisheh and Zandieh, Amir and Kapralov, Michael and Krause, Andreas},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2019}
+}
+
+@inproceedings{wendler2021learning,
+  title={Learning set functions that are sparse in non-orthogonal {Fourier} bases},
+  author={Wendler, Chris and Amrollahi, Andisheh and Seifert, Bastian and Krause, Andreas and P{\"u}schel, Markus},
+  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
+  year={2021}
+}
+
+// ===================================================================
+// Fourier auditing / interpretability of trained models
+// ===================================================================
+@inproceedings{ajarra2024active,
+  title={Active {Fourier} auditor for estimating distributional properties of {ML} models},
+  author={Ajarra, Ayoub and Ghosh, Bishwamittra and Basu, Debabrota},
+  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
+  year={2025},
+  note={arXiv:2410.08111}
+}
+
+@inproceedings{ghosh2021justicia,
+  title={Justicia: A stochastic {SAT} approach to formally verify fairness},
+  author={Ghosh, Bishwamittra and Basu, Debabrota and Meel, Kuldeep S.},
+  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
+  year={2021}
+}
+
+@inproceedings{ghosh2022fvgm,
+  title={Algorithmic fairness verification with graphical models},
+  author={Ghosh, Bishwamittra and Basu, Debabrota and Meel, Kuldeep S.},
+  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
+  year={2022}
+}
+
+@inproceedings{ghosh2023fairness,
+  title={``How biased are your features?'': Computing fairness influence functions with global sensitivity analysis},
+  author={Ghosh, Bishwamittra and Basu, Debabrota and Meel, Kuldeep S.},
+  booktitle={Proceedings of the 2023 ACM Conference on Fairness, Accountability, and Transparency (FAccT)},
+  year={2023}
+}
+
+@inproceedings{yan2022active,
+  title={Active fairness auditing},
+  author={Yan, Tom and Zhang, Chicheng},
+  booktitle={Proceedings of the 39th International Conference on Machine Learning (ICML)},
+  series={PMLR},
+  year={2022}
+}
+
+@inproceedings{gorji2025amortized,
+  title={Amortized {SHAP} values via sparse {Fourier} function approximation},
+  author={Gorji, Ali and Amrollahi, Andisheh and Krause, Andreas},
+  booktitle={International Conference on Learning Representations (ICLR)},
+  year={2025},
+  note={arXiv:2410.06300}
+}
+
+@article{kang2025spex,
+  title={{SPEX}: Scaling feature interaction explanations for {LLMs}},
+  author={Kang, Justin Singh and Butler, Landon and Agarwal, Abhineet and Erginbas, Yigit Efe and Pedarsani, Ramtin and Ramchandran, Kannan and Yu, Bin},
+  journal={arXiv preprint arXiv:2502.13870},
+  year={2025}
+}
+
+@article{reing2025activation,
+  title={Making sense of distributed representations with activation spectroscopy},
+  author={Reing, Kyle and Ver Steeg, Greg and Galstyan, Aram},
+  journal={arXiv preprint arXiv:2501.15435},
+  year={2025}
+}
+
+// ===================================================================
+// Sensitivity / influence / feature importance
+// ===================================================================
+@article{sobol2001global,
+  title={Global sensitivity indices for nonlinear mathematical models and their {Monte Carlo} estimates},
+  author={Sobol, Ilya M.},
+  journal={Mathematics and Computers in Simulation},
+  volume={55},
+  number={1--3},
+  pages={271--280},
+  year={2001},
+  publisher={Elsevier}
+}
+
+@article{hooker2007generalized,
+  title={Generalized functional {ANOVA} diagnostics for high-dimensional functions of dependent variables},
+  author={Hooker, Giles},
+  journal={Journal of Computational and Graphical Statistics},
+  volume={16},
+  number={3},
+  pages={709--732},
+  year={2007},
+  publisher={Taylor \& Francis}
+}
+
+@inproceedings{datta2016algorithmic,
+  title={Algorithmic transparency via quantitative input influence: Theory and experiments with learning systems},
+  author={Datta, Anupam and Sen, Shayak and Zick, Yair},
+  booktitle={2016 IEEE Symposium on Security and Privacy (SP)},
+  pages={598--617},
+  year={2016},
+  organization={IEEE}
+}
+
+// ===================================================================
+// Distribution-specific learnability and dataset hardness
+// ===================================================================
+@article{benedek1991learnability,
+  title={Learnability with respect to fixed distributions},
+  author={Benedek, Gyora M. and Itai, Alon},
+  journal={Theoretical Computer Science},
+  volume={86},
+  number={2},
+  pages={377--389},
+  year={1991},
+  publisher={Elsevier}
+}
+
+@article{canatar2021spectral,
+  title={Spectral bias and task-model alignment explain generalization in kernel regression and infinitely wide neural networks},
+  author={Canatar, Abdulkadir and Bordelon, Blake and Pehlevan, Cengiz},
+  journal={Nature Communications},
+  volume={12},
+  number={1},
+  pages={2914},
+  year={2021},
+  publisher={Nature Publishing Group}
+}
+
+@inproceedings{abbe2023sgd,
+  title={{SGD} learning on neural networks: Leap complexity and saddle-to-saddle dynamics},
+  author={Abbe, Emmanuel and Boix-Adser{\`a}, Enric and Misiakiewicz, Theodor},
+  booktitle={Proceedings of the 36th Annual Conference on Learning Theory (COLT)},
+  year={2023}
+}
+
+@inproceedings{ethayarajh2022understanding,
+  title={Understanding dataset difficulty with {V}-usable information},
+  author={Ethayarajh, Kawin and Choi, Yejin and Swayamdipta, Swabha},
+  booktitle={Proceedings of the 39th International Conference on Machine Learning (ICML)},
+  series={PMLR},
+  year={2022}
+}
+
+@article{mixon2015learning,
+  title={Learning {Boolean} functions with concentrated spectra},
+  author={Mixon, Dustin G. and Peterson, Jesse},
+  journal={arXiv preprint arXiv:1507.04319},
+  year={2015}
+}
+
+// ===================================================================
+// Property testing over datasets / support
+// ===================================================================
+@article{halevy2007distribution,
+  title={Distribution-free property-testing},
+  author={Halevy, Shirley and Kushilevitz, Eyal},
+  journal={SIAM Journal on Computing},
+  volume={37},
+  number={4},
+  pages={1107--1138},
+  year={2007},
+  publisher={SIAM}
+}
+
+// ===================================================================
+// Conditional / subcube sampling oracles (the CSAMP access model)
+// ===================================================================
+@article{canonne2015testing,
+  title={Testing probability distributions using conditional samples},
+  author={Canonne, Cl{\'e}ment L. and Ron, Dana and Servedio, Rocco A.},
+  journal={SIAM Journal on Computing},
+  volume={44},
+  number={3},
+  pages={540--616},
+  year={2015},
+  publisher={SIAM}
+}
+
+@inproceedings{chakraborty2013power,
+  title={On the power of conditional samples in distribution testing},
+  author={Chakraborty, Sourav and Fischer, Eldar and Goldhirsh, Yonatan and Matsliah, Arie},
+  booktitle={Proceedings of the 4th Conference on Innovations in Theoretical Computer Science (ITCS)},
+  pages={561--580},
+  year={2013}
+}
+
+@inproceedings{chen2021junta,
+  title={Learning and testing junta distributions with subcube conditioning},
+  author={Chen, Xi and Jayaram, Rajesh and Levi, Amit and Waingarten, Erik},
+  booktitle={Proceedings of the 34th Annual Conference on Learning Theory (COLT)},
+  series={PMLR},
+  volume={134},
+  pages={1060--1113},
+  year={2021}
 }
