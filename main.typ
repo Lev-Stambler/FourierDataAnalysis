@@ -10,7 +10,7 @@
 
 
 #show: arkheion.with(
-  title: "My Title",
+  title: "Characterizing Datasets: Hardness, Learning, and More",
   authors: (
     (
       name: "Lev Stambler",
@@ -25,12 +25,13 @@
     ]
   ],
   //keywords: ("First keyword", "Second keyword", "etc."),
-  date: "September 10, 2025",
+  date: "July 8, 2026",
 )
 
 // #include "sections/intro.typ"
 #include "sections/idea.typ"
 #include "sections/ai.typ"
+#include "sections/gl.typ"
 #include "sections/conc.typ"
 
 #bibliography(("levs-bibs/crypto.bib", "levs-bibs/ai-complexity.bib",), style: "association-for-computing-machinery")
