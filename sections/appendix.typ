@@ -8,4 +8,4 @@
 #show: eqrules
 
 = Appendix
-#lorem(300)
+#TODO[Deferred proofs and the general finite-abelian-group statements, as they accumulate.]

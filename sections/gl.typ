@@ -1,10 +1,10 @@
 #import "../levs-commands/main_commands.typ": *
+#import "../custom_commands.typ": *
 #show: thmrules
 #show: eqrules
 #set math.equation(numbering: none)
 
 // ============ Reusable Symbols ============
-#let inD = $calD$
 #let normC = $C_calD$
 #let normCInv = $C_calD^(-1)$
 #let Jbar = $overline(J)$
@@ -13,20 +13,19 @@
 #let dcoeff(S) = $hat(f)_calD (#S)$
 #let ucoeff(S) = $hat(f) (#S)$
 
-= Goldreich-Levin over Datasets
+= Highlight: Goldreich-Levin over a Dataset
 
-We now adapt the Goldreich-Levin (GL) algorithm (@o2021analysis, Section 3.5) to the dataset setting.
-Throughout this section we work over the Boolean cube $Omega^n = {-1, 1}^n$ with the parity characters $chi_S (x) = product_(i in S) x_i$ for clarity of exposition; we remark on general finite alphabets at the end.
+We now come to the highlight: adapting the Goldreich-Levin algorithm (@o2021analysis, Section 3.5) to the dataset setting.
+The classical algorithm, given query access to $f$, finds _all_ of the characters with which $f$ is noticeably correlated — the engine behind the Kushilevitz-Mansour learning algorithm.
+Our use case is the on-distribution version of the same question: $f$ is a trained model (or labeling rule), $calD$ is the data, and we want every character that is noticeably correlated with $f$ _over the dataset_, i.e., every heavy dataset coefficient $dcoeff(S)$.
+These are exactly the coefficients that describe $f$'s behavior where it is actually evaluated, and — when the dataset is anything but uniform — they differ from the global ones.
+
+For clarity of exposition we work over the Boolean cube $Omega^n = {-1,1}^n$ with the parity characters $chi_S$, writing $dcoeff(S) = EE_(x ~ calD) [f(x) chi_S (x)]$ as before.
 #footnote[
-  All identities below that only use orthonormality and the "reproducing kernel" property $sum_S chi_S (x) chi_S (x') = 2^n dot ind [x = x']$ extend verbatim to any finite abelian group with its character basis (with $chi_S overline(chi_T)$ in place of $chi_S chi_T$), and more generally to product orthonormal bases over finite sets.
+  Every identity below that uses only orthonormality and the reproducing kernel $sum_S chi_S (x) chi_S (x') = 2^n dot ind [x = x']$ extends verbatim to any finite abelian group with its character basis (with $chi_S overline(chi_T)$ in place of $chi_S chi_T$), and to general product orthonormal bases over finite sets.
+  The convolution identity additionally uses the group structure $chi_S chi_T = chi_(S Delta T)$.
 ]
-
-Recall the dataset Fourier coefficient
-$
-dcoeff(S) = EE_(x ~ calD) [f(x) chi_S (x)] = frac(1, |calD|) sum_(x in calD) f(x) chi_S (x),
-$
-and the normalization constant $normC = frac(2^n, |calD|)$.
-The algorithmic goal, mirroring the classical GL guarantee, is:
+The goal, mirroring the classical guarantee:
 
 #definition[Dataset Heavy-Coefficient Search][
   Given $0 < tau <= 1$ and access to $f$ and $calD$ (in a model to be specified), output a list $L$ of subsets of $[n]$ such that with high probability:
@@ -40,11 +39,10 @@ The choice of access model turns out to be the crux of the problem.
 We distinguish three oracles:
 + *Samples* ($sans("SAMP")$): i.i.d. draws $x ~ calD$ together with the label $f(x)$.
 + *Membership* ($sans("MEM")$): the in-distribution tester $x |-> calD(x) in {0, 1}$, evaluable on _arbitrary_ $x in {-1,1}^n$.
-+ *Model queries* ($sans("QUERY")$): $f$ evaluable at arbitrary $x in {-1, 1}^n$, including out-of-distribution points.
-  This is the natural model when $f$ is a trained model or some other efficiently computable function.
++ *Model queries* ($sans("QUERY")$): $f$ evaluable at arbitrary $x in {-1, 1}^n$, including out-of-distribution points — the natural model when $f$ is a trained model or some other efficiently computable function.
 
-Classical GL uses only $sans("QUERY")$, and its guarantee concerns the _global_ (uniform-measure) coefficients $ucoeff(S)$.
-We will see that for the _dataset_ coefficients $dcoeff(S)$, samples alone are provably insufficient (@lem:blindness), and that the positive results route the dataset structure through a single object: the dataset's _bias spectrum_ (@lem:convolution).
+Classical GL uses only $sans("QUERY")$, and its guarantee concerns the _global_ coefficients $ucoeff(S)$.
+For the _dataset_ coefficients, we will see that samples alone are provably insufficient (@lem:blindness), and that the positive results route all of the dataset's structure through a single object: its _bias spectrum_ (@lem:convolution).
 
 == Recap: the Classical Goldreich-Levin Algorithm
 
@@ -52,68 +50,43 @@ We will see that for the _dataset_ coefficients $dcoeff(S)$, samples alone are p
   Given query access to $f : {-1,1}^n -> {-1,1}$ and $0 < tau <= 1$, there is a $"poly"(n, 1\/tau)$-time algorithm that with high probability outputs a list $L = {U_1, dots, U_ell}$ of subsets of $[n]$ such that:
   + $|ucoeff(U)| >= tau ==> U in L$;
   + $U in L ==> |ucoeff(U)| >= tau \/ 2$.
-  By Parseval's theorem, the second guarantee implies $|L| <= 4 \/ tau^2$.
+  By Parseval, the second guarantee implies $|L| <= 4 \/ tau^2$.
 ]<thm:classical-gl>
 
-The engine of the algorithm is a divide-and-conquer search over the tree of coordinate prefixes.
+The engine is a divide-and-conquer search over the tree of coordinate prefixes.
 For $S subset.eq J subset.eq [n]$, define the *bucket weight* (@o2021analysis, Definition 3.39)
 $
 W^(S | J) [f] = sum_(T subset.eq Jbar) ucoeff(S union T)^2,
 $
 the Fourier weight of $f$ on sets whose restriction to $J$ equals $S$.
-The algorithm maintains a collection of buckets of weight $>= tau^2 \/ 2$ (at most $4 \/ tau^2$ of them, by Parseval), splitting one coordinate at a time until each surviving bucket is a singleton ${S}$ with $ucoeff(S)^2 >= tau^2 \/ 2$.
-Its feasibility rests on the restriction identity (@o2021analysis, equation (3.5) and Proposition 3.40)
+The algorithm maintains the buckets of weight at least $tau^2 \/ 2$ — at most $4 \/ tau^2$ of them, by Parseval — splitting one coordinate at a time until each survivor is a singleton ${S}$ with $ucoeff(S)^2 >= tau^2 \/ 2$.
+What makes this feasible is that bucket weights are _estimable_: by the restriction identity (@o2021analysis, equation (3.5) and Proposition 3.40),
 $
 W^(S | J) [f] = EE_(z ~ {-1,1}^(Jbar)) [hat(f)_(J | z) (S)^2] = EE_(z ~ {-1,1}^(Jbar)) space EE_(y, y' ~ {-1,1}^J) [f(y, z) chi_S (y) dot f(y', z) chi_S (y')],
 $
-which lets a $sans("QUERY")$ algorithm estimate any bucket weight to accuracy $plus.minus eps$ with $O(log(1 \/ delta) \/ eps^2)$ queries.
+so a $sans("QUERY")$ algorithm gets accuracy $plus.minus eps$ with $O(log(1\/delta) \/ eps^2)$ queries.
 
-Two remarks that we will use later.
-First, the proof only uses $norm(f)_infinity <= 1$ (for the Chernoff estimates) and $norm(f)_2 <= 1$ (for the Parseval pruning bound), so @thm:classical-gl holds verbatim for $f : {-1,1}^n -> [-1, 1]$, with list size $4 norm(f)_2^2 \/ tau^2$.
-Second, the running time is polynomial in $1 \/ tau$; this will be the quantity that blows up when we naively lift a sparse dataset.
+Two remarks for later use.
+First, the proof only needs $norm(f)_infinity <= 1$ (for the Chernoff estimates) and $norm(f)_2 <= 1$ (for the Parseval pruning bound), so @thm:classical-gl holds verbatim for $f : {-1,1}^n -> [-1, 1]$, with list size $4 norm(f)_2^2 \/ tau^2$.
+Second, the running time is polynomial in $1\/tau$ — the quantity that will blow up if we naively lift a sparse dataset.
 
 == Obstructions
 
-Over a dataset, the characters ${chi_S}$ are _not_ orthonormal with respect to the measure $"Unif"(calD)$, and the familiar Fourier toolkit breaks in quantifiable ways.
-The first casualty is Parseval.
-
-#lemma[Mass Identity][
-  For any $calD subset.eq {-1,1}^n$ (distinct points) and any $f : calD -> RR$,
-  $
-  sum_(S subset.eq [n]) dcoeff(S)^2 = normC dot EE_(x ~ calD) [f(x)^2].
-  $
-]<lem:mass>
-#proof[
-  Expanding the square and swapping sums,
-  $
-  sum_S dcoeff(S)^2 = frac(1, |calD|^2) sum_(x, x' in calD) f(x) f(x') sum_(S subset.eq [n]) chi_S (x) chi_S (x').
-  $
-  Since $chi_S (x) chi_S (x') = chi_S (x compose x')$ where $(x compose x')_i = x_i x'_i$, the inner sum is $2^n dot ind [x = x']$ (the reproducing kernel of the character basis).
-  Only the diagonal survives:
-  $
-  sum_S dcoeff(S)^2 = frac(2^n, |calD|^2) sum_(x in calD) f(x)^2 = normC dot EE_(x ~ calD) [f(x)^2].
-  $
-]
-
-Since $normC$ is exponentially large for small datasets, the total dataset Fourier mass is _not_ bounded by $EE_calD [f^2]$: Parseval fails over $calD$ by exactly the factor $normC$.
-(This factor propagates backwards: the closeness lemma and low-degree learning theorem of the previous section originally omitted it and have been corrected there — see @lem:dataset-closeness-corrected and @thm:learning-low-degree-corrected, where the normalization constants cancel through the $normCInv$-scaled reconstruction.)
-
-Two immediate consequences.
-First, the number of $tau$-heavy coefficients can be as large as $normC dot EE_calD [f^2] \/ tau^2$, i.e., exponential; so no analogue of the list-size bound $|L| <= 4 \/ tau^2$ can hold unconditionally.
-The subcube example shows this is not a pathology of weird functions --- the constant function already exhibits it.
+Why can't we just run the same tree search on the dataset coefficients?
+Recall from the Mass Identity (@lem:mass) that $sum_S dcoeff(S)^2 = normC dot EE_calD [f^2]$: Parseval fails over $calD$ by exactly the density factor.
+This already kills the pruning bound — the number of $tau$-heavy dataset coefficients can be as large as $normC EE_calD [f^2] \/ tau^2$, i.e., exponential — and the failure is not confined to exotic functions:
 
 #example[
   Let $K subset.eq [n]$ and let $calD = {x : x_i = 1 "for all" i in K}$ be the subcube fixing $K$, with $f equiv 1$.
-  Then for every $S subset.eq K$ we have $chi_S equiv 1$ on $calD$, hence
+  Every $chi_S$ with $S subset.eq K$ is identically $1$ on $calD$, so
   $
   dcoeff(S) = cases(1 &"if" S subset.eq K, 0 &"otherwise,")
   $
-  and there are $2^(|K|)$ maximal coefficients.
-  On a dataset, distinct characters can be _identical_ as functions on $calD$; "the" heavy set is only defined up to this aliasing.
+  and there are $2^(|K|)$ maximal coefficients: distinct characters are _identical as functions on $calD$_, and "the" heavy set is only defined up to this aliasing.
 ]<ex:subcube>
 
-Second --- and more damning for the GL strategy --- the bucket weights themselves carry _no information_ over a generic dataset.
-The following exact identity is the dataset analogue of the restriction identity above.
+More damning still: the bucket weights themselves carry _no information_ over a generic dataset.
+The following exact identity is the dataset analogue of the restriction identity.
 
 #lemma[Pair Form of Dataset Bucket Weights][
   Fix $J subset.eq [n]$ with $|J| = k$ and $S subset.eq J$. Then
@@ -122,15 +95,11 @@ The following exact identity is the dataset analogue of the restriction identity
   $
 ]<lem:pair-form>
 #proof[
-  Expand each $dcoeff(S union U) = EE_(x ~ calD) [f(x) chi_S (x_J) chi_U (x_(Jbar))]$, square, and swap sums:
-  $
-  sum_(U subset.eq Jbar) dcoeff(S union U)^2 = EE_(x, x' ~ calD) [f(x) f(x') chi_S (x_J) chi_S (x'_J) sum_(U subset.eq Jbar) chi_U (x_(Jbar)) chi_U (x'_(Jbar))],
-  $
-  and the inner sum is the reproducing kernel $2^(n-k) dot ind [x_(Jbar) = x'_(Jbar)]$ on ${-1,1}^(Jbar)$.
+  Expand each $dcoeff(S union U) = EE_(x ~ calD) [f(x) chi_S (x_J) chi_U (x_(Jbar))]$, square, and swap sums; the inner sum $sum_(U subset.eq Jbar) chi_U (x_(Jbar)) chi_U (x'_(Jbar))$ is the reproducing kernel $2^(n-k) dot ind [x_(Jbar) = x'_(Jbar)]$ on ${-1,1}^(Jbar)$.
 ]
 
 #lemma[Blindness of Dataset Bucket Weights][
-  In the setting of @lem:pair-form, suppose the projection $x |-> x_(Jbar)$ is injective on $calD$ (no two dataset points collide on $Jbar$).
+  In the setting of @lem:pair-form, suppose no two dataset points collide on $Jbar$ (the projection $x |-> x_(Jbar)$ is injective on $calD$).
   Then for _every_ $S subset.eq J$,
   $
   sum_(U subset.eq Jbar) dcoeff(S union U)^2 = frac(2^(n-k), |calD|) dot EE_(x ~ calD) [f(x)^2],
@@ -138,21 +107,17 @@ The following exact identity is the dataset analogue of the restriction identity
   independent of $S$.
 ]<lem:blindness>
 #proof[
-  Under injectivity, $ind [x_(Jbar) = x'_(Jbar)] = ind [x = x']$ on $calD times calD$, so only the diagonal of @lem:pair-form survives, and $chi_S (x_J)^2 = 1$.
+  Under injectivity only the diagonal of @lem:pair-form survives, and $chi_S (x_J)^2 = 1$.
 ]
 
-In words: as long as the dataset's projection onto the un-split coordinates is collision-free, _every_ bucket at level $k$ has exactly the same weight, no matter what $f$ is and no matter where its heavy dataset coefficients lie.
-For a dataset of $m$ points in general position (e.g., $m$ uniformly random points), a union bound gives collisions on $Jbar$ with probability at most $binom(m, 2) \/ 2^(n - k)$, so the search tree is information-free for all levels
-$
-k lt.tilde n - 2 log_2 m :
-$
-the "birthday horizon."
-A GL-style search would have to descend blindly through $2^(n - 2 log_2 m)$ buckets before bucket weights begin to distinguish anything.
-Together with the subcube example (which shows the target list itself can be exponential), this rules out a sample-only dataset GL: some additional access to $f$ or structural knowledge of $calD$ is necessary.
+In words: as long as the dataset's projection onto the un-split coordinates is collision-free, every bucket at level $k$ has exactly the same weight — no matter what $f$ is, and no matter where its heavy dataset coefficients lie.
+For $m$ points in general position, a union bound gives collisions on $Jbar$ with probability at most $binom(m, 2) \/ 2^(n-k)$, so the search tree is information-free for all levels $k lt.tilde n - 2 log_2 m$ — the _birthday horizon_.
+A GL-style search would descend blindly through $2^(n - 2 log_2 m)$ buckets before the weights begin to distinguish anything.
+Together with the subcube example, this rules out a sample-only dataset GL: additional access to $f$, or structural knowledge of $calD$, is necessary.
 #footnote[
-  A sanity check for @lem:blindness: take $n = 2$, $calD = {(1,1), (-1,-1)}$, $f(x) = x_1$, $J = {1}$.
-  Then $dcoeff({1}) = 1$, $dcoeff({1,2}) = 0$, and the bucket weight is $1 = frac(2^(2-1), 2) dot 1$, matching the lemma; the "signal" coefficient and the aliasing noise conspire to a flat bucket profile.
-  All identities in this section have additionally been verified numerically on random instances.
+  A sanity check for @lem:blindness: $n = 2$, $calD = {(1,1), (-1,-1)}$, $f(x) = x_1$, $J = {1}$.
+  Then $dcoeff({1}) = 1$, $dcoeff({1,2}) = 0$, and the bucket weight is $1 = frac(2^(2-1), 2) dot 1$: the signal coefficient and the aliasing noise conspire to a flat bucket profile.
+  All identities and theorem constants in this section have been verified numerically on random and structured instances.
 ]
 
 == The Convolution Identity
@@ -162,11 +127,11 @@ The positive results all flow from one structural fact: the dataset spectrum of 
 #definition[Bias Spectrum][
   The *bias spectrum* of $calD$ is the family
   $
-  b_V = EE_(x ~ calD) [chi_V (x)], quad V subset.eq [n],
+  b_V = EE_(x ~ calD) [chi_V (x)], quad V subset.eq [n]
   $
-  i.e., the dataset Fourier coefficients of the constant function $1$.
+  — the dataset Fourier coefficients of the constant function $1$.
   Note $b_emptyset = 1$ and $|b_V| <= 1$.
-  For $theta > 0$ we write $heavyB = {V : |b_V| >= theta}$ for the *$theta$-heavy bias set*.
+  For $theta > 0$, write $heavyB = {V : |b_V| >= theta}$ for the *$theta$-heavy bias set*.
 ]<defn:bias-spectrum>
 
 #lemma[Convolution Identity][
@@ -177,27 +142,26 @@ The positive results all flow from one structural fact: the dataset spectrum of 
   where $Delta$ denotes symmetric difference.
 ]<lem:convolution>
 #proof[
-  Expand $f$ in its (exact, global) Fourier expansion $f = sum_T ucoeff(T) chi_T$ inside the dataset expectation:
+  Expand $f$ in its global Fourier expansion inside the dataset expectation:
   $
-  dcoeff(S) = EE_(x ~ calD) [f(x) chi_S (x)] = sum_T ucoeff(T) dot EE_(x ~ calD) [chi_T (x) chi_S (x)] = sum_T ucoeff(T) dot b_(T Delta S),
+  dcoeff(S) = sum_T ucoeff(T) dot EE_(x ~ calD) [chi_T (x) chi_S (x)] = sum_T ucoeff(T) dot b_(T Delta S),
   $
-  using $chi_T chi_S = chi_(T Delta S)$. Substituting $V = T Delta S$ gives the claim.
+  using $chi_T chi_S = chi_(T Delta S)$; substitute $V = T Delta S$.
 ]
 
-The bias spectrum is exactly the aliasing structure of the subcube example: there, $b_V = ind [V subset.eq K]$, and the convolution smears the single global coefficient $ucoeff(emptyset) = 1$ onto all $2^(|K|)$ sets $S subset.eq K$.
-The blindness of @lem:blindness is the statement that, for a generic dataset, the bias spectrum is an exponentially wide field of $tilde plus.minus 1 \/ sqrt(|calD|)$ noise; the convolution then buries any bucket-level signal.
-Conversely, whenever the bias spectrum is _dominated by few heavy terms_, the dataset spectrum of $f$ is a controlled deformation of its global spectrum --- and that is precisely what the main theorem exploits.
+The bias spectrum is exactly the aliasing structure of the subcube example: there $b_V = ind [V subset.eq K]$, and the convolution smears the single global coefficient $ucoeff(emptyset) = 1$ onto all $2^(|K|)$ sets $S subset.eq K$.
+The blindness of @lem:blindness is the statement that for a generic dataset the bias spectrum is an exponentially wide field of $tilde plus.minus 1\/sqrt(|calD|)$ noise, which buries any bucket-level signal.
+Conversely, whenever the bias spectrum is _dominated by few heavy terms_, the dataset spectrum of $f$ is a controlled deformation of its global spectrum — precisely what the main theorem exploits.
 
 == Main Theorem: Dataset GL from Model Queries
 
-We now give the main positive result.
-The standing assumptions: $f$ is a queryable model with bounded _spectral norm_ $norm(hat(f))_1 = sum_T |ucoeff(T)|$, and we know the heavy part of the dataset's bias spectrum.
-The latter is a structural input about $calD$ alone (not about $f$); we discuss how to obtain it below.
+The standing assumptions: $f$ is a queryable model of bounded _spectral norm_ $norm(hat(f))_1 = sum_T |ucoeff(T)|$, and we know the heavy part of the dataset's bias spectrum.
+The latter is a structural input about $calD$ alone, not about $f$; we discuss how to obtain it in the next subsection.
 
 #theorem[Dataset Goldreich-Levin, model-query access][
   Let $f : {-1,1}^n -> [-1,1]$ with $norm(hat(f))_1 <= A$ be given by $sans("QUERY")$ access, and let $calD$ be given by $sans("SAMP")$ access.
   Let $0 < tau <= 1$, $delta in (0,1)$, fix any $theta <= tau \/ (4A)$, and suppose the $theta$-heavy bias set $heavyB$ of $calD$ is given explicitly.
-  Then there is an algorithm running in time $"poly"(n, |heavyB|, 1\/tau, log(1\/delta))$, using $"poly"(n, |heavyB|, 1\/tau) dot log(1\/delta)$ queries to $f$ and $O(log(|heavyB| \/ (tau delta)) \/ tau^2)$ samples from $calD$, that with probability $>= 1 - delta$ outputs a list $L$ satisfying:
+  Then there is an algorithm running in time $"poly"(n, |heavyB|, 1\/tau, log(1\/delta))$, using $"poly"(n, |heavyB|, 1\/tau) dot log(1\/delta)$ queries to $f$ and $O(log(|heavyB| \/ (tau delta)) \/ tau^2)$ samples from $calD$, that with probability at least $1 - delta$ outputs a list $L$ satisfying:
   + (Completeness) $|dcoeff(S)| >= tau ==> S in L$;
   + (Soundness) $S in L ==> |dcoeff(S)| >= tau \/ 2$;
   + $|L| <= frac(64 |heavyB|^3, 9 tau^2)$.
@@ -222,7 +186,7 @@ The algorithm:
   $
   and since $|b_V| <= 1$, some $V^* in heavyB$ has $|ucoeff(S Delta V^*)| >= frac(3 tau, 4 |heavyB|) = tau'$.
   By the completeness of classical GL (except with probability $delta \/ 2$), $S Delta V^* in F$, hence $S = (S Delta V^*) Delta V^* in C$.
-  By Hoeffding's inequality and a union bound over $C$ (except with probability $delta \/ 2$), every empirical coefficient satisfies $|tilde(f)_calD (S) - dcoeff(S)| <= tau \/ 8$; in particular $|tilde(f)_calD (S)| >= tau - tau\/8 > 3 tau \/ 4$, so $S in L$.
+  By Hoeffding and a union bound over $C$ (except with probability $delta \/ 2$), every empirical coefficient satisfies $|tilde(f)_calD (S) - dcoeff(S)| <= tau \/ 8$; in particular $|tilde(f)_calD (S)| >= tau - tau\/8 > 3 tau \/ 4$, so $S in L$.
 
   *Soundness.* If $S in L$ then $|dcoeff(S)| >= 3 tau \/ 4 - tau \/ 8 = 5 tau \/ 8 >= tau \/ 2$.
 
@@ -230,8 +194,8 @@ The algorithm:
   Classical GL at threshold $tau'$ costs $"poly"(n, 1\/tau') = "poly"(n, |heavyB|, 1\/tau)$ queries; step 3 costs $m$ samples and $m dot |C|$ arithmetic operations.
 ]
 
-Note that the algorithm uses only the _set_ $heavyB$, not the values $b_V$; and the theorem is meaningful precisely in the distribution-shift regime where $dcoeff(S)$ and $ucoeff(S)$ differ --- the shift is routed through the dataset's heavy biases.
-The same completeness argument, run purely combinatorially (Parseval bounds the number of $tau'$-heavy global coefficients by $1 \/ tau'^2$), yields an unconditional structural bound:
+Note that the algorithm uses only the _set_ $heavyB$, never the values $b_V$; and the theorem is meaningful precisely in the distribution-shift regime where $dcoeff(S)$ and $ucoeff(S)$ differ — the shift is routed through the dataset's heavy biases.
+Running the completeness argument purely combinatorially (Parseval bounds the number of $tau'$-heavy global coefficients by $1 \/ tau'^2$) also yields an unconditional structural bound:
 
 #corollary[List-Size Bound under Sparse Bias Spectrum][
   If $norm(hat(f))_1 <= A$ and $theta <= tau \/ (4A)$, then
@@ -244,8 +208,8 @@ The same completeness argument, run purely combinatorially (Parseval bounds the 
 
 #h3([Dense Datasets: the Membership-Oracle Route])
 
-When the dataset is _dense_ --- $normC = "poly"(n)$ --- the naive lifting strategy already works, and moreover supplies the heavy bias set $heavyB$ needed above.
-Recall the lifted function $g = calD compose f$, i.e., $g(x) = calD(x) f(x)$, which is evaluable anywhere given $sans("MEM")$ together with the ability to evaluate $f$ on points of $calD$; its global coefficients satisfy $hat(g)(S) = normCInv dcoeff(S)$.
+When the dataset is _dense_ — $normC = "poly"(n)$ — the naive lifting strategy already works, and moreover supplies the heavy bias set $heavyB$ needed above.
+Recall the lift $g = calD compose f$, evaluable anywhere given $sans("MEM")$ together with the ability to evaluate $f$ on points of $calD$; its global coefficients satisfy $hat(g)(S) = normCInv dcoeff(S)$ (@lem:lift).
 
 #proposition[Dataset GL for Dense Datasets][
   Given query access to $g = calD compose f$ with $norm(f)_infinity <= 1$, and $0 < tau <= 1$, running classical GL on $g$ with threshold $normCInv tau$ solves the search problem of @defn:dataset-gl-goal in time $"poly"(n, normC, 1\/tau)$, with list size $|L| <= 4 normC EE_calD [f^2] \/ tau^2$.
@@ -254,12 +218,12 @@ Recall the lifted function $g = calD compose f$, i.e., $g(x) = calD(x) f(x)$, wh
   $g$ takes values in $[-1,1]$, so the $[-1,1]$-valued form of @thm:classical-gl applies at threshold $tau'' = normCInv tau$: completeness and soundness transfer through $hat(g)(S) = normCInv dcoeff(S)$, the running time is $"poly"(n, 1\/tau'') = "poly"(n, normC, 1\/tau)$, and Parseval gives $|L| <= 4 norm(g)_2^2 \/ tau''^2 = 4 normCInv EE_calD [f^2] dot normC^2 \/ tau^2$.
 ]
 
-The list-size bound matches the mass identity (@lem:mass) exactly, so @prop:dense is tight in general; and by taking $f equiv 1$, the same run recovers the heavy bias set: $b_V = normC dot hat(ind)_calD (V)$, so $heavyB$ is computable in time $"poly"(n, normC, 1\/theta)$ given $sans("MEM")$.
-For sparse datasets ($normC$ superpolynomial) this route is unavailable --- consistent with @lem:blindness --- and $heavyB$ must come from prior structural knowledge of the dataset (e.g., known feature constraints, class balance, or template structure).
+The list-size bound matches the Mass Identity (@lem:mass) exactly, so @prop:dense is tight in general; and by taking $f equiv 1$, the same run recovers the heavy bias set — $b_V = normC dot hat(ind)_calD (V)$ — so $heavyB$ is computable in time $"poly"(n, normC, 1\/theta)$ given $sans("MEM")$.
+For sparse datasets ($normC$ superpolynomial) this route is unavailable, consistent with @lem:blindness, and $heavyB$ must come from prior structural knowledge of the dataset (known feature constraints, class balance, template structure).
 
 #h3([Representative Datasets])
 
-Finally, if the dataset's spectrum uniformly tracks the global one --- the "no distribution shift" regime --- dataset GL degenerates gracefully to classical GL plus re-scoring.
+At the opposite extreme, if the dataset's spectrum uniformly tracks the global one — the "no distribution shift" regime — dataset GL degenerates gracefully to classical GL plus re-scoring.
 
 #definition[$eps$-Representative Dataset][
   $calD$ is *$eps$-representative* for $f$ if $|dcoeff(S) - ucoeff(S)| <= eps$ for all $S subset.eq [n]$.
@@ -267,11 +231,11 @@ Finally, if the dataset's spectrum uniformly tracks the global one --- the "no d
 
 #lemma[
   Let $f : {-1,1}^n -> [-1,1]$ and let $calD$ consist of $m$ i.i.d. uniform samples.
-  If $m >= frac(2, eps^2) (n ln 2 + ln frac(2, delta))$, then with probability $>= 1 - delta$, $calD$ is $eps$-representative for $f$.
+  If $m >= frac(2, eps^2) (n ln 2 + ln frac(2, delta))$, then with probability at least $1 - delta$, $calD$ is $eps$-representative for $f$.
 ]<lem:representative>
 #proof[
-  For fixed $S$, $dcoeff(S)$ is an average of $m$ i.i.d. terms $f(x) chi_S (x) in [-1,1]$ with mean $ucoeff(S)$; Hoeffding gives $Pr[|dcoeff(S) - ucoeff(S)| > eps] <= 2 e^(- m eps^2 \/ 2)$.
-  Union bound over all $2^n$ sets $S$.
+  For fixed $S$, $dcoeff(S)$ averages $m$ i.i.d. terms $f(x) chi_S (x) in [-1,1]$ with mean $ucoeff(S)$; Hoeffding gives $Pr[|dcoeff(S) - ucoeff(S)| > eps] <= 2 e^(- m eps^2 \/ 2)$.
+  Union bound over all $2^n$ sets.
 ]
 
 #proposition[Dataset GL for Representative Datasets][
@@ -289,8 +253,8 @@ In this regime the heavy dataset coefficients essentially _are_ the heavy global
 
 == Application: Kushilevitz-Mansour over Datasets
 
-Classical GL powers the Kushilevitz-Mansour learning algorithm (@o2021analysis, Theorems 3.37-3.38): any $f$ with $norm(hat(f))_1 <= s$ --- in particular any decision tree of size $s$ --- is learnable from queries in time $"poly"(n, s, 1\/eps)$.
-The spectral-norm hypothesis is exactly the $A$ of @thm:dataset-gl, so we get the on-distribution analogue of the coefficient-collection step for free:
+Classical GL powers the Kushilevitz-Mansour learning algorithm (@o2021analysis, Theorems 3.37-3.38): any $f$ with $norm(hat(f))_1 <= s$ — in particular any decision tree of size $s$ — is learnable from queries in time $"poly"(n, s, 1\/eps)$.
+The spectral-norm hypothesis is exactly the $A$ of @thm:dataset-gl, so the on-distribution analogue of the coefficient-collection step comes for free:
 
 #corollary[Heavy On-Dataset Coefficients of Decision Trees][
   Let $f : {-1,1}^n -> {-1,1}$ be computable by a decision tree of size $s$ (so $norm(hat(f))_1 <= s$), given by $sans("QUERY")$ access, and let $heavyB$ be the $theta$-heavy bias set of $calD$ for some $theta <= tau \/ (4s)$.
@@ -298,17 +262,17 @@ The spectral-norm hypothesis is exactly the $A$ of @thm:dataset-gl, so we get th
 ]<cor:km-datasets>
 
 We emphasize what @cor:km-datasets does _not_ yet give: an $eps_calD$-close sparse approximation to $f$.
-Classically, coefficient collection plus Parseval yields the learning guarantee; over a dataset, Parseval fails (@lem:mass) — the corrected closeness identity (@lem:dataset-closeness-corrected) carries a $normCInv$ — so bounding $EE_(x ~ calD) [(f - g)^2]$ for a sparse $g$ assembled from the recovered coefficients requires genuinely new arguments.
+Classically, coefficient collection plus Parseval yields the learning guarantee; over a dataset, the closeness identity carries a $normCInv$ (@lem:dataset-parseval), so bounding $EE_(x ~ calD) [(f - g)^2]$ for a sparse $g$ assembled from the recovered coefficients requires genuinely new arguments.
 #TODO[
   On-dataset approximation from recovered coefficients.
   One route: $EE_calD [(f-g)^2] = sum_V b_V dot hat((f-g)^2) (V)$ by @lem:convolution applied to $(f-g)^2$ at $S = emptyset$, splitting the sum over $heavyB$ and its complement; the tail is controlled by $theta dot norm(hat((f-g)^2))_1 <= theta (norm(hat(f))_1 + norm(hat(g))_1)^2$, but the heavy-bias terms need per-$V$ control.
-  Compare with the $normCInv$-scaled reconstruction route of @thm:learning-low-degree-corrected.
+  Compare with the $normCInv$-scaled reconstruction route of @thm:learning-low-degree.
 ]
 
 == Discussion and Open Directions
 
 #TODO[
-  - Non-uniform (weighted) datasets: all identities above should extend with $p(x)$ in place of $1\/|calD|$; the reproducing-kernel steps are unaffected, the mass identity picks up $norm(p)_2^2$-type factors.
+  - Non-uniform (weighted) datasets: the identities above should extend with $p(x)$ in place of $1\/|calD|$; the reproducing-kernel steps are unaffected, the mass identity picks up $norm(p)_2^2$-type factors.
   - General product alphabets and orthonormal bases (Hermite, tokens): the pair-form and blindness lemmas need only the reproducing kernel; the convolution identity needs the group structure ($chi_S overline(chi_T) = chi_(S - T)$), so state it over $ZZ_q^n$ or general finite abelian groups.
   - How to _certify_ or _learn_ the heavy bias set $heavyB$ for structured real datasets (images, token corpora)?
     For dense datasets @prop:dense computes it; for sparse ones, what natural structure (subcube constraints, sparsity templates, group symmetries) makes $heavyB$ small and known?

@@ -21,7 +21,12 @@
   ),
   abstract: [
     #align(left)[
-      #lorem(30)
+      We develop elementary Fourier analysis _over a finite dataset_ $cal(D) subset cal(T)^n$: coefficients are taken with respect to the empirical measure on $cal(D)$ while the characters remain those of the ambient product space, so that every quantity is estimable from samples.
+      Parseval fails over a dataset — by exactly the density factor $C_cal(D) = |cal(T)|^n \/ |cal(D)|$ — and we give the correct replacements: a mass identity, a closeness identity, and a low-degree learning theorem in which the normalization constants cancel through a scaled reconstruction.
+      As the highlight, we adapt the Goldreich-Levin algorithm to find all characters heavily correlated with a function _over the dataset_.
+      Sample access alone is provably blind: over a collision-free dataset, every bucket weight in the classical tree search is identical.
+      Query access to a model together with the dataset's heavy bias spectrum suffices, via a convolution identity expressing the on-dataset spectrum as the global spectrum convolved with the spectrum of the dataset itself.
+      Corollaries include a Kushilevitz-Mansour-style guarantee for decision trees over datasets.
     ]
   ],
   //keywords: ("First keyword", "Second keyword", "etc."),
@@ -29,8 +34,7 @@
 )
 
 // #include "sections/intro.typ"
-#include "sections/idea.typ"
-#include "sections/ai.typ"
+#include "sections/prelims.typ"
 #include "sections/gl.typ"
 #include "sections/conc.typ"
 
