@@ -42,14 +42,12 @@ The underlying object is a corpus $calD subset {-1,1}^n$ together with $f$ on $c
 + *Samples* ($sans("SAMP")$): i.i.d. draws $x ~ calD$ together with the label $f(x)$.
 + *Conditional samples* ($sans("CSAMP")$): given coordinates $Jbar subset.eq [n]$ and a context $z$ realized in the data, a draw $x ~ calD$ conditioned on $x_(Jbar) = z$, together with $f(x)$.
   This is the "retrieve strings containing this substring" primitive; it is implemented exactly by an index over the corpus (an $n$-gram or suffix-array structure), or by holding an explicit copy — or large subsample — of $calD$.
-+ *Model queries* ($sans("QUERY")$): $f$ evaluable at arbitrary $x in {-1, 1}^n$, including out-of-distribution points.
-  We use this only in a companion result, for the case where $f$ is a cheaply queryable model.
+That is the entire model.
+Note what is absent: any membership tester for $calD$, any evaluation of $f$ outside the data, indeed any synthetic input whatsoever — every string the algorithm ever touches is a datapoint.
+(A companion result, @thm:dataset-gl, considers the strictly stronger setting where $f$ is additionally a cheaply queryable model; we keep that assumption out of the headline deliberately, to highlight that it is not needed.)
 
-Note what is absent: any membership tester for $calD$, and any evaluation of $f$ off the data in the headline result.
-Every string the headline algorithm ever touches is a datapoint.
-
-Classical GL uses only $sans("QUERY")$, and its guarantee concerns the _global_ coefficients $ucoeff(S)$.
-For the _dataset_ coefficients, we will see that plain samples are provably insufficient (@lem:blindness); the headline theorem (@thm:context-gl) restores power through $sans("CSAMP")$, with complexity governed by how much the dataset's contexts _repeat_, while the companion (@thm:dataset-gl) instead uses $sans("QUERY")$ and routes the dataset's structure through its _bias spectrum_ (@lem:convolution).
+Classical GL is an algorithm of the stronger type — it queries $f$ at arbitrary, algorithm-chosen points — and its guarantee concerns the _global_ coefficients $ucoeff(S)$.
+For the _dataset_ coefficients, we will see that plain samples are provably insufficient (@lem:blindness); the headline theorem (@thm:context-gl) restores power through $sans("CSAMP")$ alone, with complexity governed by how much the dataset's contexts _repeat_, while the companion routes the dataset's structure through its _bias spectrum_ (@lem:convolution) at the price of model queries.
 
 == Recap: the Classical Goldreich-Levin Algorithm
 
@@ -71,7 +69,7 @@ What makes this feasible is that bucket weights are _estimable_: by the restrict
 $
 W^(S | J) [f] = EE_(z ~ {-1,1}^(Jbar)) [hat(f)_(J | z) (S)^2] = EE_(z ~ {-1,1}^(Jbar)) space EE_(y, y' ~ {-1,1}^J) [f(y, z) chi_S (y) dot f(y', z) chi_S (y')],
 $
-so a $sans("QUERY")$ algorithm gets accuracy $plus.minus eps$ with $O(log(1\/delta) \/ eps^2)$ queries.
+so an algorithm with query access to $f$ gets accuracy $plus.minus eps$ with $O(log(1\/delta) \/ eps^2)$ queries.
 
 Two remarks for later use.
 First, the proof only needs $norm(f)_infinity <= 1$ (for the Chernoff estimates) and $norm(f)_2 <= 1$ (for the Parseval pruning bound), so @thm:classical-gl holds verbatim for $f : {-1,1}^n -> [-1, 1]$, with list size $4 norm(f)_2^2 \/ tau^2$.
@@ -220,7 +218,8 @@ Second, applying @thm:context-gl to the constant function $f equiv 1$ finds all 
 
 == Companion: Dataset GL from Model Queries
 
-When $f$ is additionally a cheaply queryable model ($sans("QUERY")$), a different route is available: never condition, but instead read the dataset's effect on the spectrum through one structural object.
+This subsection — and only this subsection, together with its corollaries below — assumes one additional oracle: *model queries* ($sans("QUERY")$), i.e., $f$ evaluable at arbitrary $x in {-1,1}^n$, including out-of-distribution points.
+This is realistic when $f$ is a cheaply queryable model, and it enables a different route: never condition, but instead read the dataset's effect on the spectrum through one structural object.
 
 #definition[Bias Spectrum][
   The *bias spectrum* of $calD$ is the family
