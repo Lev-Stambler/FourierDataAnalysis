@@ -42,6 +42,7 @@ The underlying object is a corpus $calD subset {-1,1}^n$ together with $f$ on $c
 + *Samples* ($sans("SAMP")$): i.i.d. draws $x ~ calD$ together with the label $f(x)$.
 + *Conditional samples* ($sans("CSAMP")$): given coordinates $Jbar subset.eq [n]$ and a context $z$ realized in the data, a draw $x ~ calD$ conditioned on $x_(Jbar) = z$, together with $f(x)$.
   This is the "retrieve strings containing this substring" primitive; it is implemented exactly by an index over the corpus (an $n$-gram or suffix-array structure), or by holding an explicit copy — or large subsample — of $calD$.
+  It is the _subcube-conditioning_ oracle studied in distribution testing and learning @canonne2015testing @chakraborty2013power @chen2021junta, specialized here to the empirical support of $calD$ — and put to a different use: recovering heavy Fourier coefficients of a function $f$, rather than testing a distribution.
 That is the entire model.
 Note what is absent: any membership tester for $calD$, any evaluation of $f$ outside the data, indeed any synthetic input whatsoever — every string the algorithm ever touches is a datapoint.
 (A companion result, @thm:dataset-gl, considers the strictly stronger setting where $f$ is additionally a cheaply queryable model; we keep that assumption out of the headline deliberately, to highlight that it is not needed.)
@@ -64,7 +65,7 @@ $
 W^(S | J) [f] = sum_(T subset.eq Jbar) ucoeff(S union T)^2,
 $
 the Fourier weight of $f$ on sets whose restriction to $J$ equals $S$.
-The algorithm maintains the buckets of weight at least $tau^2 \/ 2$ — at most $4 \/ tau^2$ of them, by Parseval — splitting one coordinate at a time until each survivor is a singleton ${S}$ with $ucoeff(S)^2 >= tau^2 \/ 2$.
+The algorithm maintains the buckets of weight at least $tau^2 \/ 2$ — at most $2 \/ tau^2$ of them by Parseval ($4 \/ tau^2$ once estimation slack is accounted) — splitting one coordinate at a time until each survivor is a singleton ${S}$ with $ucoeff(S)^2 >= tau^2 \/ 2$.
 What makes this feasible is that bucket weights are _estimable_: by the restriction identity (@o2021analysis, equation (3.5) and Proposition 3.40),
 $
 W^(S | J) [f] = EE_(z ~ {-1,1}^(Jbar)) [hat(f)_(J | z) (S)^2] = EE_(z ~ {-1,1}^(Jbar)) space EE_(y, y' ~ {-1,1}^J) [f(y, z) chi_S (y) dot f(y', z) chi_S (y')],
@@ -182,33 +183,37 @@ Estimation is the dataset analogue of the classical restriction identity: draw a
   Given $sans("SAMP")$ and $sans("CSAMP")$ access to $(calD, f)$ with $norm(f)_infinity <= 1$, and $0 < tau <= 1$, $delta in (0,1)$, there is an algorithm that with probability at least $1 - delta$ outputs a list $L$ satisfying:
   + (Completeness) $|dcoeff(S)| >= tau ==> S in L$;
   + (Soundness) $S in L ==> |dcoeff(S)| >= tau \/ 2$;
-  and runs in time $"poly"(n, N, 1\/tau, log(1\/delta))$ using $O(n N dot log(n N \/ delta) \/ tau^4)$ sampling experiments, where
+  + (Complexity) on the same $1 - delta$ event, the algorithm performs at most $O(n N dot log(n N \/ delta) \/ tau^4)$ sampling experiments and runs in time $"poly"(n, N, 1\/tau, log(1\/delta))$, where
   $
-  N = max_(0 <= k <= n) N_k, quad N_k = |{S subset.eq J_k : Psi(S | J_k) >= tau^2 \/ 4}|, quad "and" quad N_k <= min(frac(4 R_k, tau^2), 2 N_(k-1)).
+  N = max_(0 <= k <= n) N_k, quad N_k = |{S subset.eq J_k : Psi(S | J_k) >= tau^2 \/ 4}|, quad "and" quad N_k <= min(frac(4 R_k, tau^2), 2 N_(k-1)) " (the latter for " k >= 1 ")".
   $
-  The algorithm never evaluates $f$ outside $calD$ and never tests membership: every string it touches is a datapoint.
+  The algorithm needs no advance knowledge of $N$, never evaluates $f$ outside $calD$, and never tests membership: every string it touches is a datapoint.
 ]<thm:context-gl>
 
 The algorithm is the classical tree search with $Psi$ in place of $W$:
 + Maintain a set of live buckets $(S, J_k)$, starting from $(emptyset, J_0)$.
-+ At level $k$, split each live bucket on coordinate $k+1$ and estimate $Psi(S' | J_(k+1))$ for both children to accuracy $tau^2 \/ 8$ (via @lem:psi-estimator, confidence $1 - delta \/ (4 n N_"max")$ each); keep the children with estimate at least $3 tau^2 \/ 8$.
++ At level $k$, split each live bucket on coordinate $k+1$ and estimate $Psi(S' | J_(k+1))$ for both children to accuracy $tau^2 \/ 8$, giving the $t$-th estimate performed (in any fixed processing order) confidence $1 - delta \/ (2 t^2)$ via @lem:psi-estimator; keep the children with estimate at least $3 tau^2 \/ 8$.
+  Note the confidence schedule references only the running index $t$, so the algorithm is well-defined with no advance knowledge of $N$.
 + Output the surviving singletons at level $n$.
 
 #proof[
-  Condition on all estimates being $tau^2\/8$-accurate (a union bound over the at most $2 N sum_k 1 <= 2 n N$ live-bucket children, each estimated once).
+  Condition on every performed estimate being $tau^2\/8$-accurate.
+  The $t$-th estimate uses fresh samples, so it fails with probability at most $delta \/ (2 t^2)$ regardless of which buckets earlier estimates caused to be explored; summing over the (adaptively determined, possibly unbounded) sequence of estimates, the total failure probability is at most $sum_(t >= 1) delta \/ (2 t^2) <= delta$.
 
   *Completeness.* If $|dcoeff(S)| >= tau$, then by completeness (2) of @lem:psi-properties every ancestor bucket of $S$ has $Psi >= tau^2$, so its estimate is at least $7 tau^2 \/ 8 >= 3 tau^2 \/ 8$ and the ancestor survives at every level; hence $S in L$.
 
   *Soundness.* A surviving leaf has estimate at least $3 tau^2 \/ 8$, hence $Psi(S | [n]) >= tau^2 \/ 4$; by termination (3), $dcoeff(S)^2 >= tau^2 \/ 4$.
 
-  *Complexity.* A surviving bucket at level $k$ has true $Psi >= tau^2 \/ 4$, so there are at most $N_k$ of them; the level-mass identity (5) gives $N_k <= 4 R_k \/ tau^2$ (Markov), and monotonicity (4) gives $N_k <= 2 N_(k-1)$ (children of dead buckets are dead).
-  Each live bucket spawns two estimates of cost $O(log(n N \/ delta) \/ tau^4)$ experiments.
+  *Complexity.* On the good event, a surviving bucket at level $k$ has true $Psi >= tau^2 \/ 4$, so there are at most $N_k$ of them; the level-mass identity (5) gives $N_k <= 4 R_k \/ tau^2$ (Markov), and monotonicity (4) gives $N_k <= 2 N_(k-1)$ (children of dead buckets are dead).
+  Hence at most $2 n N$ estimates are performed in total, and the $t$-th costs $O(log(t \/ delta) \/ tau^4) = O(log(n N \/ delta) \/ tau^4)$ experiments.
 ]
+
+(If a deterministic time budget is preferred over a probabilistic one, run with a cap $overline(N)$ on live buckets per level, aborting when it is exceeded, and guess-and-double $overline(N) = 1, 2, 4, dots$ with per-run confidence budget $delta \/ 2^(j+1)$; on the good event with $overline(N) >= N$ no abort occurs, at the cost of $O(log N)$ restarts.)
 
 Three instances of the parameter $N$, spanning the possible regimes (all verified numerically):
 - *Dense datasets.* Always $c_k <= min(|calD|, 2^(n-k))$, so $R_k <= min(2^k, normC)$ and $N <= 4 normC \/ tau^2$: for $normC = "poly"(n)$ the search is polynomial outright — using strictly weaker access than a membership tester.
 - *Subcube-structured data.* For the subcube example above (fixing $K$, $f equiv 1$): $R_k = 2^(|K inter J_k|) <= 2^(|K|)$, matching the true output size $2^(|K|)$ — the search is output-sensitive, even though the density constant $normC = 2^(|K|)$ is itself exponential in $|K|$.
-- *Generic sparse data.* Singleton fibers give $vbar_S (z) = f(x) chi_S (x_J)$, so $Psi(S|J) = EE_calD [f^2]$ for _every_ $S$ — flat — and $c_k = |calD|$, $R_k = 2^k$: the parameter degrades to the trivial $2^k$ exactly when @lem:blindness bites, and $sans("CSAMP")$ degenerates to $sans("SAMP")$.
+- *Generic sparse data.* Singleton fibers give $vbar_S (z) = f(x) chi_S (x_J)$, so $Psi(S|J) = EE_calD [f^2]$ for _every_ $S$ — flat — and $c_k = |calD|$, $R_k = 2^k dot EE_calD [f^2]$: the parameter degrades to the trivial $2^k$ exactly when @lem:blindness bites, and $sans("CSAMP")$ degenerates to $sans("SAMP")$.
   The theorem's power is context repetition, and the blindness lemma says this is not an artifact.
 
 Two further remarks.
@@ -253,7 +258,7 @@ Conversely, whenever the bias spectrum is _dominated by few heavy terms_, the da
 
 #theorem[Dataset Goldreich-Levin, model-query access][
   Let $f : {-1,1}^n -> [-1,1]$ with $norm(hat(f))_1 <= A$ be given by $sans("QUERY")$ access, and let $calD$ be given by $sans("SAMP")$ access.
-  Let $0 < tau <= 1$, $delta in (0,1)$, fix any $theta <= tau \/ (4A)$, and suppose the $theta$-heavy bias set $heavyB$ of $calD$ is given explicitly (e.g., via @thm:context-gl applied to $f equiv 1$, or from prior structural knowledge).
+  Let $0 < tau <= 1$, $delta in (0,1)$, fix any $theta <= min(1, tau \/ (4A))$ (so that $emptyset in heavyB$ and $|heavyB| >= 1$), and suppose the $theta$-heavy bias set $heavyB$ of $calD$ is given explicitly (e.g., via @thm:context-gl applied to $f equiv 1$, or from prior structural knowledge).
   Then there is an algorithm running in time $"poly"(n, |heavyB|, 1\/tau, log(1\/delta))$, using $"poly"(n, |heavyB|, 1\/tau) dot log(1\/delta)$ queries to $f$ and $O(log(|heavyB| \/ (tau delta)) \/ tau^2)$ samples from $calD$, that with probability at least $1 - delta$ outputs a list $L$ satisfying:
   + (Completeness) $|dcoeff(S)| >= tau ==> S in L$;
   + (Soundness) $S in L ==> |dcoeff(S)| >= tau \/ 2$;
@@ -291,7 +296,7 @@ Note that the algorithm uses only the _set_ $heavyB$, never the values $b_V$; an
 Running the completeness argument purely combinatorially (Parseval bounds the number of $tau'$-heavy global coefficients by $1 \/ tau'^2$) also yields an unconditional structural bound:
 
 #corollary[List-Size Bound under Sparse Bias Spectrum][
-  If $norm(hat(f))_1 <= A$ and $theta <= tau \/ (4A)$, then
+  If $f : {-1,1}^n -> [-1,1]$ with $norm(hat(f))_1 <= A$, and $theta <= min(1, tau \/ (4A))$, then
   $
   |{S : |dcoeff(S)| >= tau}| <= frac(16 |heavyB|^3, 9 tau^2).
   $
@@ -312,6 +317,7 @@ At the opposite extreme, if the dataset's spectrum uniformly tracks the global o
 #proof[
   For fixed $S$, $dcoeff(S)$ averages $m$ i.i.d. terms $f(x) chi_S (x) in [-1,1]$ with mean $ucoeff(S)$; Hoeffding gives $Pr[|dcoeff(S) - ucoeff(S)| > eps] <= 2 e^(- m eps^2 \/ 2)$.
   Union bound over all $2^n$ sets.
+  (Here $calD$ is the sampled _multiset_ and $dcoeff(S)$ its multiset average; distinctness of points plays no role in this lemma or the proposition below.)
 ]
 
 #proposition[Dataset GL for Representative Datasets][
@@ -333,7 +339,7 @@ Classical GL powers the Kushilevitz-Mansour learning algorithm @kushilevitz1993l
 The spectral-norm hypothesis is exactly the $A$ of @thm:dataset-gl --- the same $L^1$-geometry exploited by agnostic decision-tree learning @gopalan2008agnostically --- so the on-distribution analogue of the coefficient-collection step comes for free:
 
 #corollary[Heavy On-Dataset Coefficients of Decision Trees][
-  Let $f : {-1,1}^n -> {-1,1}$ be computable by a decision tree of size $s$ (so $norm(hat(f))_1 <= s$), given by $sans("QUERY")$ access, and let $heavyB$ be the $theta$-heavy bias set of $calD$ for some $theta <= tau \/ (4s)$.
+  Let $f : {-1,1}^n -> {-1,1}$ be computable by a decision tree of size $s$ (so $norm(hat(f))_1 <= s$), given by $sans("QUERY")$ access, and let $heavyB$ be the $theta$-heavy bias set of $calD$ for some $theta <= min(1, tau \/ (4s))$.
   Then all $S$ with $|dcoeff(S)| >= tau$ can be listed in time $"poly"(n, s, |heavyB|, 1\/tau, log(1\/delta))$.
 ]<cor:km-datasets>
 
