@@ -39,36 +39,51 @@ all 2^13 measured — 59% of the signal is higher-order) and **GB1** (V=20, w=4 
 | Poelwijk red | **200** | 500 | 1000 | **never** |
 | GB1 (additive) | 1000 | 500 | 500 | **200** |
 
-## Honest conclusions
+## CORRECTION — the sample-efficiency "win" mostly evaporates against TUNED baselines
 
-1. **The win is real, and scoped.** On real high-epistasis landscapes, in the **scarce-label
-   regime**, sparse dataset-Fourier is the most (or tied-most) sample-efficient predictor:
-   2.5–5× fewer labels than MLP, and it beats GBT on `red` (200 vs 500) and dominates at the
-   very lowest budget (N=50 combined: 0.47–0.60 vs ~0.17 for every black box, a ~3× gap).
-   This is exactly the regime that matters for expensive assays (directed evolution: every
-   label is a wet-lab measurement).
+The table above compares Fourier-Lasso to a **badly configured** MLP (128,64 with early-stopping
+on N=50 → a 10% val split of 5 points; it scores 0.084) and an under-regularized GBT.  With honest
+tuning (Poelwijk combined, 5 seeds, held-out Spearman):
 
-2. **Additive genuinely fails here** — Ridge plateaus at 0.34 (combined) / 0.50 (red) and
-   **never reaches 0.5**. So this is not the low-order story from the audit: the higher-order
-   structure is real, essential, and what dataset-Fourier exploits.
+| N | Fourier-Lasso | MLP(128,64)+ES *(orig)* | MLP(32),α=1,5k it | GBT | SVR-rbf |
+|---|---|---|---|---|---|
+| 50  | 0.492 | 0.084 | 0.467 | 0.128 | 0.450 |
+| 100 | 0.663 | 0.346 | 0.653 | **0.694** | 0.572 |
+| 200 | 0.711 | 0.485 | 0.663 | **0.725** | 0.662 |
 
-3. **GBT is a strong competitor** — it catches up by N≈500 and slightly overtakes both
-   landscapes past N≈1000. The advantage is specifically **low N**, not all N.
+A **regularized MLP(32) nearly ties Fourier-Lasso at N=50** (0.467 vs 0.492, within seed noise) and
+**GBT beats it at N≥100**.  So the earlier "~3× win at N=50" was largely a broken-baseline artifact.
 
-4. **Honest contrast (GB1).** On an additive-dominated landscape, additive Ridge is the most
-   sample-efficient and Fourier-Lasso is *worst* at low N (diluting 80 additive features among
-   thousands). When additive suffices, dataset-Fourier's machinery hurts.
+## Honest conclusions (revised)
 
-5. **Predictive win ≠ clean recovery (yet).** From N=200, Lasso recovers only ~10/30 of the
-   landscape's true heavy terms and selects many spurious high-degree ones — prediction works
-   before exact support recovery converges. Robust support recovery is where GL/CSAMP (heavy-
-   coefficient search with conditional sampling) should help, and is the natural follow-on.
+1. **The one robust result is negative-for-additive:** additive Ridge plateaus at 0.34 (combined) /
+   0.50 (red) and **never reaches 0.5** → the higher-order structure is real and essential; you need
+   *some* interaction-capable model.
 
-## Synthesis (with the audit)
+2. **Fourier-Lasso is competitive, not superior.** Against *tuned* black boxes it ties a regularized
+   MLP at the lowest N and loses to GBT by N≈100.  In-distribution, on accuracy or sample efficiency,
+   it does **not** beat well-configured standard methods.  Its honest edge is being a **simple,
+   interpretable sparse-linear model in a meaningful basis** — parity, not superiority.
 
-Dataset-Fourier / GL is a better ML method **precisely when both hold: (a) the target has sparse
-*higher-order* structure so additive/linear underfits, AND (b) labels are scarce so black-box
-interaction models can't yet fit.** When either fails — low-order target (promoters, GB1) or
-abundant labels — standard methods match or beat it. That intersection (sparse epistasis + few
-expensive labels) is real and important (protein/enzyme engineering), which is the honest, defensible
-niche for the paper — not a blanket "better predictor" claim.
+3. **Honest contrast (GB1).** On an additive-dominated landscape additive Ridge is most
+   sample-efficient and Fourier-Lasso is worst at low N — when additive suffices its machinery hurts.
+
+4. **Predictive parity ≠ recovery.** From N=200, Lasso recovers only ~10/30 of the landscape's true
+   heavy terms and selects spurious high-degree ones.
+
+5. **This is not the GL *algorithm*.** At 2^13 we enumerate all characters and Lasso over them; GL is
+   the sublinear heavy-coefficient search (subcube/conditional sampling) that avoids enumeration at
+   large w — untested here.  And the split is **in-distribution** (i.i.d. random variants), where a
+   black box interpolates fine — which is why there's no win.
+
+## Where a real win might actually be (not yet shown)
+
+- **Out-of-distribution extrapolation**: train on low-order (1–2 mutation) variants, predict
+  high-order combinations.  A recovered sparse mechanistic model should extrapolate where a
+  correlational black box cannot — this is the regime structure beats correlation, and the natural
+  next experiment.
+- **Scale**: large w where enumerate+Lasso is infeasible and GL/CSAMP's structured search is the only
+  way to build the support — the paper's actual algorithmic contribution.
+- **Interpretability at parity**: exact named interaction terms with black-box-level accuracy.
+
+Do **not** claim an in-distribution predictive win; the tuned-baseline check does not support it.

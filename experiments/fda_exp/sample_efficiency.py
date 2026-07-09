@@ -224,11 +224,47 @@ def recovery_check(target="combined", N=200, seed=0):
           f"(degree>=2 among selected: {int((degs >= 2).sum())})")
 
 
+def tuned_baselines(target="combined", Ns=(50, 100, 200), seeds=(0, 1, 2, 3, 4)):
+    """Honesty check: is the low-N black-box failure fundamental, or a config artifact?
+    Compare Fourier-Lasso to a badly-tuned MLP (my original) AND properly regularized
+    MLP/GBT/SVR.  A regularized MLP(32) nearly ties Fourier-Lasso at N=50 -> the earlier
+    'big low-N win' was mostly a broken baseline; in-distribution it is only competitive."""
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.neural_network import MLPRegressor
+    from sklearn.svm import SVR
+    from .fitness_data import poelwijk_windows
+    C, y, V, w = poelwijk_windows(target)
+    Psi = householder_basis(V)
+    perm = np.random.default_rng(123).permutation(len(C))
+    te, val, pool = perm[:2000], perm[2000:3000], perm[3000:]
+    Cte, yte, Cval, yval = C[te], y[te], C[val], y[val]
+    cfgs = {
+        "MLP(128,64)+ES(orig)": lambda s: MLPRegressor(hidden_layer_sizes=(128, 64), max_iter=600, early_stopping=True, random_state=s),
+        "MLP(32),a1,5k": lambda s: MLPRegressor(hidden_layer_sizes=(32,), alpha=1.0, max_iter=5000, random_state=s),
+        "GBT300": lambda s: HistGradientBoostingRegressor(max_iter=300, random_state=s),
+        "SVR-rbf": lambda s: SVR(C=10.0),
+    }
+    print(f"\n### tuned-baseline check ({target}): held-out Spearman ###")
+    print(f"{'N':>5} | {'Fourier-Lasso':>14} " + " ".join(f"{k:>20}" for k in cfgs))
+    for N in Ns:
+        acc = {k: [] for k in ["Fourier-Lasso", *cfgs]}
+        for s in seeds:
+            idx = np.random.default_rng(1000 + s).choice(pool, N, replace=False)
+            Ctr, ytr = C[idx], y[idx]
+            Xtr, Xte = _onehot(Ctr, V), _onehot(Cte, V)
+            acc["Fourier-Lasso"].append(_metrics(yte, fourier_lasso(Ctr, ytr, Cval, yval, Cte, Psi, V, w)[0])[1])
+            for k, mk in cfgs.items():
+                acc[k].append(_metrics(yte, mk(s).fit(Xtr, ytr).predict(Xte))[1])
+        print(f"{N:>5} | {np.mean(acc['Fourier-Lasso']):>14.3f} "
+              + " ".join(f"{np.mean(acc[k]):>20.3f}" for k in cfgs))
+
+
 def main():
     run_poelwijk("combined")
     run_poelwijk("red")
     run_gb1()
     recovery_check("combined", N=200)
+    tuned_baselines("combined")
 
 
 if __name__ == "__main__":
