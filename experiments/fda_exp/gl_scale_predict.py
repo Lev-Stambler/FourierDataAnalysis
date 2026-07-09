@@ -32,7 +32,7 @@ def _pairwise_design(D):
                            (D[:, iu] * D[:, ju]).astype(np.float32)], axis=1)
 
 
-def gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed):
+def gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed, max_width=80000):
     """Per-token GL: recover heavy coeffs of the 'next==t' indicator, reconstruct a score.
     Returns scores (m_test, V), the recovered masks per token, and per-token |L|."""
     n = Dtr.shape[1]
@@ -44,7 +44,8 @@ def gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed):
         if (ytr == t).sum() == 0:
             masks_per_tok.append(np.empty(0, np.int64)); sizes.append(0); continue
         ft = (2 * (ytr == t) - 1).astype(np.float64)
-        r = gl_search_torch(idx, ft, n, tau, n_exp=n_exp, device=device, mode="csamp", seed=seed + t)
+        r = gl_search_torch(idx, ft, n, tau, n_exp=n_exp, device=device, mode="csamp",
+                            seed=seed + t, max_width=max_width)
         L = np.array([s for s in (r["L"] or []) if s != 0], dtype=np.int64) if r["status"] == "ok" else np.empty(0, np.int64)
         masks_per_tok.append(L); sizes.append(len(L))
         if len(L):
@@ -74,7 +75,7 @@ def _logistic(Dtr, ytr, Dte, yte, degree):
 
 
 def run_language(window=6, vocab_size=48, n_stories=12000, tau=0.35, n_exp=40000,
-                 test_frac=0.25, seed=0, device="cpu"):
+                 test_frac=0.25, seed=0, device="cpu", max_width=80000):
     from .hf_data import tinystories_next_token
     X, y, vocab, w, bpt = tinystories_next_token(window, vocab_size, n_stories, seed=seed)
     D, maj = majority_by_context(X, y)
@@ -91,7 +92,7 @@ def run_language(window=6, vocab_size=48, n_stories=12000, tau=0.35, n_exp=40000
     print(f"distinct contexts {len(D)} (train {len(Dtr)}, test {len(Dte)}); "
           f"2^n={1 << n:.0e} -> enumeration/full-FWHT INFEASIBLE, degree-<=2 = {1 + n + n*(n-1)//2} feats")
 
-    scores, masks_per_tok, sizes = gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed)
+    scores, masks_per_tok, sizes = gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed, max_width)
     gl1, gl3, gl_pred = _top1_top3(scores, yte)
     flat = np.concatenate([m for m in masks_per_tok if len(m)]) if any(len(m) for m in masks_per_tok) else np.empty(0, np.int64)
     dh = np.bincount(popcount(flat), minlength=6) if len(flat) else np.zeros(6, int)

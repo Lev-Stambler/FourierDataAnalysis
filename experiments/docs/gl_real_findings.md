@@ -34,15 +34,22 @@ prediction, confirmed on real biological data with the actual algorithm — the 
 
 ## C. In-distribution prediction — GL reconstruction IS a competitive predictor
 
-Run GL on a 5192-variant TRAIN subsample; the predictor is the reconstruction from the recovered
-heavy-hitter Fourier functions, g(x) = sum_{S in heavy} f_hat_D(S) chi_S(x).  Held-out (2000) Spearman:
+The predictor is the reconstruction from the recovered heavy-hitter Fourier functions,
+g(x) = sum_{S in heavy} f_hat_D(S) chi_S(x).  **Rigorous version (Modal A10G, 5 seeds, K chosen on a
+validation split), held-out Spearman mean +/- std:**
 
-| method | combined | red |
-|---|---|---|
-| **GL reconstruction (direct, via CSAMP)** | **0.780** | 0.512 |
-| GL support + OLS refit | 0.777 | 0.548 |
-| brute empirical top-K (exact FWHT selection) | 0.825 | 0.613 |
-| Fourier-Lasso (L1 over full 2^13 basis) | 0.866 | 0.684 |
+| method | combined | red | blue |
+|---|---|---|---|
+| **GL reconstruction (CSAMP)** | 0.775±.011 | 0.580±.023 | **0.780±.021** |
+| GL support + OLS refit | 0.774 | 0.586 | 0.791 |
+| exact-FWHT top-K | 0.799 | 0.596 | 0.766 |
+| Fourier-Lasso (L1 over full 2^13 basis) | 0.864 | 0.689 | 0.871 |
+
+GL tracks exact-FWHT selection to within ~0.02 (and *beats* it on blue), i.e. the CSAMP sampling
+algorithm recovers essentially the same predictor as exact enumeration where we can check (n=13). It
+sits ~0.05–0.09 below Lasso — the honest gap of magnitude-ranking vs L1 joint selection. **Convergence:
+GL-CSAMP reconstruction reaches exact-FWHT quality by ~50k samples/level** (n_exp 20k→0.732, 50k→0.811,
+100k→0.794, 200k→0.781, 500k→0.780; exact-FWHT = 0.800).
 
 **NOTE — earlier drafts of this file reported GL prediction at ~0.04 and concluded GL "is not a
 predictor". That was WRONG: two stacked bugs.** (1) a **bit-ordering mismatch** — `_fwht`/`gl_torch`
