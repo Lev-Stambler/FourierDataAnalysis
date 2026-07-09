@@ -33,32 +33,48 @@ def _pairwise_design(D):
 
 
 def gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed, max_width=80000):
-    """Per-token GL: recover heavy coeffs of the 'next==t' indicator, reconstruct a score.
-    Returns scores (m_test, V), the recovered masks per token, and per-token |L|."""
+    """Deprecated shim -- use gl_recover + gl_score (validation-selected K)."""
+    per_tok, n, _ = gl_recover(Dtr, ytr, V, tau, n_exp, device, seed, max_width)
+    cd_inv = len(Dtr) / (1 << n)
+    scores = gl_score(per_tok, Dte, n, cd_inv, K=10 ** 9)
+    return scores, [mt[0] for mt in per_tok], [len(mt[0]) for mt in per_tok]
+
+
+def gl_recover(Dtr, ytr, V, tau, n_exp, device, seed, max_width):
+    """Per token: GL-recover the 'next==t' indicator's heavy coefficients.  Return, per
+    token, the non-constant masks ranked by |f_hat_D| (descending), their coefficients, and
+    the constant coefficient (the base rate).  n_blowup = #token searches that hit max_width."""
     n = Dtr.shape[1]
     idx = points_to_index(Dtr)
-    cd_inv = len(Dtr) / (1 << n)
-    scores = np.full((len(Dte), V), -1e9)
-    masks_per_tok, sizes = [], []
-    n_blowup = 0
+    per_tok, n_blowup = [], 0
     for t in range(V):
-        if (ytr == t).sum() == 0:
-            masks_per_tok.append(np.empty(0, np.int64)); sizes.append(0); continue
         ft = (2 * (ytr == t) - 1).astype(np.float64)
+        const = float(coeffs_at(Dtr, ft, [0])[0]) if (ytr == t).sum() else 0.0
+        if (ytr == t).sum() == 0:
+            per_tok.append((np.empty(0, np.int64), np.empty(0), const)); continue
         r = gl_search_torch(idx, ft, n, tau, n_exp=n_exp, device=device, mode="csamp",
                             seed=seed + t, max_width=max_width)
-        rec = np.array(r["L"], dtype=np.int64) if (r["status"] == "ok" and r["L"]) else np.empty(0, np.int64)
         n_blowup += r["status"] != "ok"
-        # ALWAYS include the constant S=0 (the token base rate f_hat(empty)): a token whose search
-        # blows up then degrades gracefully to the majority predictor instead of scoring -inf and
-        # never being predicted.  Dropping it centered the indicator -> argmax biased to rare tokens.
-        Lfull = np.unique(np.concatenate([[0], rec])).astype(np.int64)
-        L = Lfull[Lfull != 0]                              # non-constant terms (for the degree histogram)
-        masks_per_tok.append(L); sizes.append(len(L))
-        scores[:, t] = reconstruct(Dte, n, Lfull, coeffs_at(Dtr, ft, Lfull), cd_inv)
-    if n_blowup:
-        print(f"  ({n_blowup}/{V} token searches hit max_width -> base-rate fallback)")
-    return scores, masks_per_tok, sizes
+        rec = np.array(r["L"], dtype=np.int64) if (r["status"] == "ok" and r["L"]) else np.empty(0, np.int64)
+        nz = rec[rec != 0]
+        if len(nz):
+            c = np.asarray(coeffs_at(Dtr, ft, nz.tolist()))
+            o = np.argsort(-np.abs(c))                     # rank by empirical magnitude
+            per_tok.append((nz[o], c[o], const))
+        else:
+            per_tok.append((nz, np.empty(0), const))
+    return per_tok, n, n_blowup
+
+
+def gl_score(per_tok, D_eval, n, cd_inv, K):
+    """Score each token by reconstructing with its base rate (constant) + top-K non-constant
+    coefficients.  K is chosen once on a validation split (prunes the aliasing-noise tail)."""
+    scores = np.full((len(D_eval), len(per_tok)), -1e9)
+    for t, (masks, coeffs, const) in enumerate(per_tok):
+        m = np.concatenate([[0], masks[:K]]).astype(np.int64)
+        c = np.concatenate([[const], coeffs[:K]])
+        scores[:, t] = reconstruct(D_eval, n, m, c, cd_inv)
+    return scores
 
 
 def _top1_top3(scores, yte):
@@ -90,19 +106,25 @@ def run_language(window=6, vocab_size=48, n_stories=12000, tau=0.35, n_exp=40000
     n = D.shape[1]
     V = len(vocab)
     perm = np.random.default_rng(seed + 7).permutation(len(D))
-    nte = int(test_frac * len(D))
-    te, tr = perm[:nte], perm[nte:]
-    Dtr, ytr, Dte, yte = D[tr], maj[tr], D[te], maj[te]
+    nte, nval = int(test_frac * len(D)), int(0.15 * len(D))
+    te, val, tr = perm[:nte], perm[nte:nte + nval], perm[nte + nval:]
+    Dtr, ytr, Dval, yval, Dte, yte = D[tr], maj[tr], D[val], maj[val], D[te], maj[te]
+    cd_inv = len(Dtr) / (1 << n)
     base = float((yte == np.bincount(ytr).argmax()).mean())
 
     print(f"\n########## TinyStories next-token via GL (window={w} tokens, {bpt} bits/tok, "
           f"n={n}, V={V}) ##########")
-    print(f"distinct contexts {len(D)} (train {len(Dtr)}, test {len(Dte)}); "
+    print(f"distinct contexts {len(D)} (train {len(Dtr)}, val {len(Dval)}, test {len(Dte)}); "
           f"2^n={1 << n:.0e} -> enumeration/full-FWHT INFEASIBLE, degree-<=2 = {1 + n + n*(n-1)//2} feats")
 
-    scores, masks_per_tok, sizes = gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed, max_width)
-    gl1, gl3, gl_pred = _top1_top3(scores, yte)
-    flat = np.concatenate([m for m in masks_per_tok if len(m)]) if any(len(m) for m in masks_per_tok) else np.empty(0, np.int64)
+    per_tok, _, n_blowup = gl_recover(Dtr, ytr, V, tau, n_exp, device, seed, max_width)
+    # validation-select K (#non-constant coeffs per token) -- prunes the aliasing-noise tail
+    Ks = (0, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    valacc = {K: float((gl_score(per_tok, Dval, n, cd_inv, K).argmax(1) == yval).mean()) for K in Ks}
+    Kstar = max(Ks, key=lambda K: valacc[K])
+    print("  GL val-accuracy vs K: " + "  ".join(f"K={K}:{valacc[K]:.3f}" for K in Ks))
+    gl1, gl3, gl_pred = _top1_top3(gl_score(per_tok, Dte, n, cd_inv, Kstar), yte)
+    flat = np.concatenate([mt[0][:Kstar] for mt in per_tok if len(mt[0])]) if Kstar else np.empty(0, np.int64)
     dh = np.bincount(popcount(flat), minlength=6) if len(flat) else np.zeros(6, int)
 
     l1_1, l1_3, l1_pred, _ = _logistic(Dtr, ytr, Dte, yte, 1)
@@ -113,16 +135,16 @@ def run_language(window=6, vocab_size=48, n_stories=12000, tau=0.35, n_exp=40000
     print(f"{'majority baseline':>22}  {base:>6.3f} {'-':>6}")
     print(f"{'logistic degree-1':>22}  {l1_1:>6.3f} {l1_3:>6.3f}")
     print(f"{'logistic degree-<=2':>22}  {l2_1:>6.3f} {l2_3:>6.3f}   <- feasible enumerated baseline")
-    print(f"{'GL reconstruction':>22}  {gl1:>6.3f} {gl3:>6.3f}   avg|L|={np.mean(sizes):.0f}")
-    print(f"\nGL heavy-set degree histogram (deg 0..5): {dh.tolist()}  "
+    print(f"{'GL reconstruction':>22}  {gl1:>6.3f} {gl3:>6.3f}   (val-selected K={Kstar}/token, "
+          f"{n_blowup}/{V} blowups)")
+    print(f"\nGL selected-coeff degree histogram (deg 0..5): {dh.tolist()}  "
           f"(deg>=3 coeffs: {int(dh[3:].sum())})")
-    # where does GL help? accuracy on contexts the degree-<=2 model is LEAST confident about
     order = np.argsort(l2_conf)
     q = len(order) // 4
     hard = order[:q]                                       # bottom-quartile deg<=2 confidence = "sensitive"
     print(f"on degree-<=2's least-confident quartile ({q} contexts): "
           f"GL {float((gl_pred[hard]==yte[hard]).mean()):.3f}  vs  deg<=2 {float((l2_pred[hard]==yte[hard]).mean()):.3f}")
-    return dict(n=n, V=V, gl_top1=gl1, l1_top1=l1_1, l2_top1=l2_1, deg_hist=dh.tolist(), avg_L=float(np.mean(sizes)))
+    return dict(n=n, V=V, Kstar=Kstar, gl_top1=gl1, l1_top1=l1_1, l2_top1=l2_1, deg_hist=dh.tolist())
 
 
 def run_planted(window=6, vocab_size=24, n_stories=8000, k=3, tau=0.4, n_exp=40000,
