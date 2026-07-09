@@ -1,0 +1,29 @@
+# Hydra config for the E2 (context profile) + E5 (degree) experiments.
+seed: 0
+tau: 0.25          # heavy-coefficient threshold
+exact_cap: 18      # exact N_k only while 2^k is affordable; R_k/bound always exact
+outdir: outputs
+
+# datasets to place on the E2 context-profile figure (each: name + builder kwargs)
+datasets:
+  - name: tiny_stories       # real toy problem: next-token prediction
+    kind: tiny_stories
+    kwargs: { window: 4, bits_per_token: 4, n_sentences: 8000, target: "is_verb" }
+  - name: subcube            # structured control: overhead ~1, small output
+    kind: subcube
+    kwargs: { n: 16, fixed: 6, label: "parity:1,3,6" }
+  - name: mixture            # templates + noise: semi-structured
+    kind: mixture
+    kwargs: { n: 16, m: 3000, templates: 16, flip_prob: 0.05, label: "trained" }
+  - name: random             # blindness control: big overhead (search wanders)
+    kind: uniform_random
+    kwargs: { n: 16, m: 3000, label: "parity:0,1" }
+
+orders: [contiguous]   # also try: [contiguous, random, greedy]
+
+# dataset used for the E5 degree comparison (needs f defined on the whole cube)
+# E5 (degree) tests the SEPARATE low-degree learning theorem; irrelevant to GL.
+degree_dataset:
+  name: mixture
+  kind: mixture
+  kwargs: { n: 16, m: 3000, templates: 16, flip_prob: 0.05, label: "trained" }
