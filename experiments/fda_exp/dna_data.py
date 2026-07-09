@@ -24,7 +24,8 @@ _TRAIN_URL = (
     "Genomic_Benchmarks_human_nontata_promoters/resolve/"
     "refs%2Fconvert%2Fparquet/default/train/0000.parquet"
 )
-_CACHE = os.path.join(os.path.dirname(__file__), "..", "data", "dna_promoters_train.parquet")
+_DATA_DIR = os.environ.get("FDA_DATA_DIR") or os.path.join(os.path.dirname(__file__), "..", "data")
+_CACHE = os.path.join(_DATA_DIR, "dna_promoters_train.parquet")
 
 _VOCAB = ["A", "C", "G", "T"]
 _ID = {c: i for i, c in enumerate(_VOCAB)}

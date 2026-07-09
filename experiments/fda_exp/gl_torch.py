@@ -48,8 +48,11 @@ def sample_partners(gid: np.ndarray, rr: np.ndarray, rng) -> np.ndarray:
 
 def _psi_batch(masks_dev, idx_rr, idx_rp, f_rr, f_rp, chunk=1024):
     """Psi estimate for every bucket in masks_dev (L,), batched over the shared
-    (rr, rp) sample pairs."""
+    (rr, rp) sample pairs.  Each batch materializes a (chunk, n_exp) tensor, so cap
+    chunk*n_exp to stay within GPU memory at large n_exp (else CUDA OOM)."""
     L = masks_dev.shape[0]
+    E = idx_rr.shape[0]
+    chunk = max(1, min(chunk, 40_000_000 // max(E, 1)))    # bound (chunk x n_exp) elements
     out = torch.empty(L, device=masks_dev.device, dtype=torch.float32)
     for i in range(0, L, chunk):
         M = masks_dev[i:i + chunk, None]                          # (c,1) int64

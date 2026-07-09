@@ -100,58 +100,107 @@ def _design_2p(C, masks, w):
     return np.column_stack(cols)
 
 
-def predict(target="combined", topK=60, n_exp=200000, seed=0, n_test=2000, device="cpu"):
-    """In-distribution prediction: run the ACTUAL GL on a TRAIN subsample; the predictor
-    is the reconstruction from the recovered heavy-hitter Fourier functions.  Report both
-    the GL-native direct reconstruction (sum of heavy chars * their empirical coefficients)
-    and an OLS refit of the support, vs Fourier-Lasso (L1)."""
+def _recon(C, masks, coeffs, mu, w):
+    """Direct reconstruction g(x) = mu + sum_S coeffs[S] chi_S(x)  (Convention A)."""
+    if len(masks) == 0:
+        return np.full(len(C), mu)
+    return _design_2p(C, masks, w)[:, 1:] @ coeffs[masks] + mu
+
+
+def _refit(Ctr, ytr, Cte, masks, w):
+    """OLS refit of a recovered support (Convention A design)."""
     from sklearn.linear_model import LinearRegression
+    if len(masks) == 0:
+        return np.full(len(Cte), ytr.mean())
+    lr = LinearRegression().fit(_design_2p(Ctr, masks, w), ytr)
+    return lr.predict(_design_2p(Cte, masks, w))
+
+
+def _train_spectrum(Ctr, ytr, w):
+    """Empirical dataset spectrum f_hat_D(S) over the train sample, + magnitude order."""
+    mu = ytr.mean()
+    idx_tr = _encode(Ctr)
+    hist = np.zeros(1 << w)
+    hist[idx_tr] = (ytr - mu)                              # each distinct variant appears once
+    fhat = _fwht(hist) / len(idx_tr)
+    return fhat, np.argsort(-np.abs(fhat)), mu
+
+
+def _val_pick_K(Cval, yval, ranked, fhat, mu, w, Ks):
+    """Choose K (prefix of `ranked`) maximizing validation Spearman of the reconstruction."""
+    from .sample_efficiency import _metrics
+    best = (-2.0, ranked[:1])
+    for K in Ks:
+        if K > len(ranked):
+            break
+        s = _metrics(yval, _recon(Cval, ranked[:K], fhat, mu, w))[1]
+        if s > best[0]:
+            best = (s, ranked[:K])
+    return best[1]
+
+
+def _one_seed(target, seed, n_exp, Kmax, Ks, n_test=2000, n_val=1000, device="cpu"):
+    """One train/val/test split: GL (CSAMP) support -> val-selected K -> test Spearman,
+    vs exact-FWHT top-K (val-selected) and Fourier-Lasso."""
     from .fitness_data import poelwijk_windows
     from .householder import householder_basis
     from .sample_efficiency import _metrics, fourier_lasso
     C, y, V, w = poelwijk_windows(target)
-    Psi = householder_basis(2)
     perm = np.random.default_rng(seed).permutation(len(C))
-    te, val, tr = perm[:n_test], perm[n_test:n_test + 1000], perm[n_test + 1000:]
-    Ctr, ytr, Cte, yte = C[tr], y[tr], C[te], y[te]
-    mu = ytr.mean()
+    te, val, tr = perm[:n_test], perm[n_test:n_test + n_val], perm[n_test + n_val:]
+    Ctr, ytr, Cval, yval, Cte, yte = C[tr], y[tr], C[val], y[val], C[te], y[te]
+    fhat, order, mu = _train_spectrum(Ctr, ytr, w)
+    tau = 2.0 * abs(fhat[order[Kmax - 1]])                 # low threshold -> recover a generous heavy set
     idx_tr = _encode(Ctr)
-    ftr = (ytr - mu).astype(np.float64)
+    r = gl_search_torch(idx_tr, (ytr - mu).astype(np.float64), w, tau,
+                        n_exp=n_exp, device=device, mode="csamp", seed=seed)
+    gl = np.array([s for s in r["L"] if s != 0]) if r["status"] == "ok" else np.empty(0, np.int64)
+    gl_ranked = gl[np.argsort(-np.abs(fhat[gl]))] if len(gl) else gl
+    gl_sel = _val_pick_K(Cval, yval, gl_ranked, fhat, mu, w, Ks) if len(gl) else gl
+    bf_sel = _val_pick_K(Cval, yval, order, fhat, mu, w, Ks)
+    lasso, li = fourier_lasso(Ctr, ytr, Cval, yval, Cte, householder_basis(2), 2, w)
+    return dict(
+        gl_direct=_metrics(yte, _recon(Cte, gl_sel, fhat, mu, w))[1],
+        gl_refit=_metrics(yte, _refit(Ctr, ytr, Cte, gl_sel, w))[1],
+        bf_direct=_metrics(yte, _recon(Cte, bf_sel, fhat, mu, w))[1],
+        lasso=_metrics(yte, lasso)[1],
+        n_rec=len(gl), K_gl=len(gl_sel), K_bf=len(bf_sel),
+    )
 
-    hist = np.zeros(1 << w)
-    hist[idx_tr] = ftr                                     # each variant once
-    fhat_tr = _fwht(hist) / len(idx_tr)                   # empirical dataset spectrum f_hat_D(S)
-    order = np.argsort(-np.abs(fhat_tr))
-    tau = 2.0 * abs(fhat_tr[order[topK - 1]])
 
-    r = gl_search_torch(idx_tr, ftr, w, tau, n_exp=n_exp, device=device, mode="csamp", seed=seed)
-    gl_masks = np.array([s for s in r["L"] if s != 0]) if r["status"] == "ok" else np.empty(0, np.int64)
+def evaluate(target="combined", seeds=(0, 1, 2, 3, 4), n_exp=150000,
+             Kmax=512, Ks=(4, 8, 16, 32, 64, 128, 256, 512), device="cpu"):
+    """Multi-seed, validation-selected-K comparison (mean +/- std)."""
+    rows = [_one_seed(target, s, n_exp, Kmax, Ks, device=device) for s in seeds]
+    def ms(k):
+        v = np.array([r[k] for r in rows]); return v.mean(), v.std()
+    print(f"\n### Poelwijk {target}: val-selected-K test Spearman over {len(seeds)} seeds "
+          f"(GL n_exp={n_exp}) ###")
+    print(f"  GL reconstruction (CSAMP)  {ms('gl_direct')[0]:.3f} +/- {ms('gl_direct')[1]:.3f}   "
+          f"(K~{int(np.mean([r['K_gl'] for r in rows]))}, recovered ~{int(np.mean([r['n_rec'] for r in rows]))})")
+    print(f"  GL support + OLS refit     {ms('gl_refit')[0]:.3f} +/- {ms('gl_refit')[1]:.3f}")
+    print(f"  exact-FWHT top-K           {ms('bf_direct')[0]:.3f} +/- {ms('bf_direct')[1]:.3f}   "
+          f"(K~{int(np.mean([r['K_bf'] for r in rows]))})")
+    print(f"  Fourier-Lasso (L1)         {ms('lasso')[0]:.3f} +/- {ms('lasso')[1]:.3f}")
+    return rows
 
-    def direct(masks):                                    # GL-native: reconstruct f = sum f_hat(S) chi_S
-        if len(masks) == 0:
-            return np.full(len(Cte), mu)
-        return _design_2p(Cte, masks, w)[:, 1:] @ fhat_tr[masks] + mu
 
-    def refit(masks):                                     # OLS refit of the recovered support
-        if len(masks) == 0:
-            return np.full(len(Cte), mu)
-        lr = LinearRegression().fit(_design_2p(Ctr, masks, w), ytr)
-        return lr.predict(_design_2p(Cte, masks, w))
-
-    lasso_pred, li = fourier_lasso(Ctr, ytr, C[val], y[val], Cte, Psi, 2, w)
-    print(f"\n### In-distribution prediction ({target}: GL on {len(tr)} train, test {n_test}) ###")
-    print(f"GL recovered {len(gl_masks)} heavy coefficients via CSAMP ({r['status']}, {r['experiments']} calls)")
-    print(f"  GL reconstruction (direct) Spearman {_metrics(yte, direct(gl_masks))[1]:.3f}")
-    print(f"  GL support + OLS refit     Spearman {_metrics(yte, refit(gl_masks))[1]:.3f}")
-    print(f"  brute empirical top-{len(gl_masks):<4}   Spearman {_metrics(yte, refit(order[:max(len(gl_masks), 1)]))[1]:.3f}")
-    print(f"  Fourier-Lasso (L1)         Spearman {_metrics(yte, lasso_pred)[1]:.3f}  (nnz {li['nnz']})")
+def nexp_convergence(target="combined", seed=0, n_exps=(20000, 50000, 100000, 200000, 500000),
+                     Kmax=256, Ks=(4, 8, 16, 32, 64, 128, 256), device="cpu"):
+    """Does GL-CSAMP reconstruction -> exact-FWHT reconstruction as n_exp grows?"""
+    print(f"\n### GL-CSAMP -> exact convergence ({target}, seed {seed}): val-K test Spearman vs n_exp ###")
+    for ne in n_exps:
+        r = _one_seed(target, seed, ne, Kmax, Ks, device=device)
+        print(f"  n_exp={ne:>8}: GL {r['gl_direct']:.3f}   (exact-FWHT {r['bf_direct']:.3f}, "
+              f"recovered {r['n_rec']})")
 
 
 def main():
     run("combined")
     run("red")
-    predict("combined")
-    predict("red")
+    for t in ("combined", "red", "blue"):
+        evaluate(t)
+    nexp_convergence("combined")
 
 
 if __name__ == "__main__":

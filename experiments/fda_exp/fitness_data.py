@@ -18,7 +18,8 @@ import numpy as np
 
 AA20 = "ACDEFGHIKLMNPQRSTVWY"
 _AID = {c: i for i, c in enumerate(AA20)}
-_DATA = os.path.join(os.path.dirname(__file__), "..", "data")
+# cache dir is env-overridable so Modal can point it at a writable Volume (/cache)
+_DATA = os.environ.get("FDA_DATA_DIR") or os.path.join(os.path.dirname(__file__), "..", "data")
 _GB1_URL = "https://raw.githubusercontent.com/wchnicholas/ProteinGFourMutants/master/result/Mutfit"
 _GB1_CACHE = os.path.join(_DATA, "gb1_fitness.parquet")
 

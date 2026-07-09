@@ -1,0 +1,180 @@
+"""Phase 3 centerpiece: the differentiator between GL and Lasso/enumerated bases.
+
+To capture a degree-d interaction, any enumerated-basis method (Lasso, logistic on an
+explicit feature set) needs O(n^d) features, so at scale it is capped at low order
+(degree <=2 is already C(n,2) features).  GL finds the few heavy HIGH-order coefficients
+adaptively via CSAMP without ever enumerating them.  This asks, on data whose predictive
+terms are a-priori unknown and possibly high-order -- natural LANGUAGE (TinyStories
+next-token), where a distant token can flip the prediction:
+
+  - does GL's recovered heavy set actually contain degree->=3 coefficients? (degree histogram)
+  - does the GL reconstruction beat degree-<=2 logistic (the feasible-at-scale enumerated baseline)?
+  - a planted degree-k calibration: GL recovers a term degree-<=2 is provably blind to.
+  - scalability: CSAMP search width stays bounded on real language, blows up on random sequences.
+
+    uv run python -m fda_exp.gl_scale_predict
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from .gl_torch import gl_search_torch
+from .predict import majority_by_context, reconstruct
+from .spectrum import coeffs_at, points_to_index, popcount
+
+
+def _pairwise_design(D):
+    """Degree-<=2 design over the n +/-1 bits: [1 | bits | all C(n,2) pair products]."""
+    m, n = D.shape
+    iu, ju = np.triu_indices(n, k=1)
+    return np.concatenate([np.ones((m, 1), np.float32), D.astype(np.float32),
+                           (D[:, iu] * D[:, ju]).astype(np.float32)], axis=1)
+
+
+def gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed):
+    """Per-token GL: recover heavy coeffs of the 'next==t' indicator, reconstruct a score.
+    Returns scores (m_test, V), the recovered masks per token, and per-token |L|."""
+    n = Dtr.shape[1]
+    idx = points_to_index(Dtr)
+    cd_inv = len(Dtr) / (1 << n)
+    scores = np.full((len(Dte), V), -1e9)
+    masks_per_tok, sizes = [], []
+    for t in range(V):
+        if (ytr == t).sum() == 0:
+            masks_per_tok.append(np.empty(0, np.int64)); sizes.append(0); continue
+        ft = (2 * (ytr == t) - 1).astype(np.float64)
+        r = gl_search_torch(idx, ft, n, tau, n_exp=n_exp, device=device, mode="csamp", seed=seed + t)
+        L = np.array([s for s in (r["L"] or []) if s != 0], dtype=np.int64) if r["status"] == "ok" else np.empty(0, np.int64)
+        masks_per_tok.append(L); sizes.append(len(L))
+        if len(L):
+            scores[:, t] = reconstruct(Dte, n, L, coeffs_at(Dtr, ft, L), cd_inv)
+    return scores, masks_per_tok, sizes
+
+
+def _top1_top3(scores, yte):
+    pred = scores.argmax(1)
+    top3 = np.argsort(-scores, 1)[:, :3]
+    return (float((pred == yte).mean()),
+            float(np.mean([yte[i] in top3[i] for i in range(len(yte))])), pred)
+
+
+def _logistic(Dtr, ytr, Dte, yte, degree):
+    from sklearn.linear_model import LogisticRegression
+    if degree == 1:
+        Xtr, Xte = (1 - Dtr) // 2, (1 - Dte) // 2         # bits 0/1
+    else:
+        Xtr, Xte = _pairwise_design(Dtr), _pairwise_design(Dte)
+    lr = LogisticRegression(max_iter=400).fit(Xtr, ytr)
+    P = lr.predict_proba(Xte)
+    pred = lr.classes_[P.argmax(1)]
+    t3 = lr.classes_[np.argsort(-P, 1)[:, :3]]
+    return (float((pred == yte).mean()),
+            float(np.mean([yte[i] in t3[i] for i in range(len(yte))])), pred, P.max(1))
+
+
+def run_language(window=6, vocab_size=48, n_stories=12000, tau=0.35, n_exp=40000,
+                 test_frac=0.25, seed=0, device="cpu"):
+    from .hf_data import tinystories_next_token
+    X, y, vocab, w, bpt = tinystories_next_token(window, vocab_size, n_stories, seed=seed)
+    D, maj = majority_by_context(X, y)
+    n = D.shape[1]
+    V = len(vocab)
+    perm = np.random.default_rng(seed + 7).permutation(len(D))
+    nte = int(test_frac * len(D))
+    te, tr = perm[:nte], perm[nte:]
+    Dtr, ytr, Dte, yte = D[tr], maj[tr], D[te], maj[te]
+    base = float((yte == np.bincount(ytr).argmax()).mean())
+
+    print(f"\n########## TinyStories next-token via GL (window={w} tokens, {bpt} bits/tok, "
+          f"n={n}, V={V}) ##########")
+    print(f"distinct contexts {len(D)} (train {len(Dtr)}, test {len(Dte)}); "
+          f"2^n={1 << n:.0e} -> enumeration/full-FWHT INFEASIBLE, degree-<=2 = {1 + n + n*(n-1)//2} feats")
+
+    scores, masks_per_tok, sizes = gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed)
+    gl1, gl3, gl_pred = _top1_top3(scores, yte)
+    flat = np.concatenate([m for m in masks_per_tok if len(m)]) if any(len(m) for m in masks_per_tok) else np.empty(0, np.int64)
+    dh = np.bincount(popcount(flat), minlength=6) if len(flat) else np.zeros(6, int)
+
+    l1_1, l1_3, l1_pred, _ = _logistic(Dtr, ytr, Dte, yte, 1)
+    l2_1, l2_3, l2_pred, l2_conf = _logistic(Dtr, ytr, Dte, yte, 2)
+
+    print(f"\n{'method':>22}  {'top-1':>6} {'top-3':>6}")
+    print("-" * 40)
+    print(f"{'majority baseline':>22}  {base:>6.3f} {'-':>6}")
+    print(f"{'logistic degree-1':>22}  {l1_1:>6.3f} {l1_3:>6.3f}")
+    print(f"{'logistic degree-<=2':>22}  {l2_1:>6.3f} {l2_3:>6.3f}   <- feasible enumerated baseline")
+    print(f"{'GL reconstruction':>22}  {gl1:>6.3f} {gl3:>6.3f}   avg|L|={np.mean(sizes):.0f}")
+    print(f"\nGL heavy-set degree histogram (deg 0..5): {dh.tolist()}  "
+          f"(deg>=3 coeffs: {int(dh[3:].sum())})")
+    # where does GL help? accuracy on contexts the degree-<=2 model is LEAST confident about
+    order = np.argsort(l2_conf)
+    q = len(order) // 4
+    hard = order[:q]                                       # bottom-quartile deg<=2 confidence = "sensitive"
+    print(f"on degree-<=2's least-confident quartile ({q} contexts): "
+          f"GL {float((gl_pred[hard]==yte[hard]).mean()):.3f}  vs  deg<=2 {float((l2_pred[hard]==yte[hard]).mean()):.3f}")
+    return dict(n=n, V=V, gl_top1=gl1, l1_top1=l1_1, l2_top1=l2_1, deg_hist=dh.tolist(), avg_L=float(np.mean(sizes)))
+
+
+def run_planted(window=6, vocab_size=24, n_stories=8000, k=3, tau=0.4, n_exp=40000,
+                test_frac=0.25, seed=0, device="cpu"):
+    """Calibration: plant a degree-k Walsh term chi_S on REAL language contexts. GL must
+    recover S and reconstruct it (acc ~1); degree-<=2 logistic is PROVABLY blind for k>=3
+    (a degree-k character is orthogonal to every degree-<=2 feature) -> acc ~0.5.
+    The clean 'GL does what an enumerated low-order basis structurally cannot at scale'."""
+    from sklearn.linear_model import LogisticRegression
+    from .hf_data import tinystories_next_token
+    X, _, vocab, w, bpt = tinystories_next_token(window, vocab_size, n_stories, seed=seed)
+    D = np.unique(X, axis=0)
+    n = D.shape[1]
+    pos = np.unique(np.linspace(0, n - 1, k).astype(int))[:k]     # k spread bit positions
+    S_mask = int(sum(1 << int(p) for p in pos))
+    f = np.prod(D[:, pos], axis=1).astype(np.float64)             # chi_S in +/-1
+    perm = np.random.default_rng(seed).permutation(len(D))
+    nte = int(test_frac * len(D)); te, tr = perm[:nte], perm[nte:]
+    Dtr, ftr, Dte, fte = D[tr], f[tr], D[te], f[te]
+    idx = points_to_index(Dtr); cd_inv = len(Dtr) / (1 << n)
+    r = gl_search_torch(idx, ftr, n, tau, n_exp=n_exp, device=device, mode="csamp", seed=seed)
+    L = np.array([s for s in (r["L"] or []) if s != 0], dtype=np.int64) if r["status"] == "ok" else np.empty(0, np.int64)
+    g = reconstruct(Dte, n, L, coeffs_at(Dtr, ftr, L), cd_inv) if len(L) else np.zeros(len(Dte))
+    gl_acc = float(((g < 0) == (fte < 0)).mean())
+    lr = LogisticRegression(max_iter=400).fit(_pairwise_design(Dtr), (ftr > 0).astype(int))
+    l2_acc = float((lr.predict(_pairwise_design(Dte)) == (fte > 0)).mean())
+    print(f"\n########## Planted degree-{k} term on real language contexts (n={n}, "
+          f"positions {pos.tolist()} -> mask {S_mask}) ##########")
+    print(f"  GL recovered the planted mask: {S_mask in set(L.tolist())}   (|L|={len(L)})")
+    print(f"  sign accuracy:  GL {gl_acc:.3f}   vs   degree-<=2 logistic {l2_acc:.3f}  "
+          f"(deg-<=2 is blind to a degree-{k} char)")
+    return dict(k=k, n=n, recovered=S_mask in set(L.tolist()), gl_acc=gl_acc, l2_acc=l2_acc)
+
+
+def scalability_control(window=8, vocab_size=24, n_stories=8000, tau=0.3, n_exp=30000,
+                        seed=0, device="cpu"):
+    """GL's feasibility needs context repetition (R_k): real language contexts share
+    suffixes so CSAMP width stays bounded; random-bit contexts (no repetition) blow it up."""
+    from .hf_data import tinystories_next_token
+    X, y, vocab, w, bpt = tinystories_next_token(window, vocab_size, n_stories, seed=seed)
+    D, maj = majority_by_context(X, y)
+    n = D.shape[1]
+    f = (2 * (maj == np.bincount(maj).argmax()) - 1).astype(np.float64)
+    rng = np.random.default_rng(seed)
+    Drand = np.unique(1 - 2 * rng.integers(0, 2, size=(len(D), n)), axis=0)
+    frand = rng.choice([-1.0, 1.0], len(Drand))
+    print(f"\n########## Scalability: CSAMP search width, real vs random contexts (n={n}) ##########")
+    for name, Dd, ff in [("real language", D, f), ("random bits", Drand, frand)]:
+        r = gl_search_torch(points_to_index(Dd), ff, n, tau, n_exp=n_exp, device=device,
+                            mode="csamp", seed=seed, max_width=100_000)
+        mw = max(r["widths"]) if r["widths"] else 0
+        print(f"  {name:>14}: status={r['status']:>7}  max width={mw:>7}  "
+              f"({'bounded -> GL feasible' if r['status'] == 'ok' else 'BLEW UP -> no context repetition'})")
+
+
+def main():
+    run_language()
+    run_planted(k=3)
+    run_planted(k=4)
+    scalability_control()
+
+
+if __name__ == "__main__":
+    main()

@@ -23,7 +23,8 @@ _VALID_URL = (
     "https://huggingface.co/datasets/roneneldan/TinyStories/resolve/"
     "refs%2Fconvert%2Fparquet/default/validation/0000.parquet"
 )
-_CACHE = os.path.join(os.path.dirname(__file__), "..", "data", "tinystories_valid.parquet")
+_DATA_DIR = os.environ.get("FDA_DATA_DIR") or os.path.join(os.path.dirname(__file__), "..", "data")
+_CACHE = os.path.join(_DATA_DIR, "tinystories_valid.parquet")
 
 _TOKEN_RE = re.compile(r"[a-z]+|[.!?,;]")
 
