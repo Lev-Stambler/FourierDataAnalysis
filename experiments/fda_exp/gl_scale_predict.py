@@ -40,19 +40,24 @@ def gl_onevsrest(Dtr, ytr, Dte, V, tau, n_exp, device, seed, max_width=80000):
     cd_inv = len(Dtr) / (1 << n)
     scores = np.full((len(Dte), V), -1e9)
     masks_per_tok, sizes = [], []
+    n_blowup = 0
     for t in range(V):
         if (ytr == t).sum() == 0:
             masks_per_tok.append(np.empty(0, np.int64)); sizes.append(0); continue
         ft = (2 * (ytr == t) - 1).astype(np.float64)
         r = gl_search_torch(idx, ft, n, tau, n_exp=n_exp, device=device, mode="csamp",
                             seed=seed + t, max_width=max_width)
-        Lfull = np.array(r["L"], dtype=np.int64) if (r["status"] == "ok" and r["L"]) else np.empty(0, np.int64)
+        rec = np.array(r["L"], dtype=np.int64) if (r["status"] == "ok" and r["L"]) else np.empty(0, np.int64)
+        n_blowup += r["status"] != "ok"
+        # ALWAYS include the constant S=0 (the token base rate f_hat(empty)): a token whose search
+        # blows up then degrades gracefully to the majority predictor instead of scoring -inf and
+        # never being predicted.  Dropping it centered the indicator -> argmax biased to rare tokens.
+        Lfull = np.unique(np.concatenate([[0], rec])).astype(np.int64)
         L = Lfull[Lfull != 0]                              # non-constant terms (for the degree histogram)
         masks_per_tok.append(L); sizes.append(len(L))
-        if len(Lfull):
-            # reconstruct with the FULL recovered set INCLUDING the constant S=0 (the token base
-            # rate f_hat(empty)); dropping it centers the indicator and biases argmax to rare tokens.
-            scores[:, t] = reconstruct(Dte, n, Lfull, coeffs_at(Dtr, ft, Lfull), cd_inv)
+        scores[:, t] = reconstruct(Dte, n, Lfull, coeffs_at(Dtr, ft, Lfull), cd_inv)
+    if n_blowup:
+        print(f"  ({n_blowup}/{V} token searches hit max_width -> base-rate fallback)")
     return scores, masks_per_tok, sizes
 
 
