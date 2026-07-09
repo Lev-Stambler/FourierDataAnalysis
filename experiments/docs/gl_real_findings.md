@@ -32,44 +32,41 @@ Same run, `mode='samp'` (partners drawn context-**blind**) vs `mode='csamp'`:
 coefficients are invisible without subcube conditioning.  This is the paper's central theoretical
 prediction, confirmed on real biological data with the actual algorithm — the strongest result here.
 
-## C. In-distribution prediction — GL is NOT a better predictor (honest negative)
+## C. In-distribution prediction — GL reconstruction IS a competitive predictor
 
-Run GL on a 5192-variant TRAIN subsample, refit the recovered heavy support, predict 2000 held-out:
+Run GL on a 5192-variant TRAIN subsample; the predictor is the reconstruction from the recovered
+heavy-hitter Fourier functions, g(x) = sum_{S in heavy} f_hat_D(S) chi_S(x).  Held-out (2000) Spearman:
 
-| method | held-out Spearman |
-|---|---|
-| GL-refit (CSAMP heavy support) | ~0.04 |
-| brute-force top-K (same size) | ~0.26–0.38 |
-| **true top-91 heavy** (from full data), refit | 0.36 |
-| **Fourier-Lasso** (L1 over full 2^13 basis) | **0.866** |
+| method | combined | red |
+|---|---|---|
+| **GL reconstruction (direct, via CSAMP)** | **0.780** | 0.512 |
+| GL support + OLS refit | 0.777 | 0.548 |
+| brute empirical top-K (exact FWHT selection) | 0.825 | 0.613 |
+| Fourier-Lasso (L1 over full 2^13 basis) | 0.866 | 0.684 |
 
-The real reason is **not** that the signal is spread (an earlier draft claimed that — wrong).  The
-L1 sparsity/accuracy tradeoff shows sparse prediction is easy:
+**NOTE — earlier drafts of this file reported GL prediction at ~0.04 and concluded GL "is not a
+predictor". That was WRONG: two stacked bugs.** (1) a **bit-ordering mismatch** — `_fwht`/`gl_torch`
+index a coefficient's bit p as value 2^p, but `sample_efficiency._support_design` uses the reversed
+`unravel_index`/C-order, so the reconstruction used the wrong (position-reversed) characters; fixed
+by `_design_2p`.  (2) an **off-by-one** — since f is centered, f_hat(empty)~=0 sorts LAST, so the
+`[1:1+K]` slice dropped the single *largest* heavy hitter; fixed to `[:K]`.  With both fixed, the
+heavy-hitter reconstruction is competitive.
 
-| full-Walsh Lasso nnz | 4 | 9 | 50 | 231 | 1301 |
-|---|---|---|---|---|---|
-| test Spearman | 0.710 | 0.743 | 0.801 | **0.866** | 0.874 |
-
-Just **4 coefficients** give 0.71.  So the failure is **selection paradigm**, not sparsity:
-- **L1 joint selection** (Lasso): 0.87 — picks the *predictive* coefficients.
-- **magnitude ranking** (brute top-K by |f_hat(S)|, which is fundamentally what GL does): **0.38** —
-  even *perfect* magnitude ranking loses badly, because |f_hat(S)| ranks by marginal variance, not
-  joint predictive value, and hard-threshold + OLS overfits vs L1 soft-shrinkage.
-- **GL** (magnitude search + Ψ sampling noise on a subsample): **0.04** — worse still.
-
-So GL is a **recovery / characterization** tool (find the heavy coefficients), *not* a predictor.
-For prediction, jointly-regularized selection (L1) over the basis is the right estimator; GL's
-paradigm of ranking by coefficient magnitude is the wrong one.  (An earlier draft also degree-capped
-the GL search to try to salvage prediction — removed: it is not part of GL, would suppress the real
-high-order coefficients that make section B work, and did not help anyway.)
+More coefficients help up to K~=100–500, then subsample noise dominates (K-sweep, honest train-
+estimated coeffs, combined): K=4 -> 0.73, K=20 -> 0.79, K=100 -> 0.805, K=500 -> 0.76, K=8192 -> 0.
+The true-coefficient ceiling is monotone (K=4 -> 0.73 ... K=8192 -> 1.00).  The residual gap
+GL(0.78) < brute-FWHT(0.825) < Lasso(0.866) is CSAMP sampling noise + magnitude-vs-L1 selection.
 
 ## Honest bottom line
 
 1. **The algorithm is correct on real data** (precision-1.0 recovery of real epistatic coefficients).
 2. **Blindness holds dramatically on real biology** — CSAMP is necessary; SAMP recovers nothing.
    This validates the paper's *central* claim on real data and is the keeper result.
-3. **GL is not a better ML predictor in-distribution.** Its value is **scalable support-finding**
-   (heavy coefficients without enumerating 2^n) — which only pays off at large n where Lasso-over-
-   the-full-basis is infeasible, and where the data has **context repetition** (n-grams, not
-   complete combinatorial landscapes).  Poelwijk (small n, no repetition) cannot show that; the
-   DNA/language n-gram setting can, and is the honest place to demonstrate a GL-specific advantage.
+3. **GL reconstruction is a competitive in-distribution predictor** — Spearman 0.78 (combined) via
+   CSAMP, vs 0.83 for exact-FWHT magnitude selection and 0.87 for L1-Lasso.  The heavy-hitter
+   reconstruction works; the small residual gap to Lasso is CSAMP sampling noise + magnitude-vs-L1
+   selection, and closes as K grows to ~100–500.
+4. **Open / next:** (a) tune K on a validation split for a proper predictor; (b) close the GL-vs-FWHT
+   gap (more n_exp, or better bucket estimation); (c) the GL-specific *scalability* payoff needs
+   large n where enumerate+Lasso is infeasible AND context repetition exists (DNA/language n-grams,
+   not complete combinatorial landscapes) — untested.
