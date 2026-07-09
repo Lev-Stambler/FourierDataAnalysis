@@ -66,7 +66,9 @@ def gl_search_torch(idx_np, f_np, n, tau, n_exp=20000, device=None,
     """Run GL; return the recovered heavy masks and the per-level search widths.
 
     mode='csamp' = real oracle; mode='samp' = samples-only (partner drawn
-    uniformly, ignoring context) -> demonstrates blindness.
+    uniformly, ignoring context) -> demonstrates blindness.  No degree restriction:
+    GL must be free to find heavy coefficients at ANY order (the high-order ones are
+    exactly what CSAMP recovers and SAMP cannot).
     """
     device = device or get_device()
     m = len(idx_np)
