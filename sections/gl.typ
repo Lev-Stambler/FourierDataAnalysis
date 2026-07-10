@@ -380,6 +380,49 @@ At the opposite extreme, if the dataset's spectrum uniformly tracks the global o
 
 In this regime the heavy dataset coefficients essentially _are_ the heavy global coefficients; the substantive content of @thm:context-gl and @thm:dataset-gl lies exactly where representativeness fails.
 
+== Interaction Screening: Conditioning on the Interacting Set
+
+@lem:blindness pinpoints why a sample-only dataset GL stalls: the context-conditioning estimator splits off $J$ and conditions on the _complement_ $Jbar$ of $n - k$ coordinates, whose subcube must repeat in $calD$.
+This fails above the birthday horizon $k approx n - 2 log_2 m$: to reach a degree-$d$ character the search needs $|J| >= d$, i.e. $|Jbar| <= n - d$, and the complement repeats only when $n - d lt.tilde 2 log_2 m$ — a _short-context, high-degree_ regime.
+
+The complementary move conditions on the _interacting set itself_.
+For $S subset.eq [n]$ write $nu_S := EE_(z)[ (EE_(x ~ calD)[f(x) | x_S = z])^2 ]$, the energy of the best predictor using only the coordinates $x_S$.
+When $calD$ is a product distribution this is a bucket sum on the $S$-subcube,
+$
+nu_S = sum_(U subset.eq S) dcoeff(U)^2,
+$ <eq:cond-energy>
+so the _pure_ degree-$|S|$ interaction is recovered by Möbius inversion over subsets,
+$
+dcoeff(S)^2 = sum_(U subset.eq S) (-1)^(|S| - |U|) nu_U.
+$ <eq:mobius>
+@eq:cond-energy is the dual of @lem:pair-form — split on $S$ and keep the diagonal on $S$ rather than on $Jbar$ — and is estimated by the $U$-statistic over dataset points sharing $x_S$,
+$
+hat(nu)_S = frac(1, m) sum_(g) frac(S_g^2 - Q_g, n_g - 1), quad S_g = sum_(x in g) f(x), quad Q_g = sum_(x in g) f(x)^2,
+$
+over the fibres $g = {x in calD : x_S = z}$; singleton groups drop out, removing exactly the self-pair diagonal that @lem:blindness showed swamps the suffix version.
+This needs only the $S$-subcube — $2^(|S|)$ cells — to repeat, i.e. $|S| lt.tilde log_2 m$, _independent of $n$_: it reaches a sparse interaction inside an arbitrarily long context, at the price of a degree cap.
+
+#proposition[Interaction Screening][
+  Fix $d <= log_2 m - O(1)$ and $tau > 0$. From $sans("SAMP")$ access to $calD$ alone, conditioning on each $S$ with $|S| <= d$, the $U$-statistic estimator of @eq:cond-energy together with @eq:mobius recovers every $S$ with $|S| <= d$ and $dcoeff(S)^2 >= tau^2$, in time $O(binom(n, d) dot m dot 2^d)$ — with no repetition required on any complement $Jbar$, hence no birthday-horizon obstruction. It is _not_ blind in the reverse direction: a pure degree-$d$ character ($dcoeff(S) != 0$ but $dcoeff(U) = 0$ for all $U subset.neq S$) has $nu_S = dcoeff(S)^2$ and $nu_U = 0$ for $U subset.neq S$, so it is detected.
+]<prop:interaction-screening>
+
+@prop:interaction-screening is functional ANOVA — the Hoeffding–Sobol decomposition — read in the dataset-Fourier basis, and it is precisely what sample-only access _can_ do: screening $binom(n, d)$ sets matches the statistical-query lower bound $n^(Omega(d))$ for recovering a size-$d$ junta from random examples @kearns1998sq @blum2003noise, and no sample-only method does essentially better without breaking the noisy-parity assumption.
+The extra power the dataset model buys is the stronger _subcube-conditioning_ access @chen2021junta @canonne2015testing — which learns a $d$-junta in $2^(O(d))$ rather than $n^(Omega(d))$ — realized here as "retrieve rows sharing this partial context," available exactly where $calD$ contains the conditioned subcube.
+The two primitives are complementary, tiling the (degree $d$, dimension $n$) plane by the single quantity $min(d, n - d)$:
+
+#table(
+  columns: 3, align: (left, left, left),
+  [*primitive*], [*conditions on*], [*available when*],
+  [context-conditioning (@thm:context-gl)], [complement $Jbar$, size $n - d$], [$n - d lt.tilde log_2 m$ (high degree, short context)],
+  [interaction screening (@prop:interaction-screening)], [set $S$, size $d$], [$d lt.tilde log_2 m$ (low degree, long context)],
+)
+
+The uncovered corner $min(d, n - d) gt.tilde log_2 m$ — high degree _and_ long context — is exactly the sample-only, subcube-empty regime where @lem:blindness and the statistical-query / noisy-parity barrier @kearns1998sq @blum2003noise leave no efficient method.
+The boundary is soft, not sharp: shrinking the conditional means of @eq:cond-energy toward their lower-order parents (empirical Bayes) degrades $hat(nu)_S$ gracefully as the $2^(|S|)$ cells thin, giving a data-adaptive effective degree; and a kernel/embedding relaxation of the fibre ("rows with $x_S approx z$") trades bias for reach — the exact-to-soft spectrum that connects this combinatorial recovery to representation learning, which passes the worst-case barrier only by assuming the smoothness a parity lacks.
+#CLAUDE[
+  Empirically (categorical Householder version, `interaction_predict.py`): on TinyStories next-_character_ (dense $V = 27$, window $24$) the recovered degree-$3$ interactions carry held-out predictability (collision energy positive out of sample) and lift top-$1$ over the degree-$<= 2$ baseline; on next-_word_ (sparser) the same screen overfits (held-out degree-$3$ energy $< 0$) — the $2^(|S|) lt.tilde m$ boundary made visible. The genuinely high-degree win stays in the context-conditioning corner (Poelwijk, @thm:context-gl).
+]
+
 == Application: Kushilevitz-Mansour over Datasets
 
 Classical GL powers the Kushilevitz-Mansour learning algorithm @kushilevitz1993learning (@o2021analysis, Theorems 3.37-3.38): any $f$ with $norm(hat(f))_1 <= s$ — in particular any decision tree of size $s$ — is learnable from queries in time $"poly"(n, s, 1\/eps)$.
