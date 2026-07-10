@@ -35,19 +35,24 @@ confirms real high-order value: **d≤1 0.35 → d≤2 0.74 → d≤3 0.80 → d
 
 Exact-leaf GL (V=2), 3 seeds, `n_exp=400k`, held-out Spearman (`fda_exp/qary_gl_predict.run_poelwijk`):
 
-| seed | GL-recon | GL+refit | recovered (K) | degree-≤2 | dense degree-≤4 | GL degree hist (≥3) |
-|------|----------|----------|---------------|-----------|-----------------|---------------------|
-| 0 | 0.811 | **0.819** | 144 (K=128) | 0.762 | 0.826 | [0,4,9,21,18,22] (115) |
-| 1 | 0.799 | **0.806** | 97 (K=64) | 0.739 | 0.831 | [0,4,8,15,14,4] (52) |
-| 2 | 0.778 | **0.793** | 119 (K=64) | 0.730 | 0.819 | [0,4,8,15,11,7] (52) |
+| seed | GL-recon | GL+refit | degree-≤2 | dense degree-≤4 | Fourier-Lasso | GL degree hist (≥3) |
+|------|----------|----------|-----------|-----------------|---------------|---------------------|
+| 0 | 0.811 | **0.819** | 0.762 | 0.826 | 0.866 | [0,4,9,21,18,22] (115) |
+| 1 | 0.799 | **0.806** | 0.739 | 0.831 | 0.867 | [0,4,8,15,14,4] (52) |
+| 2 | 0.778 | **0.793** | 0.730 | 0.819 | 0.867 | [0,4,8,15,11,7] (52) |
 
-**GL clearly beats degree-≤2** (0.79–0.82 vs 0.73–0.76) and **GL+refit ≈ dense degree-≤4** (0.82 vs 0.83)
-using **~64–128 sparse coefficients where the dense degree-≤4 model needs 1093** — and the recovered set is
-*dominated by degree ≥3* (52–115 of it). GL adaptively finds the heavy high-order Walsh characters
-(degree 3/4/5) and reconstructs from them; additive+pairwise cannot reach this. **This is the paper's
-thesis working on a real landscape** — and it needed the exact-leaf recall fix to land cleanly. (GL recovers
-the *heaviest* ~100–140 of the ~500-coefficient heavy set; that sparse slice already captures the high-order
-predictive value.)
+**GL clearly beats degree-≤2** (0.79–0.82 vs 0.73–0.76) and **GL+refit ≈ dense degree-≤4** (0.82 vs 0.83),
+using **~64–128 sparse coefficients** (dense degree-≤4 needs 1093) whose recovered set is *dominated by
+degree ≥3* (52–115 of it). GL adaptively finds the heavy high-order Walsh characters (degree 3/4/5) that
+additive+pairwise cannot see — **demonstrating the high-order predictive value is real and GL captures it
+via sublinear CSAMP search**, which required the exact-leaf recall fix to land.
+
+**Honest caveat (not a knock):** full-spectrum **Fourier-Lasso is best (0.867)** — but *only because 2^13 is
+small enough to enumerate the entire spectrum and L1-select*. That route dies at any real scale
+(w=100 → 2^100 features); GL's CSAMP finds the same heavy high-order terms **without enumerating**, which is
+the whole point. So GL is not the best predictor on this small landscape; it is the demonstration that its
+*sublinear* high-order recovery has real predictive value. (Earlier binary-GL Poelwijk numbers, ~0.78, were
+understated by the same leaf-recall bug — still present in `gl_torch`; porting exact-leaf there is a TODO.)
 
 ## GB1 — the verifiable anchor (real protein epistasis, V=20, w=4, m=149,361, V^w=160k enumerable)
 
@@ -92,10 +97,13 @@ characters **on top of the full degree-≤2 model** improve top-1?
 
 ## Bottom line
 
-- **The high-order predictive win is real and GL captures it — Poelwijk.** On a real landscape with sparse
-  high-order epistasis, exact-leaf GL recovers a sparse (~64–128) mostly-degree-≥3 character set and beats
-  the additive+pairwise baseline (0.82 vs 0.74), matching dense degree-≤4 with ~10× fewer coefficients. This
-  is the paper's thesis realized on real data.
+- **The high-order predictive value is real and GL captures it sublinearly — Poelwijk.** On a real landscape
+  with sparse high-order epistasis, exact-leaf GL recovers a sparse (~64–128) mostly-degree-≥3 character set
+  and beats the additive+pairwise baseline (0.82 vs 0.74), matching dense degree-≤4 with ~10× fewer
+  coefficients — via CSAMP, without enumerating the spectrum. Full-spectrum Fourier-Lasso is still best
+  (0.87) but *only because 2^13 is enumerable*; that route dies at scale, which is exactly where GL's
+  sublinear search is the point. GL is not the best predictor here; it is the proof that its high-order
+  recovery has real predictive value.
 - **The algorithm is verified, and one genuine bug was found because a negative looked suspicious.** On GB1
   (V^w enumerable) GL matches brute-force at matched K (recall ~0.88) and its recovered-degree histogram
   matches brute-force's true top-K — so it is unbiased. The leaf-recall bug (0.52→0.88) was found only

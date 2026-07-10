@@ -115,6 +115,7 @@ def run_poelwijk(target="combined", seeds=(0, 1, 2), n_exp=400000, tau_rank=512,
     from sklearn.linear_model import Ridge
 
     from .fitness_data import poelwijk_windows
+    from .sample_efficiency import fourier_lasso
 
     def walsh_design(C, degree):
         m, ww = C.shape
@@ -159,10 +160,13 @@ def run_poelwijk(target="combined", seeds=(0, 1, 2), n_exp=400000, tau_rank=512,
         gl_refit = _spearman(yte, refit(Kf, Cte))
         d2 = _spearman(yte, Ridge(alpha=1.0).fit(walsh_design(Ctr, 2), ytr).predict(walsh_design(Cte, 2)))
         d4 = _spearman(yte, Ridge(alpha=1.0).fit(walsh_design(Ctr, 4), ytr).predict(walsh_design(Cte, 4)))
+        lasso_pred, _ = fourier_lasso(Ctr, ytr, Cval, yval, Cte, Psi, V, w)   # full-spectrum L1 (enumerable here)
+        lasso = _spearman(yte, lasso_pred)
         dh = np.bincount(degree_of_codes(gl_ord[:Kf], V, w), minlength=w + 1)
         print(f"  seed{seed}: GL-recon {gl_recon:.3f} | GL+refit {gl_refit:.3f} (K={Kf}, "
               f"rec {len(codes)}/{len(heavy)} recall {recall:.2f}) | degree<=2 {d2:.3f} | "
-              f"dense degree<=4 {d4:.3f} | GL deg {dh[:6].tolist()} (>=3: {int(dh[3:].sum())})")
+              f"dense degree<=4 {d4:.3f} | Fourier-Lasso {lasso:.3f} | "
+              f"GL deg {dh[:6].tolist()} (>=3: {int(dh[3:].sum())})")
 
 
 def _decode_tokens(X, window, bpt):
