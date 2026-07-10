@@ -93,10 +93,38 @@ def qary_lang():
     sys.stdout.flush(); vol.commit()
 
 
+@app.function(image=image, gpu="H100", cpu=16.0, memory=65536, volumes={"/cache": vol}, timeout=10800)
+def interactions():
+    """Interaction-screening (= functional ANOVA) phase-diagram demo: does long-context degree-3
+    (found by conditioning on the interacting set, not the CSAMP suffix) add held-out next-symbol
+    predictability that degree-<=2 cannot?  Screening is numpy group-bys (CPU-bound; H100 for
+    headroom / future GPU port), so the instance is provisioned with extra cores + RAM."""
+    import sys
+
+    from fda_exp.interaction_predict import run_char, run_word
+    from fda_exp.qary_gl_predict import run_poelwijk
+    sys.stdout = _Tee("/cache/interactions_results.txt")
+    print("===== ANOVA corner: long-context char/word, degree-3 via set-conditioning =====", flush=True)
+    for fn, kw in [(run_char, dict(window=24, n_stories=160000, max_pairs=2_000_000)),
+                   (run_char, dict(window=96, n_stories=160000, max_pairs=2_000_000, heredity_topk=16)),
+                   (run_word, dict(window=12, vocab_size=64, n_stories=160000, max_pairs=2_000_000))]:
+        try:
+            fn(**kw)
+        except Exception as e:
+            print(f"{fn.__name__}({kw}) FAILED: {repr(e)[:200]}", flush=True)
+        vol.commit()
+    print("\n===== CSAMP corner (high-degree, short/repeating): Poelwijk =====", flush=True)
+    try:
+        run_poelwijk(seeds=(0,), device="cpu")
+    except Exception as e:
+        print(f"run_poelwijk FAILED: {repr(e)[:200]}", flush=True)
+    sys.stdout.flush(); vol.commit()
+
+
 @app.function(image=image, volumes={"/cache": vol})
 def show():
     import os
-    for name in ("qary_lang_results.txt", "phase1_results.txt", "phase3_results.txt"):
+    for name in ("interactions_results.txt", "qary_lang_results.txt", "phase1_results.txt", "phase3_results.txt"):
         p = f"/cache/{name}"
         print(f"\n================= {name} =================")
         print(open(p).read() if os.path.exists(p) else "(not present yet)")
