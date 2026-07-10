@@ -6,10 +6,10 @@
 
 = Conclusion and Future Directions
 
-Taking expectations over a dataset while keeping the characters of the ambient product space yields a usable, sample-estimable Fourier calculus — provided one respects the density constant $C_cal(D)$ and the aliasing it encodes.
-The dictionary (lift, inversion, mass identity, closeness) is elementary; the payoff is that classical spectral algorithms can be transplanted honestly: low-degree learning survives with a scaled reconstruction, and Goldreich-Levin survives exactly when the dataset's bias spectrum is dominated by few heavy terms — with a matching impossibility (blindness) for sample-only access.
+Taking expectations over a dataset while keeping the characters of the ambient product space gives a sample-estimable Fourier calculus, provided one respects the density constant $C_cal(D)$ and the aliasing it encodes.
+The dictionary (lift, inversion, mass identity, closeness) is elementary, and classical spectral algorithms transplant with it: low-degree learning survives with a scaled reconstruction, and Goldreich-Levin survives exactly when the dataset's bias spectrum is dominated by few heavy terms — with a matching impossibility (blindness) for sample-only access.
 
-Beyond the open problems listed at the end of the Goldreich-Levin section, some directions we find promising:
+Beyond the open problems at the end of the Goldreich-Levin section, a few directions:
 
 #TODO[
   - _Degree monotonicity._ Is there a monotone relationship between the degree (spectral concentration) of $f$ over the dataset and over the full space?

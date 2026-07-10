@@ -268,6 +268,71 @@ def run_language(window=4, vocab_size=32, n_stories=20000, max_pairs=800000, tau
           f"majority {base:.3f}")
 
 
+def run_language_raw(V=32, window=6, n_stories=120000, max_pairs=1_000_000, tau=0.04,
+                     n_exp=60000, n_fit=45000, device="cpu", max_width=150000, seed=0):
+    """Language next-token high-order DONE RIGHT: RAW frequency-weighted measure (NO majority
+    collapse -- the collapse replaced D with uniform-over-distinct and flattened the next-token
+    distribution), scaled data so the noise floor ~1/sqrt(m) drops below real heavy high-order
+    coefficients, in the un-enumerable regime (V^w >> 16384 so Fourier-Lasso is FORCED to
+    degree-<=2 -- the 'Lasso fails, GL needed' setup).  Decisive test: does adding GL's recovered
+    degree>=3 characters ON TOP of the full degree-<=2 model improve held-out top-1?"""
+    from sklearn.linear_model import LogisticRegression
+
+    from .audit import design_matrix
+    from .hf_data import tinystories_next_token
+
+    X, y, vocab, w, bpt = tinystories_next_token(window, V, n_stories, max_pairs, seed=seed)
+    tok = _decode_tokens(X, window, bpt)
+    keep = y != 0                                            # in-vocab next-token only
+    tok, y = tok[keep], y[keep]
+    Psi = householder_basis(V)
+    rng = np.random.default_rng(seed + 7)
+    perm = rng.permutation(len(tok))
+    nte, nval = int(0.2 * len(tok)), int(0.1 * len(tok))
+    te, tr = perm[:nte], perm[nte + nval:]                  # RAW pairs, no collapse
+    Dtr, ytr, Dte, yte = tok[tr], y[tr], tok[te], y[te]
+    C_D = (V ** w) / len(Dtr)
+    base = float((yte == np.bincount(ytr).argmax()).mean())
+    print(f"\n########## RAW-measure language GL (V={V}, w={w}, pairs_tr={len(Dtr)}, "
+          f"C_D={C_D:.1e}, noise~{1 / np.sqrt(len(Dtr)):.4f}) ##########")
+    print(f"V^w={V ** w:.1e} >> 16384 -> Fourier-Lasso forced to degree<=2; majority base={base:.3f}")
+
+    fs = rng.choice(len(Dtr), min(n_fit, len(Dtr)), replace=False)   # subsample for logistic fits (RAM)
+    Dfit, yfit = Dtr[fs], ytr[fs]
+    ts = rng.choice(len(Dte), min(n_fit, len(Dte)), replace=False)
+    Dtes, ytes = Dte[ts], yte[ts]
+
+    idx_tr = _encode_qary(Dtr, V)                            # GL search uses ALL rows
+    codes_all, n_blow = [], 0
+    for t in range(V):
+        if (ytr == t).sum() < 30:
+            continue
+        ft = (2 * (ytr == t) - 1).astype(np.float64)
+        r = qary_gl_search(idx_tr, ft, w, V, Psi, tau, n_exp=n_exp, device=device,
+                           mode="csamp", seed=seed + t, max_width=max_width)
+        n_blow += r["status"] != "ok"
+        if r["status"] == "ok":
+            codes_all += [c for c in r["L"] if c != 0]
+    allcodes = np.array(sorted(set(int(c) for c in codes_all)), dtype=np.int64)
+    degs = degree_of_codes(allcodes, V, w) if len(allcodes) else np.zeros(0, int)
+    dh = np.bincount(degs, minlength=w + 1) if len(allcodes) else np.zeros(w + 1, int)
+    hi = allcodes[degs >= 3] if len(allcodes) else np.empty(0, np.int64)
+
+    d2f, d2t = design_matrix(Dfit, Psi, 2), design_matrix(Dtes, Psi, 2)
+    lr = LogisticRegression(max_iter=300).fit(d2f, yfit)
+    d2_1 = float((lr.classes_[lr.predict_proba(d2t).argmax(1)] == ytes).mean())
+    if len(hi):
+        lrh = LogisticRegression(max_iter=300).fit(np.hstack([d2f, _char_columns(Dfit, hi, V, Psi, w)]), yfit)
+        d2hi = float((lrh.classes_[lrh.predict_proba(np.hstack([d2t, _char_columns(Dtes, hi, V, Psi, w)])).argmax(1)] == ytes).mean())
+    else:
+        d2hi = d2_1
+    print(f"  GL recovered {len(allcodes)} chars ({n_blow}/{V} blowups), degree {dh.tolist()} (>=3: {len(hi)})")
+    print(f"  degree<=2 (= Lasso's forced fallback)   top-1 {d2_1:.4f}")
+    print(f"  degree<=2 + GL's {len(hi)} deg>=3 chars   top-1 {d2hi:.4f}   <== does high order add value?")
+    print(f"  majority baseline                       top-1 {base:.4f}")
+    return dict(d2=d2_1, d2hi=d2hi, base=base, n_hi=int(len(hi)), dh=dh.tolist())
+
+
 def main():
     run_poelwijk()     # the high-order predictive WIN (sparse high-order epistasis)
     run_gb1()          # verifiable anchor: GL == brute-force where enumerable; here data is low-order

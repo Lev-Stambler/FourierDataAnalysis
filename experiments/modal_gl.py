@@ -65,10 +65,36 @@ def phase3():
     sys.stdout.flush(); vol.commit()
 
 
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=10800)
+def qary_lang():
+    """Categorical (Householder) GL on language next-token, RAW measure + scale + un-enumerable
+    regime -- the 'Lasso fails (forced to degree<=2), does GL's high-order beat it?' experiment."""
+    import sys
+
+    import torch
+
+    from fda_exp.qary_gl_predict import run_language_raw
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    sys.stdout = _Tee("/cache/qary_lang_results.txt")
+    print("device:", dev, torch.cuda.get_device_name(0) if dev == "cuda" else "")
+    configs = [
+        dict(V=24, window=5, max_pairs=700_000, tau=0.04, n_exp=60000),
+        dict(V=32, window=6, max_pairs=1_400_000, tau=0.035, n_exp=80000),
+        dict(V=48, window=5, max_pairs=1_400_000, tau=0.03, n_exp=80000),
+    ]
+    for cfg in configs:
+        try:
+            run_language_raw(n_stories=160000, device=dev, **cfg)
+        except Exception as e:
+            print(f"config {cfg} FAILED: {repr(e)[:200]}")
+        vol.commit()
+    sys.stdout.flush(); vol.commit()
+
+
 @app.function(image=image, volumes={"/cache": vol})
 def show():
     import os
-    for name in ("phase1_results.txt", "phase3_results.txt"):
+    for name in ("qary_lang_results.txt", "phase1_results.txt", "phase3_results.txt"):
         p = f"/cache/{name}"
         print(f"\n================= {name} =================")
         print(open(p).read() if os.path.exists(p) else "(not present yet)")

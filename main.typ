@@ -14,19 +14,18 @@
   authors: (
     (
       name: "Lev Stambler",
-      email: "levstamb@umd.edu",
-      affiliation: [University of Maryland, College Park, \ NeverLocal Ltd.],
-      orcid: "0000-0002-0952-8528",
+      email: "lev@tearlabs.ai",
+      affiliation: [Tear Labs Corp. \ University of Maryland, College Park],
     ),
   ),
   abstract: [
     #align(left)[
-      We develop elementary Fourier analysis _over a finite dataset_ $cal(D) subset cal(T)^n$: coefficients are taken with respect to the empirical measure on $cal(D)$ while the characters remain those of the ambient product space, so that every quantity is estimable from samples.
-      Parseval fails over a dataset — by exactly the density factor $C_cal(D) = |cal(T)|^n \/ |cal(D)|$ — and we give the correct replacements: a mass identity, a closeness identity, and a low-degree learning theorem in which the normalization constants cancel through a scaled reconstruction.
-      As the highlight, we adapt the Goldreich-Levin algorithm to find all characters heavily correlated with a function _over the dataset_.
-      Sample access alone is provably blind: over a collision-free dataset, every bucket weight in the classical tree search is identical.
-      Query access to a model together with the dataset's heavy bias spectrum suffices, via a convolution identity expressing the on-dataset spectrum as the global spectrum convolved with the spectrum of the dataset itself.
-      Corollaries include a Kushilevitz-Mansour-style guarantee for decision trees over datasets.
+      We develop elementary Fourier analysis _over a finite dataset_ $cal(D) subset cal(T)^n$: coefficients are taken against the empirical measure on $cal(D)$, while the characters stay those of the ambient product space, so every quantity is estimable from samples.
+      Parseval fails over a dataset, off by exactly the density factor $C_cal(D) = |cal(T)|^n \/ |cal(D)|$; the replacements are a mass identity, a closeness identity, and a low-degree learning theorem whose normalization constants cancel through a scaled reconstruction.
+      We then adapt the Goldreich-Levin algorithm to find every character heavily correlated with a function _over the dataset_.
+      Sample access alone is blind: over a collision-free dataset, every bucket weight in the classical tree search is identical.
+      Query access to a model, together with the dataset's heavy bias spectrum, suffices — via a convolution identity writing the on-dataset spectrum as the global spectrum convolved with the dataset's own spectrum.
+      Corollaries include a Kushilevitz-Mansour guarantee for decision trees over datasets.
     ]
   ],
   //keywords: ("First keyword", "Second keyword", "etc."),

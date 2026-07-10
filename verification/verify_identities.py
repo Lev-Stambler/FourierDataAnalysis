@@ -414,4 +414,74 @@ recon = sum(br_f[S] * chi(S, x0) / C_D**0.5 for S in br_f)  # sum breve_f * brev
 check(f"normalized reconstruction on D: f(x) = sum breve_f breve_phi ({f[x0]:.6f} vs {recon:.6f})",
       abs(f[x0] - recon) < TOL)
 
+# =====================================================================
+# Round 5: eps_D-closeness reconstruction from the recovered heavy list
+# (augmented Theorem 2.2).  g = C_D^-1 sum_{S in L} ftilde_D(S) chi_S.
+#   Identity:  E_D[(f-g)^2] = C_D^-1 [ sum_{S notin L} fhat_D(S)^2
+#                                      + sum_{S in L} (fhat_D - ftilde_D)^2 ]
+#   Tail:      sum_{S notin L} fhat_D(S)^2 <= tau * ||fhat_D||_1 <= tau M
+#   Guarantee: tau = min(1, eps C_D/(2M)), estimation accuracy eta = tau sqrt(eps/8)
+#              => E_D[(f-g)^2] <= eps.
+# =====================================================================
+print("\n--- Round 5: eps_D-closeness reconstruction (augmented Thm 2.2) ---")
+n, msize = 8, 12
+D = rand_dataset(n, msize)
+C_D = 2**n / msize
+f = {x: random.uniform(-1, 1) for x in D}
+fD = {S: fhat_D(D, f, S) for S in subsets(range(n))}
+M = sum(abs(v) for v in fD.values())                 # dataset spectral norm ||fhat_D||_1
+eps = 0.5
+tau = min(1.0, eps * C_D / (2 * M))
+L = set(S for S in fD if abs(fD[S]) >= tau)          # minimal completeness list (worst-case tail)
+assert 0 < len(L) < len(fD), "test should have a nontrivial heavy list and a nonempty tail"
+
+
+def E_D_sq_err(gcoeff):
+    err = 0.0
+    for x in D:
+        val = sum(c * chi(S, x) for S, c in gcoeff.items()) / C_D
+        err += (f[x] - val) ** 2
+    return err / msize
+
+
+# (a) drop-indicator bound (exact coeffs => estimation term zero):
+#     E_D[(f-g)^2] <= C_D^-1 * tail. The Fourier side is an exact identity
+#     (Parseval bookkeeping, where the C_D cancels); dropping the indicator
+#     is the only inequality -- exactly as in Thm 1.3.
+g_exact = {S: fD[S] for S in L}
+err_exact = E_D_sq_err(g_exact)
+tail = sum(fD[S] ** 2 for S in fD if S not in L)
+ghat_up = {S: fD[S] / C_D for S in fD}                     # lift: fhat(D o f) = C_D^-1 fhat_D  (@lem:lift)
+ghat = {S: (fD[S] / C_D if S in L else 0.0) for S in fD}   # g keeps recovered coeffs, scaled by C_D^-1
+parseval = C_D * sum((ghat_up[S] - ghat[S]) ** 2 for S in fD)
+check(f"Parseval bookkeeping: C_D*sum(ghat_up-ghat)^2 = C_D^-1*tail   ({parseval:.6f} vs {tail / C_D:.6f})",
+      abs(parseval - tail / C_D) < TOL)
+check(f"drop-indicator bound: E_D[(f-g)^2] = {err_exact:.6f} <= C_D^-1*tail = {tail / C_D:.6f}",
+      err_exact <= tail / C_D + TOL)
+
+# (b) tail bounded by tau * ||fhat_D||_1  =>  exact-coeff closeness <= eps/2
+check(f"tail bound: sum_(S notin L) fhat_D^2 = {tail:.6f} <= tau*M = {tau * M:.6f}", tail <= tau * M + TOL)
+check(f"exact-coeff closeness: E_D[(f-g)^2] = {err_exact:.6f} <= eps/2 = {eps / 2:.4f}", err_exact <= eps / 2 + TOL)
+
+# (c) full guarantee including worst-case per-coefficient estimation error eta
+eta = tau * (eps / 8) ** 0.5
+g_noisy = {S: fD[S] + random.choice((-1, 1)) * eta for S in L}
+err_noisy = E_D_sq_err(g_noisy)
+check(f"full guarantee: E_D[(f-g_est)^2] = {err_noisy:.6f} <= eps = {eps}  "
+      f"(tau={tau:.4f}, |L|={len(L)}, M={M:.2f})", err_noisy <= eps + TOL)
+
+# (d) subcube sanity: f=1 fixing K => ||fhat_D||_1 = 2^|K| = C_D, tau=eps/2, exact reconstruction
+nK = 8; Ksub = frozenset({0, 1, 2})
+Dk = [x for x in itertools.product((-1, 1), repeat=nK) if all(x[i] == 1 for i in Ksub)]
+C_Dk = 2**nK / len(Dk)
+f1 = {x: 1.0 for x in Dk}
+fD1 = {S: fhat_D(Dk, f1, S) for S in subsets(range(nK))}
+Mk = sum(abs(v) for v in fD1.values())
+tauk = min(1.0, 0.5 * C_Dk / (2 * Mk))
+Lk = [S for S in fD1 if abs(fD1[S]) >= tauk]
+err_k = sum((f1[x] - sum(fD1[S] * chi(S, x) for S in Lk) / C_Dk) ** 2 for x in Dk) / len(Dk)
+check(f"subcube reconstruction: ||fhat_D||_1 = {Mk:.1f} = C_D = {C_Dk:.1f}, tau={tauk:.3f}, "
+      f"|L|={len(Lk)}=2^|K|, E_D[(1-g)^2] = {err_k:.2e}",
+      abs(Mk - C_Dk) < TOL and abs(tauk - 0.25) < TOL and len(Lk) == 2 ** len(Ksub) and err_k < TOL)
+
 print("\nAll checks passed.")
