@@ -73,18 +73,20 @@ def qary_lang():
 
     import torch
 
-    from fda_exp.qary_gl_predict import run_language_raw
+    from fda_exp.qary_gl_predict import run_char_next
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     sys.stdout = _Tee("/cache/qary_lang_results.txt")
     print("device:", dev, torch.cuda.get_device_name(0) if dev == "cuda" else "")
+    # CHARACTER-level next-char (lowercase a-z + space, NO <unk>, contexts repeat heavily).
+    # V^w is un-enumerable for these windows so Fourier-Lasso is forced to degree<=2.
     configs = [
-        dict(V=24, window=5, max_pairs=700_000, tau=0.04, n_exp=60000),
-        dict(V=32, window=6, max_pairs=1_400_000, tau=0.035, n_exp=80000),
-        dict(V=48, window=5, max_pairs=1_400_000, tau=0.03, n_exp=80000),
+        dict(window=4, max_pairs=1_500_000, tau=0.04, n_exp=60000, max_width=30000),
+        dict(window=5, max_pairs=2_000_000, tau=0.04, n_exp=60000, max_width=20000),
+        dict(window=6, max_pairs=2_000_000, tau=0.05, n_exp=70000, max_width=15000),
     ]
     for cfg in configs:
         try:
-            run_language_raw(n_stories=160000, device=dev, **cfg)
+            run_char_next(n_stories=100000, device=dev, **cfg)
         except Exception as e:
             print(f"config {cfg} FAILED: {repr(e)[:200]}")
         vol.commit()

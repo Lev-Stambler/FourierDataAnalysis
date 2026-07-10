@@ -92,3 +92,28 @@ def tinystories_next_token(window: int = 3, vocab_size: int = 64,
     print(f"[hf_data] TinyStories: {len(texts)} stories -> {len(X)} (context,next) pairs; "
           f"vocab={vocab_size} (bpt={bpt}), window={window}, n={window * bpt}")
     return X, y, vocab, window, bpt
+
+
+def tinystories_char_next(window: int = 8, n_stories: int = 60000, max_pairs: int = 1_500_000,
+                          seed: int = 0, alphabet: str | None = None):
+    """CHARACTER-level (context, next-char) pairs.  Lowercase the text; the vocabulary IS the
+    alphabet (default a-z + space), so there is NO <unk> bucket and every symbol carries signal.
+    Characters outside the alphabet are dropped.  Returns (C (m,window) char-ids, y next-char-ids,
+    V=len(alphabet), window).  V^w is un-enumerable for w>~4 yet contexts repeat heavily."""
+    if alphabet is None:
+        alphabet = "abcdefghijklmnopqrstuvwxyz "
+    cmap = {c: i for i, c in enumerate(alphabet)}
+    V = len(alphabet)
+    texts = load_texts(n_stories)
+    rows, nxt = [], []
+    for txt in texts:
+        ids = [cmap[c] for c in txt.lower() if c in cmap]
+        for i in range(len(ids) - window):
+            rows.append(ids[i:i + window]); nxt.append(ids[i + window])
+        if len(rows) >= max_pairs:
+            break
+    C = np.array(rows[:max_pairs], dtype=np.int64)
+    y = np.array(nxt[:max_pairs], dtype=np.int64)
+    print(f"[hf_data] TinyStories CHAR: {len(texts)} stories -> {len(C)} (context,next-char) pairs; "
+          f"V={V} (alphabet '{alphabet}'), window={window}")
+    return C, y, V, window

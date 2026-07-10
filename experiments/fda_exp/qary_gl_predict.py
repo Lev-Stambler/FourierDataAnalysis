@@ -268,49 +268,47 @@ def run_language(window=4, vocab_size=32, n_stories=20000, max_pairs=800000, tau
           f"majority {base:.3f}")
 
 
-def run_language_raw(V=32, window=6, n_stories=120000, max_pairs=1_000_000, tau=0.04,
-                     n_exp=60000, n_fit=45000, device="cpu", max_width=150000, seed=0):
-    """Language next-token high-order DONE RIGHT: RAW frequency-weighted measure (NO majority
-    collapse -- the collapse replaced D with uniform-over-distinct and flattened the next-token
-    distribution), scaled data so the noise floor ~1/sqrt(m) drops below real heavy high-order
-    coefficients, in the un-enumerable regime (V^w >> 16384 so Fourier-Lasso is FORCED to
-    degree-<=2 -- the 'Lasso fails, GL needed' setup).  Decisive test: does adding GL's recovered
-    degree>=3 characters ON TOP of the full degree-<=2 model improve held-out top-1?"""
+def _highorder_test(Dtr, ytr, Dte, yte, V, w, tau=0.06, n_exp=80000, n_fit=45000,
+                    device="cpu", max_width=4000, seed=0, m_gl=60000, label=""):
+    """Shared core.  Adaptive-tau categorical GL recovers heavy characters per next-symbol
+    (subsampled search + exact leaf), then the DECISIVE test: does adding GL's recovered degree>=3
+    characters ON TOP of the full degree-<=2 model (= Fourier-Lasso's forced fallback when V^w is
+    un-enumerable) improve held-out top-1?  If yes, language has recoverable high-order and GL does
+    what Lasso can't at scale; if not, the degree>=3 chars are noise."""
     from sklearn.linear_model import LogisticRegression
 
     from .audit import design_matrix
-    from .hf_data import tinystories_next_token
-
-    X, y, vocab, w, bpt = tinystories_next_token(window, V, n_stories, max_pairs, seed=seed)
-    tok = _decode_tokens(X, window, bpt)
-    keep = y != 0                                            # in-vocab next-token only
-    tok, y = tok[keep], y[keep]
     Psi = householder_basis(V)
-    rng = np.random.default_rng(seed + 7)
-    perm = rng.permutation(len(tok))
-    nte, nval = int(0.2 * len(tok)), int(0.1 * len(tok))
-    te, tr = perm[:nte], perm[nte + nval:]                  # RAW pairs, no collapse
-    Dtr, ytr, Dte, yte = tok[tr], y[tr], tok[te], y[te]
+    rng = np.random.default_rng(seed + 11)
     C_D = (V ** w) / len(Dtr)
     base = float((yte == np.bincount(ytr).argmax()).mean())
-    print(f"\n########## RAW-measure language GL (V={V}, w={w}, pairs_tr={len(Dtr)}, "
-          f"C_D={C_D:.1e}, noise~{1 / np.sqrt(len(Dtr)):.4f}) ##########")
+    print(f"\n########## {label} (V={V}, w={w}, pairs_tr={len(Dtr)}, C_D={C_D:.1e}, "
+          f"noise~{1 / np.sqrt(min(len(Dtr), m_gl)):.4f}) ##########")
     print(f"V^w={V ** w:.1e} >> 16384 -> Fourier-Lasso forced to degree<=2; majority base={base:.3f}")
 
     fs = rng.choice(len(Dtr), min(n_fit, len(Dtr)), replace=False)   # subsample for logistic fits (RAM)
     Dfit, yfit = Dtr[fs], ytr[fs]
     ts = rng.choice(len(Dte), min(n_fit, len(Dte)), replace=False)
     Dtes, ytes = Dte[ts], yte[ts]
+    gs = rng.choice(len(Dtr), min(m_gl, len(Dtr)), replace=False)    # subsampled GL search (cheap exact-leaf)
+    Dgl, ygl = Dtr[gs], ytr[gs]
+    idx_gl = _encode_qary(Dgl, V)
 
-    idx_tr = _encode_qary(Dtr, V)                            # GL search uses ALL rows
-    codes_all, n_blow = [], 0
+    codes_all, n_blow, taus = [], 0, []
     for t in range(V):
-        if (ytr == t).sum() < 30:
+        if (ygl == t).sum() < 30:
             continue
-        ft = (2 * (ytr == t) - 1).astype(np.float64)
-        r = qary_gl_search(idx_tr, ft, w, V, Psi, tau, n_exp=n_exp, device=device,
-                           mode="csamp", seed=seed + t, max_width=max_width)
-        n_blow += r["status"] != "ok"
+        ft = (2 * (ygl == t) - 1).astype(np.float64)
+        # adaptive tau: start low (catch weaker high-order), raise x1.4 until the tree is feasible
+        # (contexts that don't repeat blow the width up x V/level at low tau).
+        tau_t, r = tau, None
+        for _ in range(7):
+            r = qary_gl_search(idx_gl, ft, w, V, Psi, tau_t, n_exp=n_exp, device=device,
+                               mode="csamp", seed=seed + t, max_width=max_width)
+            if r["status"] == "ok":
+                break
+            tau_t *= 1.4
+        n_blow += r["status"] != "ok"; taus.append(tau_t)
         if r["status"] == "ok":
             codes_all += [c for c in r["L"] if c != 0]
     allcodes = np.array(sorted(set(int(c) for c in codes_all)), dtype=np.int64)
@@ -326,11 +324,43 @@ def run_language_raw(V=32, window=6, n_stories=120000, max_pairs=1_000_000, tau=
         d2hi = float((lrh.classes_[lrh.predict_proba(np.hstack([d2t, _char_columns(Dtes, hi, V, Psi, w)])).argmax(1)] == ytes).mean())
     else:
         d2hi = d2_1
-    print(f"  GL recovered {len(allcodes)} chars ({n_blow}/{V} blowups), degree {dh.tolist()} (>=3: {len(hi)})")
+    print(f"  GL recovered {len(allcodes)} chars ({n_blow}/{V} blowups, tau~{np.median(taus) if taus else 0:.2f}), "
+          f"degree {dh.tolist()} (>=3: {len(hi)})")
     print(f"  degree<=2 (= Lasso's forced fallback)   top-1 {d2_1:.4f}")
     print(f"  degree<=2 + GL's {len(hi)} deg>=3 chars   top-1 {d2hi:.4f}   <== does high order add value?")
     print(f"  majority baseline                       top-1 {base:.4f}")
     return dict(d2=d2_1, d2hi=d2hi, base=base, n_hi=int(len(hi)), dh=dh.tolist())
+
+
+def run_language_raw(V=32, window=6, n_stories=120000, max_pairs=1_000_000, tau=0.06,
+                     n_exp=80000, n_fit=45000, device="cpu", max_width=4000, seed=0):
+    """WORD-level next-token, raw frequency-weighted measure (no majority collapse), scaled,
+    un-enumerable regime.  (Char-level `run_char_next` avoids the <unk> problem and is preferred.)"""
+    from .hf_data import tinystories_next_token
+    X, y, vocab, w, bpt = tinystories_next_token(window, V, n_stories, max_pairs, seed=seed)
+    tok = _decode_tokens(X, window, bpt)
+    keep = y != 0
+    tok, y = tok[keep], y[keep]
+    rng = np.random.default_rng(seed + 7)
+    perm = rng.permutation(len(tok))
+    te, tr = perm[:int(0.2 * len(tok))], perm[int(0.2 * len(tok)):]
+    return _highorder_test(tok[tr], y[tr], tok[te], y[te], V, w, tau=tau, n_exp=n_exp, n_fit=n_fit,
+                           device=device, max_width=max_width, seed=seed, label="WORD next-token (raw)")
+
+
+def run_char_next(window=8, n_stories=60000, max_pairs=1_500_000, tau=0.06, n_exp=90000,
+                  n_fit=45000, device="cpu", max_width=5000, seed=0, alphabet=None):
+    """CHARACTER-level next-char prediction: lowercase, vocab = alphabet (a-z + space), so there is
+    NO <unk> and contexts repeat heavily (CSAMP-friendly), while V^w stays un-enumerable so Lasso is
+    forced to degree-<=2.  Tests whether GL finds multi-character (high-order) structure that beats
+    degree-<=2 -- the 'Lasso fails, GL needed' regime on real language, done cleanly."""
+    from .hf_data import tinystories_char_next
+    C, y, V, w = tinystories_char_next(window, n_stories, max_pairs, seed=seed, alphabet=alphabet)
+    rng = np.random.default_rng(seed + 7)
+    perm = rng.permutation(len(C))
+    te, tr = perm[:int(0.2 * len(C))], perm[int(0.2 * len(C)):]
+    return _highorder_test(C[tr], y[tr], C[te], y[te], V, w, tau=tau, n_exp=n_exp, n_fit=n_fit,
+                           device=device, max_width=max_width, seed=seed, label="CHAR next-char")
 
 
 def main():

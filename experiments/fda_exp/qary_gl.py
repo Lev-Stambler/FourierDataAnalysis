@@ -41,12 +41,23 @@ def degree_of_codes(codes, V, w):
 
 
 def sample_partners(gid, rr, rng):
-    """CSAMP: for each sampled row rr[e], a random row sharing gid (the shared suffix)."""
+    """CSAMP: for each sampled row rr[e], a random *distinct* row sharing gid (the shared suffix).
+
+    Excludes self-pairs.  A self-pair (x'=x) contributes f(x)^2 chi_J(x)^2, whose expectation is
+    ~1 for every bucket J; when suffixes rarely repeat (language!), most draws would be self-pairs
+    and this term inflates EVERY bucket weight by ~(self-pair fraction), so the whole tree clears
+    the threshold and blows up.  Returns (partner, valid); valid=False for singleton groups where
+    no distinct partner exists (those experiments are dropped, keeping the estimator unbiased)."""
     order = np.argsort(gid, kind="stable")
     uniq, start, counts = np.unique(gid[order], return_index=True, return_counts=True)
     grp = np.searchsorted(uniq, gid[rr])
-    off = (rng.random(len(rr)) * counts[grp]).astype(np.int64)
-    return order[start[grp] + off]
+    cnt = counts[grp]
+    off = (rng.random(len(rr)) * cnt).astype(np.int64)
+    partner = order[start[grp] + off]
+    self_hit = partner == rr                                     # landed on x itself -> shift within group
+    off2 = (off + 1) % np.maximum(cnt, 1)
+    partner = np.where(self_hit, order[start[grp] + off2], partner)
+    return partner, cnt >= 2                                     # valid only where a distinct partner exists
 
 
 def _qary_psi_batch(codes_dev, xdig_rr, xdig_rp, f_rr, f_rp, Psi_dev, V, w, chunk=1024):
@@ -124,8 +135,14 @@ def qary_gl_search(idx_np, f_np, w, V, Psi, tau, n_exp=20000, device=None,
             psi = coef * coef
         else:
             rr = rng.integers(0, m, size=n_exp)
-            rp = sample_partners(idx_np // (V ** kk), rr, rng) if mode == "csamp" else rng.integers(0, m, size=n_exp)
-            experiments += n_exp
+            if mode == "csamp":
+                rp, valid = sample_partners(idx_np // (V ** kk), rr, rng)
+                rr, rp = rr[valid], rp[valid]                       # drop self-pair-only (singleton-suffix) draws
+            else:
+                rp = rng.integers(0, m, size=n_exp)
+            experiments += len(rr)
+            if len(rr) == 0:                                        # no distinct partners -> nothing estimable
+                widths.append(0); live = np.empty(0, np.int64); break
             xdig_rr = torch.tensor((idx_np[rr][None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
             xdig_rp = torch.tensor((idx_np[rp][None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
             f_rr = torch.tensor(f_np[rr], dtype=torch.float32, device=device)
