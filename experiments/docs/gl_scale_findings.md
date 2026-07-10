@@ -47,15 +47,37 @@ chance) holds only on *independent-bit* data — that is `tests/test_gl_real.py`
 **Scalability.** At n=40 (8-token windows) real language contexts don't repeat, so the CSAMP width
 blows up just like random bits — GL needs shorter contexts / more repetitive data (R_k condition).
 
-## Honest conclusion
+## CRITICAL: the bit basis was WRONG; use the categorical (one-hot) basis over token positions
 
-**The high-order-at-scale predictive win does NOT materialize on real language.** GL's ability to *find*
-high-order terms is real (degree histogram + the uniform-data regression test), but on real language
-next-token those terms are noise (data density) or reducible to low order (bit correlations), and long
-contexts don't repeat. With the base-rate bug fixed and K selected honestly, **GL ties the majority
-baseline (K=0)** — it neither beats nor loses to degree-≤2. Combined with the rigorous n=13 result
-(`gl_real_findings.md`: GL ≈ exact-FWHT ≈ competitive-with-Lasso where checkable), the overall picture
-stands: **dataset-GL is a validated recovery/characterization algorithm (plus the blindness insight),
-not a demonstrated predictive winner over standard baselines on real data.** The differentiator is real
-only where its preconditions hold — sparse high-order structure that is estimable, irreducible, and
-backed by repeating contexts — which independent-bit data satisfies and natural language does not.
+Encoding each token in log2(V) BITS and running Walsh over those bits mismeasures degree: a single
+token's identity needs bit-degree up to `bpt` (all its bits), so bit-degree != token-degree. The right
+basis for categorical tokens is one-hot / Householder over token POSITIONS (degree = #token positions
+jointly involved). Switching to it makes the low-order model far stronger: **categorical degree-<=2
+log-loss ~0.58 vs ~1.0 in the bit basis**. And any "degree-3 helps" seen in the bit basis is a proven
+artifact — the helpful "degree-3 bit-characters" all live within <=2 *token* positions.
+
+## Verified conclusion (correct basis, 4 bugs fixed, 2 independent agents + 5 angles)
+
+In the CORRECT categorical basis, **degree-3 (>=3 token positions jointly) token structure does NOT add
+predictive value** for TinyStories next-token, across every angle tried:
+- categorical majority (log-loss deg<=2 0.596 vs deg<=3 0.607, WORSE);
+- full-distribution over all pairs (cross-entropy 1.313 = 1.313);
+- longer context window=8 (CE 1.302 vs 1.345, worse);
+- non-degenerate larger vocab=64 (CE 1.941 vs 1.976, worse);
+- an independent from-scratch subagent (0.596 vs 0.607; proved the bit-basis gain is an artifact).
+Language next-token is bigram/trigram-dominated = <=2-order in tokens.
+
+**FOUR bugs were found and fixed** along the way, all of the "makes GL look artificially bad" family
+(bit-ordering; off-by-one dropping the top heavy hitter; `gl_onevsrest` dropping the constant/base rate;
+and train-absent tokens scored 0 and beating real tokens in argmax). With all four fixed, **GL
+reconstruction = the majority baseline exactly (val-K=0)** on next-token. The distinction that matters:
+the earlier three "GL loses" readings were BUGS — each broke under a single correct check; this
+high-order negative HOLDS under 5 correct-basis angles + 2 independent agents. It is a real property of
+the data, not a mistake.
+
+**Bottom line:** dataset-GL is a validated recovery/characterization algorithm (+ the blindness insight)
+and, with all bugs fixed, a predictor that ties standard baselines where checkable — **not** a
+demonstrated high-order predictive winner on real language, because real language next-token has no
+usable >=3-order token structure. The differentiator is real only where its preconditions hold (sparse,
+irreducible, estimable high-order structure with repeating contexts) — synthetic independent-bit data
+satisfies them; natural language does not.
