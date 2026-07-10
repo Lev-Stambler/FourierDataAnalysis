@@ -48,10 +48,12 @@ def gl_recover(Dtr, ytr, V, tau, n_exp, device, seed, max_width):
     idx = points_to_index(Dtr)
     per_tok, n_blowup = [], 0
     for t in range(V):
-        ft = (2 * (ytr == t) - 1).astype(np.float64)
-        const = float(coeffs_at(Dtr, ft, [0])[0]) if (ytr == t).sum() else 0.0
         if (ytr == t).sum() == 0:
-            per_tok.append((np.empty(0, np.int64), np.empty(0), const)); continue
+            # token never seen in train: exclude from argmax (sentinel -inf), matching the
+            # baselines' class set -- do NOT give it a 0 base rate that beats real tokens.
+            per_tok.append((np.empty(0, np.int64), np.empty(0), -np.inf)); continue
+        ft = (2 * (ytr == t) - 1).astype(np.float64)
+        const = float(coeffs_at(Dtr, ft, [0])[0])
         r = gl_search_torch(idx, ft, n, tau, n_exp=n_exp, device=device, mode="csamp",
                             seed=seed + t, max_width=max_width)
         n_blowup += r["status"] != "ok"
@@ -71,6 +73,8 @@ def gl_score(per_tok, D_eval, n, cd_inv, K):
     coefficients.  K is chosen once on a validation split (prunes the aliasing-noise tail)."""
     scores = np.full((len(D_eval), len(per_tok)), -1e9)
     for t, (masks, coeffs, const) in enumerate(per_tok):
+        if not np.isfinite(const):                         # train-absent token -> stays -inf (excluded)
+            continue
         m = np.concatenate([[0], masks[:K]]).astype(np.int64)
         c = np.concatenate([[const], coeffs[:K]])
         scores[:, t] = reconstruct(D_eval, n, m, c, cd_inv)
@@ -99,12 +103,25 @@ def _logistic(Dtr, ytr, Dte, yte, degree):
 
 
 def run_language(window=6, vocab_size=48, n_stories=12000, tau=0.35, n_exp=40000,
-                 test_frac=0.25, seed=0, device="cpu", max_width=80000):
+                 test_frac=0.25, seed=0, device="cpu", max_width=80000, exclude_top=0,
+                 max_pairs=300_000):
+    """exclude_top>0 drops contexts whose majority next-token is one of the `exclude_top`
+    most-frequent (function-word) targets, de-degenerating the otherwise base-rate-dominated
+    next-token task so the GL-vs-baselines comparison is meaningful."""
     from .hf_data import tinystories_next_token
-    X, y, vocab, w, bpt = tinystories_next_token(window, vocab_size, n_stories, seed=seed)
+    X, y, vocab, w, bpt = tinystories_next_token(window, vocab_size, n_stories, max_pairs, seed=seed)
     D, maj = majority_by_context(X, y)
     n = D.shape[1]
     V = len(vocab)
+    if exclude_top:
+        freq = np.bincount(maj, minlength=V)
+        drop = set(np.argsort(-freq)[:exclude_top].tolist())
+        keep = ~np.isin(maj, list(drop))
+        D, maj = D[keep], maj[keep]
+        toks = np.array(sorted(set(maj.tolist())))
+        maj = np.searchsorted(toks, maj)                   # remap to 0..V'-1
+        V = len(toks)
+        print(f"[exclude_top={exclude_top}] kept {len(D)} non-degenerate contexts, V={V}")
     perm = np.random.default_rng(seed + 7).permutation(len(D))
     nte, nval = int(test_frac * len(D)), int(0.15 * len(D))
     te, val, tr = perm[:nte], perm[nte:nte + nval], perm[nte + nval:]
