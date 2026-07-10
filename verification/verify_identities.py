@@ -14,7 +14,7 @@ Check groups:
   5.  Corrected closeness identity; exact falsity ratio C_D of the naive
       dataset-Parseval
   6.  Half-cube aliasing counterexample: unscaled reconstruction error 1,
-      scaled (frame) reconstruction error 0
+      scaled reconstruction error 0
   7.  Corrected low-degree learning bound at several degrees
   8.  Dataset sensitivity: counterexample (1 vs 2) and on-dataset <= lifted
   9.  Dataset-GL (model-query) constants: candidate-generation completeness,
@@ -22,7 +22,7 @@ Check groups:
   10. Conditional bucket weight Psi: tower/completeness/termination/
       monotonicity (both children)/level mass; E_z[1/|fiber|] = c_k/|D|;
       estimator unbiasedness; blindness flatness; subcube profile R_k
-  11. Parseval-frame identities: constant-free Parseval, closeness, and
+  11. Normalized Parseval identities: constant-free Parseval, closeness, and
       reconstruction over the dataset
 """
 import itertools, random
@@ -293,9 +293,9 @@ check("Thm 3.2 soundness arithmetic: 3/4 - 1/8 = 5/8 >= 1/2", abs(3 / 4 - 1 / 8 
 
 # =====================================================================
 # Round 4: context-conditioning statistic Psi (on-distribution GL) and
-# Parseval-frame normalization.
+# the normalized (constant-free) coefficients.
 # =====================================================================
-print("\n--- Round 4: context-conditioning Psi + frame identities ---")
+print("\n--- Round 4: context-conditioning Psi + normalized identities ---")
 from collections import defaultdict
 
 
@@ -395,7 +395,7 @@ for k in (0, 2, 5, n2):
 check("subcube: R_k = 2^{|K n J_k|} (f = 1)", ok)
 n = n_save
 
-# ---------- 14. Parseval-frame identities (constant-free over the dataset) ----------
+# ---------- 14. Normalized Parseval identities (constant-free over the dataset) ----------
 n, msize = 8, 10
 D = rand_dataset(n, msize)
 C_D = 2**n / msize
@@ -403,15 +403,15 @@ f = {x: random.uniform(-1, 1) for x in D}
 g = {x: random.uniform(-1, 1) for x in D}
 br_f = {S: fhat_D(D, f, S) / C_D**0.5 for S in subsets(range(n))}
 br_g = {S: fhat_D(D, g, S) / C_D**0.5 for S in subsets(range(n))}
-check(f"frame Parseval: sum breve^2 = E_D[f^2] ({sum(v*v for v in br_f.values()):.6f} vs {sum(v*v for v in f.values())/msize:.6f})",
+check(f"normalized Parseval: sum breve^2 = E_D[f^2] ({sum(v*v for v in br_f.values()):.6f} vs {sum(v*v for v in f.values())/msize:.6f})",
       abs(sum(v * v for v in br_f.values()) - sum(v * v for v in f.values()) / msize) < TOL)
 lhs = sum((f[x] - g[x]) ** 2 for x in D) / msize
 rhs = sum((br_f[S] - br_g[S]) ** 2 for S in br_f)
-check(f"frame closeness (constant-free): E_D[(f-g)^2] = sum (breve_f-breve_g)^2 ({lhs:.6f} vs {rhs:.6f})",
+check(f"normalized closeness (constant-free): E_D[(f-g)^2] = sum (breve_f-breve_g)^2 ({lhs:.6f} vs {rhs:.6f})",
       abs(lhs - rhs) < TOL)
 x0 = D[0]
 recon = sum(br_f[S] * chi(S, x0) / C_D**0.5 for S in br_f)  # sum breve_f * breve_phi
-check(f"frame reconstruction on D: f(x) = sum breve_f breve_phi ({f[x0]:.6f} vs {recon:.6f})",
+check(f"normalized reconstruction on D: f(x) = sum breve_f breve_phi ({f[x0]:.6f} vs {recon:.6f})",
       abs(f[x0] - recon) < TOL)
 
 print("\nAll checks passed.")

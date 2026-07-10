@@ -354,7 +354,7 @@ Classically, coefficient collection plus Parseval yields the learning guarantee;
 #TODO[
   On-dataset approximation from recovered coefficients.
   One route: $EE_calD [(f-g)^2] = sum_V b_V dot hat((f-g)^2) (V)$ by @lem:convolution applied to $(f-g)^2$ at $S = emptyset$, splitting the sum over $heavyB$ and its complement; the tail is controlled by $theta dot norm(hat((f-g)^2))_1 <= theta (norm(hat(f))_1 + norm(hat(g))_1)^2$, but the heavy-bias terms need per-$V$ control.
-  Compare with the frame-truncation route of @thm:learning-low-degree.
+  Compare with the truncated scaled-reconstruction route of @thm:learning-low-degree.
 ]
 
 == Discussion and Open Directions

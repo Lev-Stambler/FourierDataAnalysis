@@ -166,12 +166,15 @@ There is no Parseval identity over $calD$; what is true is off by exactly the de
   $
 ]
 
+A word on the bookkeeping, since the $1 \/ |calD|^2$ prefactor of the double sum tempts a $normC^2$: the kernel collapses the double sum to a single sum over the diagonal, and one factor of $1 \/ |calD|$ is then absorbed into the dataset expectation $EE_calD [f^2] = frac(1, |calD|) sum_(x in calD) f(x)^2$ — so exactly one factor of $normC = |calT|^n \/ |calD|$ survives, not its square.
+(The appendix's numerical checks confirm this: the ratio $sum_alpha dcoeff(alpha)^2 \/ EE_calD [f^2]$ equals $normC$ exactly.)
+
 For a non-uniform finite base measure with full support the same proof gives the weighted form $sum_alpha dcoeff(alpha)^2 = frac(1, |calD|^2) sum_(x in calD) f(x)^2 \/ mu(x)$; for continuous $Omega$ (e.g., Gaussian space) the left side diverges — the empirical measure of a finite dataset has no $L^2 (mu)$ density.
 This is why we fix a finite alphabet.
 
 Since $normC$ is enormous for small datasets, the total dataset Fourier mass is _not_ $EE_calD [f^2]$; a function of unit norm on the dataset carries $normC$ worth of squared coefficients, smeared across aliases.
 The constant, however, is not a defect to be endured — it is a normalization to be absorbed.
-In the language of frame theory, @lem:mass says precisely that the restricted characters ${basis_alpha|_calD}$ form a _tight frame_ for $L^2 (calD)$ with frame bound $normC$; dividing each frame vector by $sqrt(normC)$ yields a _Parseval frame_, for which every identity we care about holds over the dataset with no constants at all.
+Dividing each restricted character by $sqrt(normC)$ yields a normalized system for which every identity we care about holds over the dataset with no constants at all.
 
 #definition[Normalized Dataset Coefficients][
   The _normalized characters_ and _normalized dataset coefficients_ are
@@ -192,7 +195,7 @@ In the language of frame theory, @lem:mass says precisely that the restricted ch
 
 Everything on both sides of @lem:dataset-parseval is over the dataset — no expectation over $calT^n$ appears — and there are no stray constants.
 The normalization is doing exactly one thing: bookkeeping the overcompleteness.
-($L^2 (calD)$ has dimension $|calD|$, yet the frame has $|calT|^n$ vectors, whose squared norms over $calD$ _average_ exactly $normCInv$ by the kernel diagonal $sum_alpha basis_alpha (x)^2 = |calT|^n$; aliasing is this overcompleteness made visible.)
+($L^2 (calD)$ has dimension $|calD|$, yet there are $|calT|^n$ restricted characters, whose squared norms over $calD$ _average_ exactly $normCInv$ by the kernel diagonal $sum_alpha basis_alpha (x)^2 = |calT|^n$; aliasing is this overcompleteness made visible.)
 The raw coefficient $dcoeff(alpha) = EE_calD [f basis_alpha]$ remains the _estimable correlation_ — the quantity a sampling algorithm sees, and the natural unit for heavy-coefficient search in the Goldreich-Levin section — while $ncoeff(alpha)$ is the natural unit for energy and closeness; translating between them costs exactly one factor of $sqrt(normC)$.
 
 #definition[$eps_calD$-closeness; Normalized Weights][
@@ -237,9 +240,9 @@ Then $Sens^2_calD [f] = 1$, while $chi_({2})$ and $chi_({1,2})$ alias on $calD$,
 
 == Learning Low-Degree Functions from Dataset Samples
 
-As a first payoff, the classical Low-Degree Algorithm @o2021analysis survives on datasets, _provided_ the reconstruction is the truncated _frame_ expansion $sum_(\#alpha <= d) ncoeff(alpha) nbasis_alpha$ — equivalently, the raw plug-in reconstruction scaled by $normCInv$.
+As a first payoff, the classical Low-Degree Algorithm @o2021analysis survives on datasets, _provided_ the reconstruction is the truncated _normalized_ expansion $sum_(\#alpha <= d) ncoeff(alpha) nbasis_alpha$ — equivalently, the raw plug-in reconstruction scaled by $normCInv$.
 The scaling matters: in the half-cube example above, the unscaled plug-in reconstruction of $f = x_2$ at degree $2$ returns $chi_2 + chi_(12) = 2 x_2$ on $calD$ — error $1$ with exact coefficients and zero tail — because each character is counted once per alias.
-The frame reconstruction returns $(x_2 + x_1 x_2)\/2 = x_2$ on $calD$, exactly — by part (3) of @lem:dataset-parseval together with the fact that all coefficients outside ${chi_2, chi_(12)}$ vanish there.
+The scaled reconstruction returns $(x_2 + x_1 x_2)\/2 = x_2$ on $calD$, exactly — by part (3) of @lem:dataset-parseval together with the fact that all coefficients outside ${chi_2, chi_(12)}$ vanish there.
 
 Two standing conventions for the statement.
 The one-coordinate basis is assumed _$B$-bounded_ — $norm(basis_j)_infinity <= B$ for all $j$, so that $norm(basis_alpha)_infinity <= B^d$ whenever $\#alpha <= d$; for the parity characters, and for any group-character basis, $B = 1$.
@@ -287,8 +290,8 @@ For reference, the recurring symbols of the paper (the last four families are in
   table.hline(stroke: 0.4pt),
   [$hat(f)(alpha)$], [global Fourier coefficient $EE_(x ~ mu) [f basis_alpha]$],
   [$dcoeff(alpha)$], [dataset coefficient $EE_(x ~ calD) [f basis_alpha]$ — the estimable correlation],
-  [$ncoeff(alpha) = normC^(-1\/2) dcoeff(alpha)$], [normalized (Parseval-frame) coefficient — the unit for energy and closeness],
-  [$normC = |calT|^n \/ |calD|$], [density constant; frame bound of ${basis_alpha|_calD}$],
+  [$ncoeff(alpha) = normC^(-1\/2) dcoeff(alpha)$], [normalized coefficient — the unit for energy and closeness],
+  [$normC = |calT|^n \/ |calD|$], [density constant; the exact factor in the mass identity],
   [$calD compose f$], [the lift: $f$ on $calD$, $0$ elsewhere; $hat((calD compose f)) = normCInv hat(f)_calD$],
   [$overline(W)^k_calD [f] = sum_(\#alpha = k) ncoeff(alpha)^2$], [normalized level weight; $sum_k overline(W)^k = EE_calD [f^2]$],
   [$b_V$, $B_theta$], [bias spectrum of $calD$ (dataset coefficients of $1$); its $theta$-heavy set],

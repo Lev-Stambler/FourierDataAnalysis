@@ -16,6 +16,8 @@ import numpy as np
 
 from .householder import householder_basis, qary_reconstruct, qary_spectrum
 from .qary_gl import (
+    _char_columns,
+    _digits,
     _encode_qary,
     degree_of_codes,
     qary_coeffs_at,
@@ -70,11 +72,29 @@ def run_gb1(seeds=(0, 1, 2), tau_rank=250, n_exp=120000, n_test=20000, n_val=500
 
         gl_te = _spearman(yte, qary_recon(Cte, gl_ord[:gl_K], gl_co[:gl_K], V, Psi, w) + mu) if gl_K else 0.0
         br_te = _spearman(yte, qary_reconstruct(Cte, order[:br_K], fhat[order[:br_K]], Psi) + mu)
+        br_matched = _spearman(yte, qary_reconstruct(Cte, order[:gl_K], fhat[order[:gl_K]], Psi) + mu) if gl_K else 0.0
+        gl_msd = set(int(np.ravel_multi_index(d, (V,) * w)) for d in _digits(gl_ord[:gl_K], V, w)) if gl_K else set()
+        recall = len(gl_msd & set(int(order[i]) for i in range(gl_K))) / max(gl_K, 1) if gl_K else 0.0
+
+        # GL as a FEATURE SELECTOR: fit Ridge on the recovered characters.  Raw-coefficient
+        # reconstruction (gl_te) is only optimal under a UNIFORM design; GB1's variants are not
+        # uniform, so the fair predictor fits weights on the GL-selected columns.
+        glf_te, glf_K = 0.0, 0
+        maxK = min(max(Ks), len(gl_ord))
+        if maxK:
+            Xtr = _char_columns(Ctr, gl_ord[:maxK], V, Psi, w)
+            Xval = _char_columns(Cval, gl_ord[:maxK], V, Psi, w)
+            Xte = _char_columns(Cte, gl_ord[:maxK], V, Psi, w)
+            glf_K = _valpick([k for k in Ks if k <= maxK],
+                             lambda K: _spearman(yval, Ridge(alpha=1.0).fit(Xtr[:, :K], ytr).predict(Xval[:, :K])))
+            glf_te = _spearman(yte, Ridge(alpha=1.0).fit(Xtr[:, :glf_K], ytr).predict(Xte[:, :glf_K]))
+
         d2 = Ridge(alpha=1.0).fit(design_matrix(Ctr, Psi, 2), ytr)
         d2_te = _spearman(yte, d2.predict(design_matrix(Cte, Psi, 2)))
         degs = degree_of_codes(gl_ord[:gl_K], V, w) if gl_K else np.array([0])
-        print(f"  seed{seed}: GL {gl_te:.3f} (K={gl_K}, recovered {len(codes)}, "
+        print(f"  seed{seed}: GL-recon {gl_te:.3f} (K={gl_K}, recovered {len(codes)}, "
               f"deg-hist {np.bincount(degs, minlength=w + 1).tolist()}) | "
+              f"GL-select+fit {glf_te:.3f} (K={glf_K}) | brute@GL-K {br_matched:.3f} (recall {recall:.2f}) | "
               f"brute-qary {br_te:.3f} (K={br_K}) | degree<=2 {d2_te:.3f}")
 
 

@@ -113,27 +113,42 @@ def qary_gl_search(idx_np, f_np, w, V, Psi, tau, n_exp=20000, device=None,
 
 
 def _char_columns(C, codes, V, Psi, w):
-    """chi_code(x) for each code, as columns (m, len(codes))."""
-    m = len(C)
-    dig = _digits(codes, V, w)
-    cols = np.ones((m, len(codes)))
-    for j in range(len(codes)):
-        for p in range(w):
-            a = int(dig[j, p])
-            if a != 0:
-                cols[:, j] *= Psi[a, C[:, p]]
+    """chi_code(x) for each code, as columns (m, len(codes)).  Vectorized over the w
+    positions (not over codes): cols[i,j] = prod_p Psi[digit_p(code_j), C[i,p]]."""
+    codes = np.asarray(codes, dtype=np.int64)
+    dig = _digits(codes, V, w)                                   # (K, w) code digits
+    cols = np.ones((len(C), len(codes)))
+    for p in range(w):
+        cols *= Psi[dig[:, p]][:, C[:, p]].T                     # (K,V)->(K,m)->(m,K)
     return cols
+
+
+def _chunk_for(m):
+    return max(1, 40_000_000 // max(m, 1))                       # keep (m, chunk) <= 40M floats
 
 
 def qary_coeffs_at(C, f, codes, V, Psi, w):
     """f_hat_D(alpha) = E_D[f * chi_alpha] for each code (no enumeration of V^w)."""
+    codes = np.asarray(codes, dtype=np.int64)
     if len(codes) == 0:
         return np.empty(0)
-    return (_char_columns(C, codes, V, Psi, w) * np.asarray(f, float)[:, None]).mean(0)
+    f = np.asarray(f, float)
+    out = np.empty(len(codes))
+    step = _chunk_for(len(C))
+    for i in range(0, len(codes), step):
+        cols = _char_columns(C, codes[i:i + step], V, Psi, w)
+        out[i:i + step] = (cols * f[:, None]).mean(0)
+    return out
 
 
 def qary_recon(C, codes, coeffs, V, Psi, w, cd_inv=1.0):
     """g(x) = cd_inv * sum_alpha coeff_alpha chi_alpha(x)  (cd_inv = m/V^w recovers f on support)."""
+    codes = np.asarray(codes, dtype=np.int64)
     if len(codes) == 0:
         return np.zeros(len(C))
-    return cd_inv * (_char_columns(C, codes, V, Psi, w) @ np.asarray(coeffs, float))
+    coeffs = np.asarray(coeffs, float)
+    out = np.zeros(len(C))
+    step = _chunk_for(len(C))
+    for i in range(0, len(codes), step):
+        out += _char_columns(C, codes[i:i + step], V, Psi, w) @ coeffs[i:i + step]
+    return cd_inv * out
