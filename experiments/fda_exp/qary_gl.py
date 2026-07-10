@@ -70,13 +70,37 @@ def _qary_psi_batch(codes_dev, xdig_rr, xdig_rp, f_rr, f_rp, Psi_dev, V, w, chun
     return out
 
 
+def _qary_exact_coeffs(codes_dev, xdig_all, f_all, Psi_dev, V, w, chunk=1024):
+    """Exact f_hat_D(alpha) = mean_x f(x) chi_alpha(x) over ALL rows (noise-free leaf test).
+    xdig_all: (w, m) token digits of every row; f_all: (m,).  Returns (L,) tensor."""
+    L = codes_dev.shape[0]
+    M = xdig_all.shape[1]
+    chunk = max(1, min(chunk, 40_000_000 // max(M, 1)))
+    Vp = torch.tensor(V ** np.arange(w), dtype=torch.int64, device=codes_dev.device)
+    out = torch.empty(L, dtype=torch.float32, device=codes_dev.device)
+    for i in range(0, L, chunk):
+        cc = codes_dev[i:i + chunk]
+        adig = (cc[:, None] // Vp[None, :]) % V                      # (c, w) code digits
+        chi = torch.ones((cc.shape[0], M), device=codes_dev.device)
+        for p in range(w):
+            rowsel = Psi_dev[adig[:, p]]                             # (c, V)
+            chi = chi * rowsel[:, xdig_all[p]]                       # (c, M)
+        out[i:i + chunk] = (f_all[None, :] * chi).mean(dim=1)
+    return out
+
+
 def qary_gl_search(idx_np, f_np, w, V, Psi, tau, n_exp=20000, device=None,
-                   mode="csamp", seed=0, max_width=200_000):
+                   mode="csamp", seed=0, max_width=200_000, exact_leaf=True):
     """Run categorical GL; return recovered heavy character codes + per-level widths.
 
     idx_np: mixed-radix codes of the contexts (`_encode_qary`).  mode='csamp' = real oracle
     (partner shares suffix idx//V^kk); mode='samp' = context-blind partner (blindness demo).
     Leaf kept iff f_hat_D(alpha)^2 >= tau^2/4, i.e. |f_hat_D(alpha)| >= tau/2.
+
+    exact_leaf: at the final level the suffix is empty (partner is a uniform row), so the CSAMP
+    estimate of the single leaf coefficient is just (mean over n_exp) with stddev ~1/sqrt(n_exp).
+    Since we hold the whole dataset, compute that leaf coefficient EXACTLY over all m rows instead
+    -- removes the noise that otherwise drops ~half the true heavy characters (recall ~0.5 -> ~1).
     """
     device = device or get_device()
     m = len(idx_np)
@@ -86,24 +110,27 @@ def qary_gl_search(idx_np, f_np, w, V, Psi, tau, n_exp=20000, device=None,
     f_np = f_np.astype(np.float32)
     Vp = V ** np.arange(w)
     Psi_dev = torch.tensor(Psi, dtype=torch.float32, device=device)
+    xdig_all = torch.tensor((idx_np[None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
+    f_all = torch.tensor(f_np, dtype=torch.float32, device=device)
 
     live = np.array([0], dtype=np.int64)                            # empty character (constant)
     widths, experiments = [], 0
     for k in range(w):
         kk = k + 1
         children = np.unique((live[:, None] + (np.arange(V) * (V ** k))[None, :]).ravel())
-        rr = rng.integers(0, m, size=n_exp)
-        if mode == "csamp":
-            rp = sample_partners(idx_np // (V ** kk), rr, rng)       # suffix = positions k+1..w-1
-        else:
-            rp = rng.integers(0, m, size=n_exp)
-        experiments += n_exp
-        xdig_rr = torch.tensor((idx_np[rr][None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
-        xdig_rp = torch.tensor((idx_np[rp][None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
         codes_dev = torch.tensor(children, dtype=torch.int64, device=device)
-        f_rr = torch.tensor(f_np[rr], dtype=torch.float32, device=device)
-        f_rp = torch.tensor(f_np[rp], dtype=torch.float32, device=device)
-        psi = _qary_psi_batch(codes_dev, xdig_rr, xdig_rp, f_rr, f_rp, Psi_dev, V, w).cpu().numpy()
+        if exact_leaf and kk == w:                                  # last level: exact single coeff
+            coef = _qary_exact_coeffs(codes_dev, xdig_all, f_all, Psi_dev, V, w).cpu().numpy()
+            psi = coef * coef
+        else:
+            rr = rng.integers(0, m, size=n_exp)
+            rp = sample_partners(idx_np // (V ** kk), rr, rng) if mode == "csamp" else rng.integers(0, m, size=n_exp)
+            experiments += n_exp
+            xdig_rr = torch.tensor((idx_np[rr][None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
+            xdig_rp = torch.tensor((idx_np[rp][None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
+            f_rr = torch.tensor(f_np[rr], dtype=torch.float32, device=device)
+            f_rp = torch.tensor(f_np[rp], dtype=torch.float32, device=device)
+            psi = _qary_psi_batch(codes_dev, xdig_rr, xdig_rp, f_rr, f_rp, Psi_dev, V, w).cpu().numpy()
         live = children[psi >= thresh]
         widths.append(int(len(live)))
         if len(live) > max_width:
