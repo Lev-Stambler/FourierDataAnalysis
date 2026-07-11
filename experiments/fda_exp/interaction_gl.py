@@ -160,8 +160,9 @@ def active_positions(C, f, V, w, degree=2, topfrac=0.5, shrink=0.0):
     return sorted(int(p) for p in np.argsort(-score)[:keep])
 
 
-def _group_means(Ctr, ytr, T, V, W):
-    """Train per-group class distribution `E[onehot(y)|x_T]`: (uniq_keys, table (n_uniq, W))."""
+def _group_means(Ctr, ytr, T, V, W, shrink=0.0, base=None):
+    """Train per-group class distribution `E[onehot(y)|x_T]`: (uniq_keys, table (n_uniq, W)).
+    shrink>0: empirical-Bayes shrinkage of each cell toward `base` (regularizes thin cells)."""
     key = _group_key(Ctr, T, V)
     uniq, ng = np.unique(key, return_counts=True)
     table = np.zeros((len(uniq), W))
@@ -169,6 +170,8 @@ def _group_means(Ctr, ytr, T, V, W):
     ju, jc = np.unique(joint, return_counts=True)
     gi = np.searchsorted(uniq, ju // W)
     table[gi, (ju % W).astype(np.int64)] = jc
+    if shrink > 0.0 and base is not None:
+        return uniq, (table + shrink * base[None, :]) / (ng[:, None] + shrink)
     return uniq, table / ng[:, None]
 
 
@@ -178,11 +181,12 @@ def _lookup(uniq, table, key_te, fallback):
     return np.where(hit[:, None], table[idx], fallback[None, :])
 
 
-def anova_scores(Ctr, ytr, Cte, chosen_sets, V, W):
+def anova_scores(Ctr, ytr, Cte, chosen_sets, V, W, shrink=0.0):
     """Held-out ANOVA-reconstruction of `P(y=t|x) ~= sum_{S in chosen} g_{S,t}(x_S)`, `g_{S,t}` the
     pure interaction component (Mobius over subsets of the train conditional means, looked up on
-    test; unseen cells fall back to the base rate).  Include `()` for the base term.  Returns
-    (m_te, W) scores -> argmax = prediction.  Reuses only group-bys; no character materialization."""
+    test; unseen cells fall back to the base rate).  Include `()` for the base term.  `shrink>0`
+    regularizes every cell toward the base rate (SAME across degrees -> strict nested comparison).
+    Returns (m_te, W) scores -> argmax = prediction.  Reuses only group-bys; no character materialization."""
     ytr = np.asarray(ytr, np.int64)
     base = np.bincount(ytr, minlength=W).astype(np.float64) / len(ytr)
     Ts = {tuple(sorted(T)) for S in chosen_sets for r in range(len(S) + 1)
@@ -192,7 +196,7 @@ def anova_scores(Ctr, ytr, Cte, chosen_sets, V, W):
         if len(T) == 0:
             mu[T] = np.broadcast_to(base, (len(Cte), W))
         else:
-            uniq, table = _group_means(Ctr, ytr, T, V, W)
+            uniq, table = _group_means(Ctr, ytr, T, V, W, shrink=shrink, base=base)
             mu[T] = _lookup(uniq, table, _group_key(Cte, T, V), base)
     scores = np.zeros((len(Cte), W))
     for S in chosen_sets:

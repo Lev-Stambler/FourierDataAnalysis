@@ -40,9 +40,9 @@ def _active_positions_multi(C, y, V, w, W, topk):
 def run_interactions(C, y, V, w, max_degree=3, active=None, n_heavy=64, test_frac=0.2, seed=0, label=""):
     rng = np.random.default_rng(seed + 7)
     perm = rng.permutation(len(C))
-    nte = int(test_frac * len(C))
-    te, tr = perm[:nte], perm[nte:]
-    Ctr, ytr, Cte, yte = C[tr], y[tr], C[te], y[te]
+    nte, nval = int(test_frac * len(C)), int(0.1 * len(C))
+    te, val, tr = perm[:nte], perm[nte:nte + nval], perm[nte + nval:]
+    Ctr, ytr, Cval, yval, Cte, yte = C[tr], y[tr], C[val], y[val], C[te], y[te]
     W = int(y.max()) + 1
     positions = list(range(w)) if active is None else list(active)
     base = float((yte == np.bincount(ytr, minlength=W).argmax()).mean())
@@ -53,23 +53,40 @@ def run_interactions(C, y, V, w, max_degree=3, active=None, n_heavy=64, test_fra
     Ete, _ = screen_collisions(Cte, yte, V, w, W, max_degree=max_degree, active=active)
     deg_tr = energy_by_degree(E, sets, w)
     deg_te = energy_by_degree(Ete, sets, w)                       # held-out: does degree-3 generalize?
-    hi = sorted([(S, interaction_energy(E, S)) for S in sets if len(S) == 3], key=lambda t: -t[1])[:n_heavy]
+    IS = [(S, interaction_energy(E, S)) for S in sets if len(S) >= 2]
+    n_neg = sum(1 for _, v in IS if v < -1e-9)                    # non-product diagnostic (impossible if product)
+    hi = sorted([(S, v) for S, v in IS if len(S) == 3], key=lambda t: -t[1])[:n_heavy]
     hi_sets = [S for S, _ in hi]
     print(f"  collision energy by degree — train {np.round(deg_tr[:max_degree + 1], 4).tolist()}", flush=True)
-    print(f"  collision energy by degree — TEST  {np.round(deg_te[:max_degree + 1], 4).tolist()}   "
-          f"<== does degree-3 add held-out predictability?", flush=True)
+    print(f"  collision energy by degree — TEST  {np.round(deg_te[:max_degree + 1], 4).tolist()}", flush=True)
+    print(f"  non-product diagnostic: {n_neg}/{len(IS)} interaction energies I_S < 0 "
+          f"(0 iff product-D exactness holds)", flush=True)
 
+    # STRICT nested held-out test: tune the SAME empirical-Bayes shrinkage per model on validation,
+    # then evaluate on test -- so neither degree class is handicapped by a weak/over-fit baseline.
     base_sets = [()] + [(p,) for p in positions] + list(combinations(positions, 2))
+    lams = [0.0, 2.0, 8.0, 32.0, 128.0]
+    vsub = rng.choice(len(Cval), min(20000, len(Cval)), replace=False)
     tsub = rng.choice(len(Cte), min(30000, len(Cte)), replace=False)
-    acc2 = float((anova_scores(Ctr, ytr, Cte[tsub], base_sets, V, W).argmax(1) == yte[tsub]).mean())
-    acc3 = float((anova_scores(Ctr, ytr, Cte[tsub], base_sets + hi_sets, V, W).argmax(1) == yte[tsub]).mean())
+
+    def tuned_test_acc(chosen):
+        best = (-1.0, 0.0)
+        for lam in lams:
+            a = float((anova_scores(Ctr, ytr, Cval[vsub], chosen, V, W, shrink=lam).argmax(1) == yval[vsub]).mean())
+            if a > best[0]:
+                best = (a, lam)
+        lam = best[1]
+        return float((anova_scores(Ctr, ytr, Cte[tsub], chosen, V, W, shrink=lam).argmax(1) == yte[tsub]).mean()), lam
+
+    acc2, lam2 = tuned_test_acc(base_sets)
+    acc3, lam3 = tuned_test_acc(base_sets + hi_sets)
     n3 = comb(len(positions), 3)
-    print(f"  held-out top-1 — degree<=2 {acc2:.4f}   + {len(hi_sets)} heavy degree-3 sets {acc3:.4f}   "
-          f"majority {base:.4f}", flush=True)
+    print(f"  STRICT held-out top-1 — fitted degree<=2 {acc2:.4f} (lam={lam2:g})   "
+          f"+ {len(hi_sets)} heavy degree-3 {acc3:.4f} (lam={lam3:g})   majority {base:.4f}", flush=True)
     print(f"  screened {n3} triples; a Lasso degree-3 enumeration would need {n3 * (V - 1) ** 3:.1e} columns",
           flush=True)
     return dict(deg_tr=deg_tr.tolist(), deg_te=deg_te.tolist(), acc2=acc2, acc3=acc3, base=base,
-                n_heavy=len(hi_sets), n_triples=n3)
+                n_neg=n_neg, n_heavy=len(hi_sets), n_triples=n3)
 
 
 def run_char(window=24, n_stories=120000, max_pairs=1_500_000, max_degree=3, heredity_topk=None, seed=0):

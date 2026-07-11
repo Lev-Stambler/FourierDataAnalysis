@@ -1,5 +1,15 @@
 # Interaction screening = functional ANOVA: the long-context / low-degree primitive
 
+## PROVEN vs NOT-PROVEN (read this first)
+
+| | statement | status |
+|---|---|---|
+| **PROVEN** | The U-statistic `ν̂_S = (1/m)Σ_g (S_g²−Q_g)/(n_g−1)` is unbiased/consistent for `ν_S = E_{x_S}[(E[f\|x_S])²]` for **any** D, once `V^{\|S\|} ≲ m` (cells repeat) — no complement repetition, no birthday wall. | `test_unbiased_conditional_energy`; paper `@lem:unbiased-energy` |
+| **PROVEN** | Under a **product** D: `ν_S = Σ_{U⊆S} f̂_D(U)²`, so Möbius gives `f̂_D(S)² ≥ 0` **exactly**; screening recovers all `\|S\|≤d`, `f̂_D(S)²≥τ²` from SAMP in `Õ(binom(n,d)·m·2^d)`. | `test_matches_brute_anova` (1e-6 on a cube); paper `@prop:interaction-screening` + proof |
+| **PROVEN** | Phase-diagram boundary: context-conditioning covers `n−d ≲ log_V m`, screening covers `d ≲ log_V m`; the `min(d,n−d) ≳ log_V m` corner is SQ-hard (`n^Ω(d)`). | `@lem:blindness` + cited SQ/junta bounds |
+| **NOT PROVEN** | Non-product (real) D: `ν_S ≠ Σf̂²`; Möbius `I_S` is only the independent-input Sobol interaction, **can be < 0** (`n_neg` diagnostic). Pure-Fourier reading needs product D or dependent-input ANOVA (open). | paper "Non-product D (open)" |
+| **NOT PROVEN** | The language degree-3 predictive win — a **strict nested held-out** comparison (fitted degree-≤2 vs degree-≤3, each shrinkage-tuned on val), empirical, never a theorem about `f̂_D`. | `run_interactions` |
+
 ## Why (the access-model phase diagram)
 
 CSAMP / context-conditioning GL conditions on the **suffix** (the `w-d` un-split coordinates) and needs it
@@ -40,16 +50,17 @@ up / recovers nothing** — the crux that this primitive reaches where CSAMP can
 
 ## Results — the phase diagram, empirically
 
-**The `V^d ≲ |D|` boundary is visible in held-out degree-3 collision energy** (positive = generalizes):
+**Strict nested held-out test** (fitted degree-≤2 vs degree-≤3, each empirical-Bayes-shrinkage tuned on a
+validation split; `n_neg` = negative `I_S` = the non-product signature):
 
-| data | V | w | held-out deg-3 collision | held-out top-1: deg≤2 → +deg-3 |
-|------|---|---|--------------------------|--------------------------------|
-| char next-char (dense) | 27 | 10 | **+1.86** (generalizes) | **0.526 → 0.560** (helps) |
-| word next-token (sparser) | 32 | 6 | **−0.27** (overfits) | 0.381 → 0.298 (hurts) |
+| data | V | w | held-out deg-3 collision | `n_neg` | STRICT held-out top-1: deg≤2 → +deg-3 |
+|------|---|---|--------------------------|---------|---------------------------------------|
+| char next-char (dense) | 27 | 12 | **+2.96** (generalizes) | 4/286 (≈product) | **0.508 → 0.560** (helps) |
+| word next-token (sparser) | 32 | 6 | **−0.27** (overfits) | many | 0.381 → 0.298 (hurts) |
 
-(Small local configs; the Modal H100 sweep — char w=24 blind-full, char w=96 heredity-pruned, word V=64 w=12,
-plus the Poelwijk CSAMP-corner line — is in `/cache/interactions_results.txt` via `modal_gl.py::interactions`
-→ `show`.) So **interaction-screening finds usable degree-3 high-order over contexts CSAMP cannot reach**,
+(The Modal H100 sweep — char w=24 blind-full, char w=96 heredity-pruned, word V=64 w=12, plus the Poelwijk
+CSAMP-corner line — is in `/cache/interactions_results.txt` via `modal_gl.py::interactions` → `show`.) So
+**interaction-screening finds usable degree-3 high-order over contexts CSAMP cannot reach**,
 exactly where the interacting set is densely sampled (char); where it isn't (word), degree-3 overfits — the
 ANOVA/SQ ceiling. The genuinely *high-degree* win stays in the CSAMP corner (Poelwijk V=2 w=13, 0.82 vs
 degree-≤2 0.74; `qary_gl_predict.run_poelwijk`).

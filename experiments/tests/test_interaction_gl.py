@@ -70,6 +70,23 @@ def test_matches_brute_anova():
         assert abs(interaction_energy(E, S) - brute_I(S)) < 1e-6, (S, interaction_energy(E, S), brute_I(S))
 
 
+def test_unbiased_conditional_energy():
+    """PROVEN core, empirically: on product (uniform) data the U-statistic Möbius I_S is unbiased for
+    Σ_{supp=S} f̂_D² — so a planted character's I_S ≈ 1 and, crucially, every I_S ≥ 0 (non-negativity
+    holds exactly under a product law; a negative I_S is the non-product signature)."""
+    rng = np.random.default_rng(3)
+    V, w, m = 4, 6, 60000
+    C = rng.integers(0, V, size=(m, w)).astype(np.int64)     # product (independent uniform) D
+    Psi = householder_basis(V)
+    planted = [{0: 1, 3: 2}, {1: 2, 2: 3, 4: 1}]             # a degree-2 and a degree-3 character
+    f = sum(_char(C, a, Psi) for a in planted)
+    ranked, _ = screen_interactions(C, f, V, w, max_degree=3)
+    top = {tuple(sorted(S)): v for S, v in ranked}
+    assert abs(top[(1, 2, 4)] - 1.0) < 0.08, top[(1, 2, 4)]    # unbiased ~ 1 for the planted deg-3
+    assert abs(top[(0, 3)] - 1.0) < 0.08, top[(0, 3)]          # and the planted deg-2
+    assert min(v for _, v in ranked) > -0.05, min(v for _, v in ranked)   # non-negativity under product D
+
+
 def test_reaches_where_csamp_cannot():
     """At w=50 the CSAMP suffix never repeats (GL recovers nothing), but conditioning on the 3
     interacting positions still recovers the planted degree-3 interaction."""

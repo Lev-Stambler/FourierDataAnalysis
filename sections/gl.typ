@@ -395,16 +395,33 @@ so the _pure_ degree-$|S|$ interaction is recovered by Möbius inversion over su
 $
 dcoeff(S)^2 = sum_(U subset.eq S) (-1)^(|S| - |U|) nu_U.
 $ <eq:mobius>
-@eq:cond-energy is the dual of @lem:pair-form — split on $S$ and keep the diagonal on $S$ rather than on $Jbar$ — and is estimated by the $U$-statistic over dataset points sharing $x_S$,
+Independent of any product assumption, $nu_S$ is estimated from $sans("SAMP")$ alone by the $U$-statistic over dataset points sharing $x_S$,
 $
-hat(nu)_S = frac(1, m) sum_(g) frac(S_g^2 - Q_g, n_g - 1), quad S_g = sum_(x in g) f(x), quad Q_g = sum_(x in g) f(x)^2,
-$
-over the fibres $g = {x in calD : x_S = z}$; singleton groups drop out, removing exactly the self-pair diagonal that @lem:blindness showed swamps the suffix version.
-This needs only the $S$-subcube — $2^(|S|)$ cells — to repeat, i.e. $|S| lt.tilde log_2 m$, _independent of $n$_: it reaches a sparse interaction inside an arbitrarily long context, at the price of a degree cap.
+hat(nu)_S = frac(1, m) sum_(g : n_g >= 2) frac(S_g^2 - Q_g, n_g - 1), quad S_g = sum_(x in g) f(x), quad Q_g = sum_(x in g) f(x)^2,
+$ <eq:nu-hat>
+over the fibres $g = {x in calD : x_S = z}$ (this is the dual of @lem:pair-form — splitting on $S$ and keeping the diagonal on $S$ rather than on $Jbar$); singleton groups drop out, removing exactly the self-pair diagonal that @lem:blindness showed swamps the suffix version.
 
-#proposition[Interaction Screening][
-  Fix $d <= log_2 m - O(1)$ and $tau > 0$. From $sans("SAMP")$ access to $calD$ alone, conditioning on each $S$ with $|S| <= d$, the $U$-statistic estimator of @eq:cond-energy together with @eq:mobius recovers every $S$ with $|S| <= d$ and $dcoeff(S)^2 >= tau^2$, in time $O(binom(n, d) dot m dot 2^d)$ — with no repetition required on any complement $Jbar$, hence no birthday-horizon obstruction. It is _not_ blind in the reverse direction: a pure degree-$d$ character ($dcoeff(S) != 0$ but $dcoeff(U) = 0$ for all $U subset.neq S$) has $nu_S = dcoeff(S)^2$ and $nu_U = 0$ for $U subset.neq S$, so it is detected.
+#lemma[Unbiased Conditional Energy][
+  For _any_ $calD$ and any $S subset.eq [n]$, condition on the realized fibre values ${x_S^i}_(i=1)^m$. Within each fibre $g$ the labels $f(x)$ are i.i.d. with mean $mu_S (z_g) := EE_calD [f | x_S = z_g]$, and @eq:nu-hat obeys
+  $
+  EE[hat(nu)_S | {x_S^i}] = frac(1, m) sum_(g : n_g >= 2) n_g mu_S (z_g)^2,
+  $
+  the empirical mean of $mu_S (x_S)^2$ over non-singleton fibres. Hence $hat(nu)_S$ is unbiased for $nu_S$ up to the omitted singletons, and consistent for $nu_S$ whenever $2^(|S|) = o(m)$. It uses _no_ repetition on the complement $Jbar$, so the birthday-horizon obstruction of @lem:blindness never arises.
+]<lem:unbiased-energy>
+#proof[
+  Fix a fibre $g$ with $n_g >= 2$. Then $S_g^2 - Q_g = sum_(i != j in g) f_i f_j$, so $frac(S_g^2 - Q_g, n_g (n_g - 1))$ is the $U$-statistic for the product of two i.i.d. draws, with expectation $mu_S (z_g)^2$; multiplying by $n_g$ and summing gives the display. Each singleton fibre contributes $0$ to $hat(nu)_S$ but $mu_S (z)^2 \/ m$ to the empirical proxy of $nu_S$; that omitted mass vanishes once each of the $2^(|S|)$ fibres is hit $Omega(1)$ times in expectation, i.e. $2^(|S|) = o(m)$.
+]
+
+So $hat(nu)_S$ needs only the $S$-subcube — $2^(|S|)$ cells — to repeat, i.e. $|S| lt.tilde log_2 m$, _independent of $n$_: it reaches a sparse interaction inside an arbitrarily long context, at the price of a degree cap. Under a product law this recovers the coefficients exactly.
+
+#proposition[Interaction Screening (product $calD$)][
+  Suppose $calD$ is a product distribution — so ${chi_U}$ are orthonormal under $calD$ — and fix $d$ with $2^d = o(m)$ and $tau > 0$. Then @eq:cond-energy holds, and @eq:mobius gives $dcoeff(S)^2 = sum_(U subset.eq S) (-1)^(|S| - |U|) nu_U >= 0$ _exactly_. Consequently, from $sans("SAMP")$ access alone, screening the sets of size $<= d$ with $hat(nu)_S$ (@lem:unbiased-energy) and @eq:mobius recovers every $S$ with $|S| <= d$ and $dcoeff(S)^2 >= tau^2$, in time $O(binom(n, d) dot m dot 2^d)$ — with no repetition on any complement $Jbar$, hence no birthday-horizon obstruction. It is _not_ blind in reverse: a pure degree-$d$ character ($dcoeff(S) != 0$ but $dcoeff(U) = 0$ for all $U subset.neq S$) has $nu_S = dcoeff(S)^2$ and $nu_U = 0$ for $U subset.neq S$, so it is detected.
 ]<prop:interaction-screening>
+#proof[
+  For product $calD$, $EE[f | x_S = z] = sum_(U subset.eq S) dcoeff(U) chi_U (z)$ — conditioning annihilates every character with a coordinate outside $S$ — so orthonormality gives $nu_S = sum_(U subset.eq S) dcoeff(U)^2$ (@eq:cond-energy), whose Möbius inverse is @eq:mobius. By @lem:unbiased-energy each $nu_U$, $U subset.eq S$, is estimated to accuracy $eps$ from $O(log(1\/delta)\/eps^2)$ bounded-label samples once $2^d = o(m)$; propagating $eps = Theta(tau^2)$ through the $2^(|S|)$-term sum @eq:mobius separates $dcoeff(S)^2 >= tau^2$ from $0$ with the stated resources.
+]
+
+*Non-product $calD$ (open).* When $calD$ is not a product law the characters are no longer $calD$-orthonormal (the density factor $normC$ of the Mass Identity @lem:mass), so @eq:cond-energy _fails_: $hat(nu)_S$ still consistently estimates the variance $nu_S$ explained by $x_S$ (@lem:unbiased-energy), but $nu_S != sum_(U subset.eq S) dcoeff(U)^2$, and the Möbius combination @eq:mobius is then only the _independent-input Sobol_ interaction — which can be negative. Exact recovery of $dcoeff(S)$ there requires a product $calD$, the generalized functional ANOVA for dependent inputs, or a fitted nested-degree comparison; a negative screened $I_S$ is the diagnostic signature of this regime.
 
 @prop:interaction-screening is functional ANOVA — the Hoeffding–Sobol decomposition — read in the dataset-Fourier basis, and it is precisely what sample-only access _can_ do: screening $binom(n, d)$ sets matches the statistical-query lower bound $n^(Omega(d))$ for recovering a size-$d$ junta from random examples @kearns1998sq @blum2003noise, and no sample-only method does essentially better without breaking the noisy-parity assumption.
 The extra power the dataset model buys is the stronger _subcube-conditioning_ access @chen2021junta @canonne2015testing — which learns a $d$-junta in $2^(O(d))$ rather than $n^(Omega(d))$ — realized here as "retrieve rows sharing this partial context," available exactly where $calD$ contains the conditioned subcube.
@@ -420,7 +437,7 @@ The two primitives are complementary, tiling the (degree $d$, dimension $n$) pla
 The uncovered corner $min(d, n - d) gt.tilde log_2 m$ — high degree _and_ long context — is exactly the sample-only, subcube-empty regime where @lem:blindness and the statistical-query / noisy-parity barrier @kearns1998sq @blum2003noise leave no efficient method.
 The boundary is soft, not sharp: shrinking the conditional means of @eq:cond-energy toward their lower-order parents (empirical Bayes) degrades $hat(nu)_S$ gracefully as the $2^(|S|)$ cells thin, giving a data-adaptive effective degree; and a kernel/embedding relaxation of the fibre ("rows with $x_S approx z$") trades bias for reach — the exact-to-soft spectrum that connects this combinatorial recovery to representation learning, which passes the worst-case barrier only by assuming the smoothness a parity lacks.
 #CLAUDE[
-  Empirically (categorical Householder version, `interaction_predict.py`): on TinyStories next-_character_ (dense $V = 27$, window $24$) the recovered degree-$3$ interactions carry held-out predictability (collision energy positive out of sample) and lift top-$1$ over the degree-$<= 2$ baseline; on next-_word_ (sparser) the same screen overfits (held-out degree-$3$ energy $< 0$) — the $2^(|S|) lt.tilde m$ boundary made visible. The genuinely high-degree win stays in the context-conditioning corner (Poelwijk, @thm:context-gl).
+  _Empirical illustration only — not a theorem_ (real language is the non-product regime above, so this is a held-out predictive comparison, not exact coefficient recovery). Categorical Householder version, `interaction_predict.py`: on TinyStories next-_character_ (dense $V = 27$, window $24$) the recovered degree-$3$ interactions carry held-out predictability (out-of-sample $hat(nu)$-energy positive) and lift a fitted degree-$<= 3$ model's top-$1$ over the fitted degree-$<= 2$ model; on next-_word_ (sparser) the same screen overfits (held-out degree-$3$ energy $< 0$, and negative $I_S$ appear — the non-product signature) — the $2^(|S|) lt.tilde m$ boundary of @lem:unbiased-energy made visible. The genuinely high-degree win stays in the context-conditioning corner (Poelwijk, @thm:context-gl).
 ]
 
 == Application: Kushilevitz-Mansour over Datasets
