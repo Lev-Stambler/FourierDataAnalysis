@@ -79,22 +79,22 @@ def make_tok2slot(slot_ids, vocab_size):
 
 def draw_fibers(streams, w, k, ctx_len, M, allowed_ids, seed=0, dedupe=True):
     """M fiber anchors from tokenized stories: positions t with >= ctx_len preceding tokens whose
-    last w window tokens AND next token are all in `allowed_ids`.  Returns
-    (PRE (M, ctx_len-w) real prefix ids, S_tok (M, k) fixed strings, WIN (M, w) the REAL window
-    tokens, y_tok (M,) the real next token).  `dedupe` keeps one anchor per distinct s so
-    f(window) = Dream(next | prefix(s), ...) is well-defined; WIN/y_tok serve real-window eval."""
+    NEXT token is in `allowed_ids` (window tokens may be out-of-alphabet -- they stay raw Qwen ids
+    for the model and map to slot 0 in the student's domain; requiring the whole window in-alphabet
+    would leave ~no anchors at large w).  Returns (PRE (M, ctx_len-w) real prefix ids,
+    S_tok (M, k) fixed strings, WIN (M, w) the REAL window tokens, y_tok (M,) the real next token).
+    `dedupe` keeps one anchor per distinct s so f(window) = Dream(next | prefix(s), ...) is
+    well-defined; WIN/y_tok serve real-window eval."""
     hi = int(max(int(max(s.max() for s in streams if len(s))), int(allowed_ids.max()))) + 1
     ok = np.zeros(hi, bool)
     ok[allowed_ids] = True
-    from numpy.lib.stride_tricks import sliding_window_view
     anchors = []
     for si, ids in enumerate(streams):
         ids = np.asarray(ids, dtype=np.int64)
         if len(ids) < ctx_len + 1:
             continue
-        win_ok = sliding_window_view(ok[ids], w + 1).all(axis=1)  # j -> ids[j:j+w+1], anchor t = j+w
-        ts = np.nonzero(win_ok)[0] + w
-        anchors.extend((si, int(t)) for t in ts[(ts >= ctx_len) & (ts < len(ids))])
+        ts = np.nonzero(ok[ids])[0]                               # next token in-alphabet
+        anchors.extend((si, int(t)) for t in ts[ts >= ctx_len])
     if not anchors:
         raise ValueError("no in-alphabet anchors with enough preceding context")
     rng = np.random.default_rng(seed)

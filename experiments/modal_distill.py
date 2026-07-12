@@ -111,9 +111,14 @@ def fit_search(name, max_width=6000, top_classes=64, top_k=2000):
     vol.reload()                                                  # warm container: pick up fresh npz
     z = np.load(f"/cache/{name}")
     V, w = int(z["V"]), int(z["w"])
-    model = fit_distill_lm(z["Cd_tr"], z["n_tr"], z["P_tr"], z["Cd_va"], z["n_va"], z["P_va"],
-                           V, w, max_width=max_width, top_classes=top_classes, top_k=top_k,
-                           device="cuda")
+    if w * (int(V).bit_length() - 1) > 62:                        # long window: no int64 packing --
+        from fda_exp.distill_lm import fit_additive               # degree<=1 additive student
+        model = fit_additive(z["Cd_tr"], z["n_tr"], z["P_tr"], z["Cd_va"], z["n_va"], z["P_va"],
+                             V, w, device="cuda")
+    else:
+        model = fit_distill_lm(z["Cd_tr"], z["n_tr"], z["P_tr"], z["Cd_va"], z["n_va"], z["P_va"],
+                               V, w, max_width=max_width, top_classes=top_classes, top_k=top_k,
+                               device="cuda")
     res = eval_distill(model, z["Ceval"], z["yeval"], z["P_eval"])
     for split, dg in (("tr", True), ("va", True), ("va_deg2", False)):
         key = split.split("_")[0]
@@ -259,9 +264,10 @@ def measure_floor(name):
     P_full = np.clip(z["P_eval"].astype(np.float64), 1e-12, 1)
     kl = float((P_full * (np.log(P_full) - np.log(np.clip(P_win.astype(np.float64), 1e-12, 1))))
                .sum(1).mean())
-    print(f"[floor] mean KL(full-ctx || window-only) over {len(WIN_tok)} eval windows = {kl:.3f} nats",
-          flush=True)
-    return kl
+    agree = float((P_full.argmax(1) == P_win.argmax(1)).mean())
+    print(f"[floor] over {len(WIN_tok)} eval windows (w={int(z['w'])}): "
+          f"KL(full-ctx || window-only) = {kl:.3f} nats, top-1 agreement = {agree:.3f}", flush=True)
+    return dict(kl=kl, top1_agree=agree)
 
 
 @app.local_entrypoint()

@@ -83,17 +83,38 @@ def test_diffusion_infill_stays_in_alphabet():
 
 def test_draw_fibers_contract():
     """Fibers anchor at real story positions: prefix is the ctx_len-w tokens before the window,
-    window+next token all in-alphabet, fixed strings distinct across fibers."""
+    NEXT token in-alphabet (window may contain out-of-alphabet ids), fixed strings distinct."""
     from fda_exp.distill_data import draw_fibers
     w, k, ctx, M = 4, 2, 12, 20
     rng = np.random.default_rng(0)
     allowed = np.arange(1, 9, dtype=np.int64)                     # ids 1..8 in-alphabet
-    streams = [rng.integers(1, 9, size=rng.integers(40, 80)).astype(np.int64) for _ in range(30)]
+    streams = [rng.integers(1, 12, size=rng.integers(40, 80)).astype(np.int64) for _ in range(30)]
     PRE, S, WIN, y = draw_fibers(streams, w, k, ctx, M, allowed, seed=0)
     assert PRE.shape == (M, ctx - w) and S.shape == (M, k) and WIN.shape == (M, w)
     assert np.array_equal(WIN[:, w - k:], S)                      # s = last k window tokens
-    assert np.isin(WIN, allowed).all() and np.isin(y, allowed).all()
+    assert np.isin(y, allowed).all()                              # next token always in-alphabet
     assert len({tuple(r) for r in S}) == M                        # distinct fixed strings
+
+
+def test_fit_additive_recovers_planted_additive():
+    """Long-window path: a planted additive (deg<=1) model over w=10 positions is recovered with
+    KL ~ 0 by fit_additive — no int64 packing anywhere."""
+    from fda_exp.distill_lm import fit_additive, kl_model_student
+    V, w, D = 8, 10, 3000
+    rng = np.random.default_rng(2)
+    E = rng.normal(0, 0.7, (w, V, V)); E[:, :, 0] = -3.0
+    C = rng.integers(0, V, (D, w)).astype(np.int64)               # slot 0 allowed in contexts
+
+    def planted(Cx):
+        lg = sum(E[p][Cx[:, p]] for p in range(w))
+        P = np.exp(lg - lg.max(1, keepdims=True))
+        return P / P.sum(1, keepdims=True)
+    n = np.ones(D, dtype=np.int64)
+    tr = np.arange(D) < int(0.85 * D)
+    model = fit_additive(C[tr], n[tr], planted(C[tr]).astype(np.float32),
+                         C[~tr], n[~tr], planted(C[~tr]).astype(np.float32),
+                         V, w, device="cpu", steps=2500)
+    assert kl_model_student(model, C[~tr], planted(C[~tr])) < 0.05
 
 
 class _PositionLM:
