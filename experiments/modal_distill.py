@@ -152,11 +152,18 @@ def prep_fibers(V=512, w=6, k=3, M=12000, seed=0, n_stories=8000, n_eval=3000, w
     win_f=True targets the WINDOW-RESTRICTED function: every label (train shards + eval) uses one
     CONSTANT 122-token story prefix, so f is fully determined by the window (no hidden-prefix info,
     no 1.62-nat floor) while Dream still sees ctx_len tokens."""
+    import os
+
     import numpy as np
 
     from fda_exp.distill_data import build_top_vocab, draw_fibers, label_model, load_dream, make_tok2slot
     from fda_exp.hf_data import load_texts
 
+    name = f"prep_V{V}_w{w}_k{k}_ctx{CTX_LEN}_M{M}_s{seed}{'_winf' if win_f else ''}.npz"
+    vol.reload()
+    if os.path.exists(f"/cache/{name}"):
+        print(f"[prep] cached: {name}", flush=True)
+        return name
     model, tok, mask_id = load_dream(device="cuda")
     texts = load_texts(n_stories, split="valid")
     cut = int(0.85 * len(texts))
@@ -173,7 +180,6 @@ def prep_fibers(V=512, w=6, k=3, M=12000, seed=0, n_stories=8000, n_eval=3000, w
         PRE_e = np.tile(const_pre, (len(PRE_e), 1))
     P_e = label_model(model, PRE_e, WIN_e, mask_id, slot_ids, batch=64, device="cuda")
     t2s = make_tok2slot(slot_ids, model.config.vocab_size)
-    name = f"prep_V{V}_w{w}_k{k}_ctx{CTX_LEN}_M{M}_s{seed}{'_winf' if win_f else ''}.npz"
     np.savez_compressed(f"/cache/{name}", V=V, w=w, k=k, mask_id=mask_id, slot_ids=slot_ids,
                         PRE=PRE, S=S, Ceval=t2s[WIN_e], yeval=t2s[y_e], P_eval=P_e,
                         WIN_tok=WIN_e)                            # raw ids (slots are lossy at slot 0)
@@ -231,11 +237,13 @@ def gen_parallel(V=512, w=6, k=3, M=12000, R=8, seed=0, shards=8, steps=0, tempe
     bounds = np.linspace(0, M, shards + 1, dtype=int)
     args = [(prep_name, int(a), int(b), R, (steps or None), temperature, seed)
             for a, b in zip(bounds[:-1], bounds[1:]) if b > a]
-    parts = list(gen_shard.starmap(args))
-    Cd = np.concatenate([p[0] for p in parts])
-    n_ctx = np.concatenate([p[1] for p in parts])
-    P = np.concatenate([p[2] for p in parts])
-    fib = np.concatenate([p[3] for p in parts])
+    parts = list(gen_shard.starmap(args))                         # durable shard npz names
+    vol.reload()
+    zs = [np.load(f"/cache/{p}") for p in parts]
+    Cd = np.concatenate([q["Cd"] for q in zs])
+    n_ctx = np.concatenate([q["n_ctx"] for q in zs])
+    P = np.concatenate([q["P"] for q in zs])
+    fib = np.concatenate([q["fib"] for q in zs])
     rng = np.random.default_rng(seed)
     va_fibers = rng.random(M) < 0.15                              # fiber-disjoint split
     va = va_fibers[fib]
