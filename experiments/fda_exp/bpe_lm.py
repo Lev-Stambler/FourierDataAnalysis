@@ -72,6 +72,16 @@ def _char_np(Cd, codes, V, w):
     return _char_columns(Cd, codes, V, hadamard_basis(V), w)
 
 
+def _degree1_codes(V, w):
+    """All degree-1 Walsh characters = every nonzero contrast confined to a SINGLE token block
+    (`a << p*k`, a in 1..V-1, p in 0..w-1).  These w*(V-1) codes span the full per-position categorical
+    basis (the bigram/trigram-generalizing 'linear' part).  The energy-ranked CSAMP top-K starves them on
+    dense char data -- where the Fourier energy piles up on high-degree memorization characters -- so we
+    inject the whole (enumerable, cheap) degree-1 set unconditionally as the low-degree base."""
+    k = int(V).bit_length() - 1
+    return np.array([a << (p * k) for p in range(w) for a in range(1, V)], dtype=np.int64)
+
+
 def _softmax_fit(X, counts, Xval, counts_val, base, device, W_init=None, steps=3000, lr=0.03,
                  patience=10, check=25, warmup=800):
     """Softmax regression W (K+1, V) minimizing weighted cross-entropy on the train contexts.  The bias
@@ -130,14 +140,16 @@ def fit_bpe_lm(Ctr, ytr, Cval, yval, V, w, merges=None, max_width=4000, device=N
     topT = np.argsort(-counts.sum(0))[:top_classes]                # search over the most frequent tokens
     A = (2.0 * counts[:, topT] - n_ctx[:, None]).astype(np.float32)   # (D, T)
     codes, widths = multiclass_search(idx, A, n_bits, max_width=max_width, device=device)
-    if len(codes) > top_k:                                         # keep the top_k heaviest characters
-        coeffs, _ = coeffs_all(counts, n_ctx, Cd, codes, V, w, m)  # (V, K)
-        codes = codes[np.argsort(-(coeffs ** 2).sum(0))[:top_k]]
-    degs = degree_of_codes(codes, V, w) if len(codes) else np.zeros(0, int)
-
-    order = np.argsort(degs > 2, kind="stable")                   # deg<=2 characters first, deg>=3 after
-    codes, degs = codes[order], degs[order]
-    n2 = int((degs <= 2).sum())
+    codes = np.union1d(codes, _degree1_codes(V, w))               # inject the FULL per-position degree-1 base
+    codes = codes[codes != 0]                                     # (search starves it on dense char data)
+    degs = degree_of_codes(codes, V, w)
+    low, high = codes[degs <= 2], codes[degs > 2]                 # KEEP ALL low-degree (few, generalize);
+    if len(high) > top_k:                                         # spend the top_k budget on high-degree only
+        ch, _ = coeffs_all(counts, n_ctx, Cd, high, V, w, m)      # (V, |high|) exact coeffs
+        high = high[np.argsort(-(ch ** 2).sum(0))[:top_k]]
+    codes = np.concatenate([low, high])                           # deg<=2 first (low) then deg>=3 (high)
+    degs = degree_of_codes(codes, V, w)
+    n2 = int(len(low))
     base = np.bincount(ytr, minlength=V).astype(np.float64); base = (base + 1) / (base.sum() + V)
 
     def feat(Cx, ncodes):
@@ -274,8 +286,11 @@ def run_bpe_lm_eval(vocab_size=512, window=2, n_stories=3_000_000, max_pairs=2_0
                        device=device, max_ctx=max_ctx)
         v = min(ce_perplexity(m, Cval, yval, deg3=False)["ppl"], ce_perplexity(m, Cval, yval, deg3=True)["ppl"])
         te2, te3 = ce_perplexity(m, Cte, yte, deg3=False), ce_perplexity(m, Cte, yte, deg3=True)
+        tr2 = ce_perplexity(m, Ctr[:300_000], ytr[:300_000], deg3=False)   # train PPL (subsample):
+        tr3 = ce_perplexity(m, Ctr[:300_000], ytr[:300_000], deg3=True)    # capacity vs generalization
         print(f"  top_k={tk} (deg {m['dh']}): deg<=2 PPL={te2['ppl']:.1f} | deg<=3 PPL={te3['ppl']:.1f} "
-              f"(top1 {te3['top1']:.3f}) | deg-3 delta {te2['ppl'] - te3['ppl']:+.2f}  ({time.time() - t:.0f}s)", flush=True)
+              f"(top1 {te3['top1']:.3f}) | deg-3 delta {te2['ppl'] - te3['ppl']:+.2f} "
+              f"| TRAIN deg<=2 {tr2['ppl']:.1f} deg<=3 {tr3['ppl']:.1f}  ({time.time() - t:.0f}s)", flush=True)
         if v < best[0]:
             best = (v, tk, (te2["ppl"], te3["ppl"]))
     print(f"  >>> VAL-SELECTED top_k={best[1]}: deg<=2 {best[2][0]:.1f} | deg<=3 {best[2][1]:.1f}  "
