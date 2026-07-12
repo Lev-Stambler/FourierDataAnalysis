@@ -103,7 +103,7 @@ def gen_dataset(V=512, w=6, k=3, M=4000, R=8, seed=0, n_stories=8000, n_eval=300
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=1800)
-def fit_search(name, max_width=6000, top_classes=64, top_k=2000, wide_l2=False):
+def fit_search(name, max_width=6000, top_classes=64, top_k=2000):
     import numpy as np
 
     from fda_exp.distill_lm import eval_distill, fit_distill_lm, kl_model_student
@@ -111,10 +111,9 @@ def fit_search(name, max_width=6000, top_classes=64, top_k=2000, wide_l2=False):
     vol.reload()                                                  # warm container: pick up fresh npz
     z = np.load(f"/cache/{name}")
     V, w = int(z["V"]), int(z["w"])
-    kw = dict(l2s=(1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1), steps=5000) if wide_l2 else {}
     model = fit_distill_lm(z["Cd_tr"], z["n_tr"], z["P_tr"], z["Cd_va"], z["n_va"], z["P_va"],
                            V, w, max_width=max_width, top_classes=top_classes, top_k=top_k,
-                           device="cuda", **kw)
+                           device="cuda")
     res = eval_distill(model, z["Ceval"], z["yeval"], z["P_eval"])
     for split, dg in (("tr", True), ("va", True), ("va_deg2", False)):
         key = split.split("_")[0]
@@ -145,8 +144,8 @@ def fit_search(name, max_width=6000, top_classes=64, top_k=2000, wide_l2=False):
 
 @app.local_entrypoint()
 def main(regen: bool = False, v: int = 512, w: int = 6, k: int = 3, m: int = 4000, r: int = 8,
-         seed: int = 0, max_width: int = 6000, top_k: int = 2000, wide_l2: bool = False):
+         seed: int = 0, max_width: int = 6000, top_k: int = 2000):
     name = _npz_name(v, w, k, m, r, seed)
     if regen:
         name = gen_dataset.remote(V=v, w=w, k=k, M=m, R=r, seed=seed)
-    print(fit_search.remote(name, max_width=max_width, top_k=top_k, wide_l2=wide_l2))
+    print(fit_search.remote(name, max_width=max_width, top_k=top_k))

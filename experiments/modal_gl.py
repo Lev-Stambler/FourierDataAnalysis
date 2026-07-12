@@ -165,11 +165,38 @@ def qary_bpe_sweep():
     sys.stdout.flush(); vol.commit()
 
 
+@app.function(image=image, gpu="H100", cpu=16.0, memory=131072, volumes={"/cache": vol}, timeout=14400)
+def bpe_lm():
+    """CSAMP next-token LANGUAGE MODEL at scale: the GPU one-shot multiclass search recovers the shared
+    characters, a val-tuned softmax fits them, and we report held-out cross-entropy / perplexity vs the
+    n-gram ceiling (= the Bayes/neural target at that context) plus the degree-2-vs-degree-3 delta.
+    V in {512,1024}, window 2/3/4 (degree-3 needs w>=3), on TinyStories train shards."""
+    import sys
+
+    import torch
+
+    from fda_exp.bpe_lm import run_bpe_lm_eval
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    sys.stdout = _Tee("/cache/bpe_lm_results.txt")
+    print("device:", dev, torch.cuda.get_device_name(0) if dev == "cuda" else "", flush=True)
+    cfgs = [dict(vocab_size=512, window=4, split="train", shards=2, max_pairs=12_000_000),   # longer context
+            dict(vocab_size=512, window=6, split="train", shards=4, max_pairs=25_000_000),   # w*log2(512)=54<=62
+            dict(vocab_size=256, window=7, split="train", shards=4, max_pairs=25_000_000),   # w*8=56<=62
+            dict(vocab_size=512, window=3, split="train", shards=1, max_pairs=6_000_000)]     # w=3 degree-3 (fixed)
+    for cfg in cfgs:
+        try:
+            run_bpe_lm_eval(device=dev, n_stories=4_000_000, top_ks=(1500, 3000), **cfg)
+        except Exception as e:
+            print(f"  {cfg} FAILED: {repr(e)[:300]}", flush=True)
+        vol.commit()
+    sys.stdout.flush(); vol.commit()
+
+
 @app.function(image=image, volumes={"/cache": vol})
 def show():
     import os
-    for name in ("qary_bpe_results.txt", "interactions_results.txt", "qary_lang_results.txt",
-                 "phase1_results.txt", "phase3_results.txt"):
+    for name in ("bpe_lm_results.txt", "qary_bpe_results.txt", "interactions_results.txt",
+                 "qary_lang_results.txt", "phase1_results.txt", "phase3_results.txt"):
         p = f"/cache/{name}"
         print(f"\n================= {name} =================")
         print(open(p).read() if os.path.exists(p) else "(not present yet)")

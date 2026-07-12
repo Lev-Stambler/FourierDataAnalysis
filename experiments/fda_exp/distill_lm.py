@@ -26,9 +26,10 @@ def deg1_codes(V, w):
 
 
 def fit_distill_lm(Cd_tr, n_tr, P_tr, Cd_val, n_val, P_val, V, w, max_width=6000, device=None,
-                   top_classes=64, top_k=2000, l2s=None, steps=2500, add_deg1=True):
-    """CSAMP multiclass top-K search on soft labels + KL-distilled softmax head (L2 tuned on the
-    fiber-disjoint val).  add_deg1 unions the full degree-1 basis into the searched characters.
+                   top_classes=64, top_k=2000, steps=3000, add_deg1=True):
+    """CSAMP multiclass top-K search on soft labels + KL-distilled softmax head (bias starts at the
+    soft unigram, deg<=3 warm-started from deg<=2, early-stopped on the fiber-disjoint val -- no L2,
+    mirroring fit_bpe_lm).  add_deg1 unions the full degree-1 basis into the searched characters.
     Returns a model dict compatible with `bpe_lm._proba`."""
     device = device or get_device()
     soft = n_tr[:, None] * P_tr.astype(np.float64)
@@ -45,20 +46,24 @@ def fit_distill_lm(Cd_tr, n_tr, P_tr, Cd_val, n_val, P_val, V, w, max_width=6000
     if add_deg1:
         codes = np.unique(np.concatenate([codes, deg1_codes(V, w)]))
     degs = degree_of_codes(codes, V, w) if len(codes) else np.zeros(0, int)
-
-    def feat(Cx, sel):
-        return np.hstack([np.ones((len(Cx), 1)), _char_np(Cx, codes[sel], V, w)]).astype(np.float32)
-    l2s = tuple(l2s) if l2s is not None else (3e-4, 1e-3, 3e-3, 1e-2, 3e-2)
-    d2 = degs <= 2
-    W2, l2_2 = _softmax_fit(feat(Cd_tr, d2), soft, feat(Cd_val, d2), soft_v, device,
-                            steps=steps, l2s=l2s, l2_intercept=False)
-    all_ = np.ones(len(codes), bool)
-    W3, l2_3 = _softmax_fit(feat(Cd_tr, all_), soft, feat(Cd_val, all_), soft_v, device,
-                            steps=steps, l2s=l2s, l2_intercept=False)
+    order = np.argsort(degs > 2, kind="stable")                   # deg<=2 characters first, deg>=3 after
+    codes, degs = codes[order], degs[order]
+    n2 = int((degs <= 2).sum())
     base = (soft.sum(0) + 1.0) / (m + V)                          # soft unigram
+
+    def feat(Cx, ncodes):
+        return np.hstack([np.ones((len(Cx), 1)), _char_np(Cx, codes[:ncodes], V, w)]).astype(np.float32)
+    W2 = _softmax_fit(feat(Cd_tr, n2), soft, feat(Cd_val, n2), soft_v, base, device, steps=steps)
+    if n2 < len(codes):                                           # warm-start: deg<=3 can't lose to deg<=2
+        Winit = np.zeros((1 + len(codes), int(V)), np.float32)
+        Winit[:W2.shape[0]] = W2
+        W3 = _softmax_fit(feat(Cd_tr, len(codes)), soft, feat(Cd_val, len(codes)), soft_v, base,
+                          device, W_init=Winit, steps=steps)
+    else:
+        W3 = W2
     dh = np.bincount(degs, minlength=w + 1).tolist() if len(codes) else [0] * (w + 1)
     print(f"[distill] CSAMP soft multiclass on {len(Cd_tr)} distinct ctx -> {len(codes)} chars "
-          f"(degree {dh}); L2 (fiber-disjoint val) deg<=2={l2_2:.0e} all={l2_3:.0e}", flush=True)
+          f"(degree {dh}); deg<=2 fit + all warm-started (no L2)", flush=True)
     return dict(V=V, w=w, n_bits=n_bits, device=device, codes=codes, degs=degs,
                 W2=W2, W3=W3, base=base, merges=None, dh=dh)
 
