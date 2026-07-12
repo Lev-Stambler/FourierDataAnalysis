@@ -147,8 +147,10 @@ def fit_staged(Cd_tr, n_tr, P_tr, Cd_val, n_val, P_val, V, w, device=None, steps
         Ep = torch.zeros(V, V, device=device, requires_grad=True)
         bp = b.clone().requires_grad_(True)
         with torch.no_grad():                                     # frozen logits from prior stages
-            fixed_t = torch.stack([E[q][Ct[:, q]] for q in range(w) if q != p]).sum(0) if w > 1 \
-                else torch.zeros(len(Ct), V, device=device)
+            fixed_t = torch.zeros(len(Ct), V, device=device)      # (accumulate: stack would be ~10GB)
+            for q in range(w):
+                if q != p:
+                    fixed_t += E[q][Ct[:, q]]
         idx = Ct[:, p]
         opt = torch.optim.Adam([Ep, bp], lr=lr)
         sb, sE, sbp, bad = float("inf"), None, None, 0
