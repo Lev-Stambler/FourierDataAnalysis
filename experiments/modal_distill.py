@@ -103,16 +103,20 @@ def gen_dataset(V=512, w=6, k=3, M=4000, R=8, seed=0, n_stories=8000, n_eval=300
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=1800)
-def fit_search(name, max_width=6000, top_classes=64, top_k=2000, additive=False, staged=False):
+def fit_search(name, max_width=6000, top_classes=64, top_k=2000, additive=False, staged=False,
+               hybrid=False):
     import numpy as np
 
-    from fda_exp.distill_lm import (eval_distill, fit_additive, fit_distill_lm, fit_staged,
-                                    kl_model_student)
+    from fda_exp.distill_lm import (eval_distill, fit_additive, fit_distill_lm, fit_hybrid,
+                                    fit_staged, kl_model_student)
 
     vol.reload()                                                  # warm container: pick up fresh npz
     z = np.load(f"/cache/{name}")
     V, w = int(z["V"]), int(z["w"])
-    if staged:                                                    # backoff: one position at a time
+    if hybrid:                                                    # staged base + suffix chars
+        model = fit_hybrid(z["Cd_tr"], z["n_tr"], z["P_tr"], z["Cd_va"], z["n_va"], z["P_va"],
+                           V, w, device="cuda")
+    elif staged:                                                  # backoff: one position at a time
         model = fit_staged(z["Cd_tr"], z["n_tr"], z["P_tr"], z["Cd_va"], z["n_va"], z["P_va"],
                            V, w, device="cuda")
     elif additive or w * (int(V).bit_length() - 1) > 62:          # one-hot deg<=1 student (also the
@@ -304,7 +308,7 @@ def measure_floor(name):
 def main(regen: bool = False, v: int = 512, w: int = 6, k: int = 3, m: int = 4000, r: int = 8,
          seed: int = 0, max_width: int = 6000, top_k: int = 2000, shards: int = 0,
          gen_steps: int = 0, temperature: float = 1.0, win_f: bool = False,
-         additive: bool = False, staged: bool = False):
+         additive: bool = False, staged: bool = False, hybrid: bool = False):
     name = _npz_name(v, w, k, m, r, seed)
     if gen_steps or temperature != 1.0:
         name = name.replace(".npz", f"_st{gen_steps}_t{temperature}.npz")
@@ -316,4 +320,4 @@ def main(regen: bool = False, v: int = 512, w: int = 6, k: int = 3, m: int = 400
     elif regen:
         name = gen_dataset.remote(V=v, w=w, k=k, M=m, R=r, seed=seed)
     print(fit_search.remote(name, max_width=max_width, top_k=top_k, additive=additive,
-                            staged=staged))
+                            staged=staged, hybrid=hybrid))

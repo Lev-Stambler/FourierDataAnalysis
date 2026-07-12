@@ -177,11 +177,73 @@ def fit_staged(Cd_tr, n_tr, P_tr, Cd_val, n_val, P_val, V, w, device=None, steps
     return dict(kind="additive", V=V, w=w, E=E.cpu().numpy(), b=b.cpu().numpy(), base=base)
 
 
+def fit_hybrid(Cd_tr, n_tr, P_tr, Cd_val, n_val, P_val, V, w, device=None, sub_w=6, top_classes=64,
+               top_k=500, max_width=6000, steps=1200, lr=0.05, patience=6, check=25, **staged_kw):
+    """Staged additive base + CSAMP characters on the LAST `sub_w` positions (sub_w*log2V <= 62, so
+    the EXISTING packed multiclass search applies), added as one final val-gated stage.  Captures
+    degree>=2 suffix structure the additive span cannot."""
+    import torch
+    device = device or get_device()
+    model = fit_staged(Cd_tr, n_tr, P_tr, Cd_val, n_val, P_val, V, w, device=device, **staged_kw)
+    soft = n_tr[:, None] * P_tr.astype(np.float64)
+    sub_tr, sub_va = Cd_tr[:, -sub_w:], Cd_val[:, -sub_w:]
+    idx = _encode_qary(np.ascontiguousarray(sub_tr), V)
+    topT = np.argsort(-soft.sum(0))[:top_classes]
+    A = (2.0 * soft[:, topT] - n_tr[:, None]).astype(np.float32)
+    codes, _ = multiclass_search(idx, A, sub_w * (int(V).bit_length() - 1),
+                                 max_width=max_width, device=device)
+    if len(codes) > top_k:                                        # Cd rows are already distinct
+
+        coeffs, _ = coeffs_all(soft, n_tr, sub_tr, codes, V, sub_w, int(n_tr.sum()))
+        codes = codes[np.argsort(-(coeffs ** 2).sum(0))[:top_k]]
+    codes = codes[degree_of_codes(codes, V, sub_w) >= 2]          # additive already covers deg<=1
+    if len(codes) == 0:
+        return model
+    X = torch.tensor(_char_np(sub_tr, codes, V, sub_w), dtype=torch.float32, device=device)
+    Xv = torch.tensor(_char_np(sub_va, codes, V, sub_w), dtype=torch.float32, device=device)
+    softt = torch.tensor(soft, dtype=torch.float32, device=device)
+    soft_v = torch.tensor(n_val[:, None] * P_val, dtype=torch.float32, device=device)
+    N, Nv = float(softt.sum()), float(max(soft_v.sum().item(), 1.0))
+    E_t = torch.tensor(model["E"], dtype=torch.float32, device=device)
+    Ct = torch.tensor(np.asarray(Cd_tr, np.int64), device=device)
+    Cv = torch.tensor(np.asarray(Cd_val, np.int64), device=device)
+    with torch.no_grad():
+        base_tr = torch.tensor(model["b"], dtype=torch.float32, device=device).expand(len(Ct), V).clone()
+        base_va = torch.tensor(model["b"], dtype=torch.float32, device=device).expand(len(Cv), V).clone()
+        for p in range(w):
+            base_tr += E_t[p][Ct[:, p]]
+            base_va += E_t[p][Cv[:, p]]
+    Wc = torch.zeros(len(codes), V, device=device, requires_grad=True)
+    opt = torch.optim.Adam([Wc], lr=lr)
+    with torch.no_grad():
+        best = -(soft_v * torch.log_softmax(base_va, 1)).sum().item() / Nv       # staged floor
+    bW, bad = np.zeros((len(codes), V), np.float32), 0
+    for step in range(steps):
+        opt.zero_grad()
+        loss = -(softt * torch.log_softmax(base_tr + X @ Wc, 1)).sum() / N
+        loss.backward(); opt.step()
+        if step % check == 0:
+            with torch.no_grad():
+                v = -(soft_v * torch.log_softmax(base_va + Xv @ Wc, 1)).sum().item() / Nv
+            if v < best - 1e-4:
+                best, bW, bad = v, Wc.detach().cpu().numpy().copy(), 0
+            else:
+                bad += 1
+                if bad > patience:
+                    break
+    print(f"[hybrid] +{len(codes)} deg>=2 suffix chars (sub_w={sub_w}); val soft-CE {best:.3f}",
+          flush=True)
+    return dict(model, kind="hybrid", sub_w=sub_w, codes=codes, Wc=bW)
+
+
 def proba_any(model, C, deg3=True):
-    """(n, V) student distribution for either model kind (CSAMP-spectrum head or additive)."""
-    if model.get("kind") == "additive":
+    """(n, V) student distribution for any model kind (CSAMP-spectrum head, additive, hybrid)."""
+    if model.get("kind") in ("additive", "hybrid"):
         C = np.atleast_2d(np.asarray(C, np.int64))
         logits = model["b"][None, :] + sum(model["E"][p][C[:, p]] for p in range(C.shape[1]))
+        if model.get("kind") == "hybrid":
+            sw = model["sub_w"]
+            logits = logits + _char_np(C[:, -sw:], model["codes"], model["V"], sw) @ model["Wc"]
         Q = np.exp(logits - logits.max(1, keepdims=True))
         return Q / Q.sum(1, keepdims=True)
     return _proba(model, C, deg3)
@@ -202,8 +264,11 @@ def eval_distill(model, Ceval, yeval, P_eval, teacher_params=7.6e9):
     y = np.asarray(yeval, dtype=np.int64)
     ce_model = float(-np.log(np.clip(P[np.arange(len(y)), y], 1e-12, 1)).mean())
     base = np.clip(model["base"], 1e-12, 1)
-    n_params = model["E"].size + model["b"].size if model.get("kind") == "additive" else \
-        model["W3"].size + model["base"].size
+    if model.get("kind") in ("additive", "hybrid"):
+        n_params = model["E"].size + model["b"].size + \
+            (model["Wc"].size + len(model["codes"]) if model.get("kind") == "hybrid" else 0)
+    else:
+        n_params = model["W3"].size + model["base"].size
     qt = np.clip(Q[np.arange(len(y)), y], 1e-12, 1.0)
     ce_student = float(-np.log(qt).mean())
     real = P.argmax(1) != 0                                       # rows where the model's top pick is

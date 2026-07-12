@@ -137,6 +137,34 @@ def test_fit_staged_recovers_planted_additive():
     assert kl_model_student(model, C[~tr], planted(C[~tr])) < 0.1
 
 
+def test_fit_hybrid_captures_suffix_interaction():
+    """Planted = additive + a strong deg-2 character on the last two positions: the hybrid's
+    suffix-window search stage must capture what the additive span cannot."""
+    from fda_exp.distill_lm import fit_hybrid, fit_staged, kl_model_student
+    V, w, D = 8, 6, 5000
+    rng = np.random.default_rng(4)
+    E = rng.normal(0, 0.4, (w, V, V))
+    C = rng.integers(0, V, (D, w)).astype(np.int64)
+    H = hadamard_basis(V)
+    theta = rng.normal(0, 1.5, V)
+
+    def planted(Cx):
+        lg = sum(E[p][Cx[:, p]] for p in range(w))
+        lg = lg + np.outer(H[3, Cx[:, -1]] * H[5, Cx[:, -2]], theta)   # deg-2 on last two positions
+        P = np.exp(lg - lg.max(1, keepdims=True))
+        return P / P.sum(1, keepdims=True)
+    n = np.ones(D, dtype=np.int64)
+    tr = np.arange(D) < int(0.85 * D)
+    args = (C[tr], n[tr], planted(C[tr]).astype(np.float32),
+            C[~tr], n[~tr], planted(C[~tr]).astype(np.float32), V, w)
+    base = fit_staged(*args, device="cpu", steps=1200)
+    hyb = fit_hybrid(*args, device="cpu", sub_w=4, top_k=100, max_width=1500, steps=1500)
+    kl_base = kl_model_student(base, C[~tr], planted(C[~tr]))
+    kl_hyb = kl_model_student(hyb, C[~tr], planted(C[~tr]))
+    assert kl_hyb < kl_base - 0.1, (kl_base, kl_hyb)              # interaction captured
+    assert kl_hyb < 0.15, kl_hyb
+
+
 class _PositionLM:
     """Raw output at position i puts all mass on token id i+1 (the AR-init convention Dream uses:
     output i predicts position i+1).  Pins _pred_logits' slice math."""
