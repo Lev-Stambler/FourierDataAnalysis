@@ -103,18 +103,17 @@ def gen_dataset(V=512, w=6, k=3, M=4000, R=8, seed=0, n_stories=8000, n_eval=300
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=1800)
-def fit_search(name, max_width=6000, top_classes=64, top_k=2000):
+def fit_search(name, max_width=6000, top_classes=64, top_k=2000, additive=False):
     import numpy as np
 
-    from fda_exp.distill_lm import eval_distill, fit_distill_lm, kl_model_student
+    from fda_exp.distill_lm import eval_distill, fit_additive, fit_distill_lm, kl_model_student
 
     vol.reload()                                                  # warm container: pick up fresh npz
     z = np.load(f"/cache/{name}")
     V, w = int(z["V"]), int(z["w"])
-    if w * (int(V).bit_length() - 1) > 62:                        # long window: no int64 packing --
-        from fda_exp.distill_lm import fit_additive               # degree<=1 additive student
+    if additive or w * (int(V).bit_length() - 1) > 62:            # one-hot deg<=1 student (also the
         model = fit_additive(z["Cd_tr"], z["n_tr"], z["P_tr"], z["Cd_va"], z["n_va"], z["P_va"],
-                             V, w, device="cuda")
+                             V, w, device="cuda")                 # only option past int64 packing)
     else:
         model = fit_distill_lm(z["Cd_tr"], z["n_tr"], z["P_tr"], z["Cd_va"], z["n_va"], z["P_va"],
                                V, w, max_width=max_width, top_classes=top_classes, top_k=top_k,
@@ -273,11 +272,14 @@ def measure_floor(name):
 @app.local_entrypoint()
 def main(regen: bool = False, v: int = 512, w: int = 6, k: int = 3, m: int = 4000, r: int = 8,
          seed: int = 0, max_width: int = 6000, top_k: int = 2000, shards: int = 0,
-         gen_steps: int = 0, temperature: float = 1.0, win_f: bool = False):
+         gen_steps: int = 0, temperature: float = 1.0, win_f: bool = False,
+         additive: bool = False):
     name = _npz_name(v, w, k, m, r, seed)
+    if win_f:
+        name = name.replace(".npz", "_winf.npz")
     if regen and shards > 0:                                      # parallel sharded generation
         name = gen_parallel.remote(V=v, w=w, k=k, M=m, R=r, seed=seed, shards=shards,
                                    steps=gen_steps, temperature=temperature, win_f=win_f)
     elif regen:
         name = gen_dataset.remote(V=v, w=w, k=k, M=m, R=r, seed=seed)
-    print(fit_search.remote(name, max_width=max_width, top_k=top_k))
+    print(fit_search.remote(name, max_width=max_width, top_k=top_k, additive=additive))
