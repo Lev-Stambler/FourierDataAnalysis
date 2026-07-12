@@ -72,47 +72,59 @@ def _char_np(Cd, codes, V, w):
     return _char_columns(Cd, codes, V, hadamard_basis(V), w)
 
 
-def _softmax_fit(X, counts, Xval, counts_val, device, steps=2500, lr=0.05,
-                 l2s=(3e-4, 1e-3, 3e-3, 1e-2, 3e-2), patience=6):
-    """Softmax regression W (K,V) minimizing weighted cross-entropy on the train contexts, with the L2
-    strength + stopping point selected on the STORY-DISJOINT val (the fix for cross-story overfitting:
-    a random train-context split can't see it).  Returns (W (K,V), chosen_l2)."""
+def _softmax_fit(X, counts, Xval, counts_val, base, device, W_init=None, steps=3000, lr=0.03,
+                 patience=10, check=25, warmup=800):
+    """Softmax regression W (K+1, V) minimizing weighted cross-entropy on the train contexts.  The bias
+    row (feature 0 = the constant) is initialized to log(unigram) so the model STARTS at the unigram and
+    characters only add corrections; regularization is purely EARLY STOPPING on the STORY-DISJOINT val --
+    NO L2 penalty (an L2 term shrinks the bias toward uniform, and heavier L2 at larger K made PPL rise).
+    Returns W (K+1, V)."""
     Xt = torch.tensor(X, dtype=torch.float32, device=device)
     Ct = torch.tensor(counts, dtype=torch.float32, device=device)
     Xv = torch.tensor(Xval, dtype=torch.float32, device=device)
     Cv = torch.tensor(counts_val, dtype=torch.float32, device=device)
     N, Nv = float(Ct.sum()), float(max(Cv.sum().item(), 1.0))
-    best = (float("inf"), np.zeros((X.shape[1], counts.shape[1])), l2s[0])
-    for l2 in l2s:
-        W = torch.zeros(X.shape[1], counts.shape[1], device=device, requires_grad=True)
-        opt = torch.optim.Adam([W], lr=lr)
-        bl, bW, bad = float("inf"), None, 0
-        for step in range(steps):
-            opt.zero_grad()
-            loss = -(Ct * torch.log_softmax(Xt @ W, dim=1)).sum() / N + l2 * (W * W).sum()
-            loss.backward(); opt.step()
-            if step % 15 == 0:
-                with torch.no_grad():
-                    vce = -(Cv * torch.log_softmax(Xv @ W, dim=1)).sum().item() / Nv
-                if vce < bl - 1e-4:
-                    bl, bW, bad = vce, W.detach().clone(), 0
-                else:
-                    bad += 1
-                    if bad > patience:
-                        break
-        if bl < best[0]:
-            best = (bl, bW.cpu().numpy(), l2)
-    return best[1], best[2]
+    if W_init is not None:                                        # warm-start (e.g. deg<=3 from deg<=2)
+        W0 = np.asarray(W_init, dtype=np.float32).copy()
+    else:
+        W0 = np.zeros((X.shape[1], counts.shape[1]), dtype=np.float32)
+        W0[0] = np.log(np.clip(base, 1e-9, None))                 # bias = log unigram (model starts at unigram)
+    W = torch.tensor(W0, device=device, requires_grad=True)
+    with torch.no_grad():                                         # FLOOR: the init model (unigram, or the
+        best = -(Cv * torch.log_softmax(Xv @ W, dim=1)).sum().item() / Nv   # warm-started deg<=2) is a candidate,
+    bW, bad = W0.copy(), 0                                        # so the fit can NEVER end up worse than it
+    opt = torch.optim.Adam([W], lr=lr)
+    for step in range(steps):
+        opt.zero_grad()
+        loss = -(Ct * torch.log_softmax(Xt @ W, dim=1)).sum() / N   # NO L2
+        loss.backward(); opt.step()
+        if step % check == 0:
+            with torch.no_grad():
+                vce = -(Cv * torch.log_softmax(Xv @ W, dim=1)).sum().item() / Nv
+            if vce < best - 1e-4:
+                best, bW, bad = vce, W.detach().cpu().numpy(), 0
+            else:
+                bad += 1
+                if step >= warmup and bad > patience:       # only stop after warmup (large K trains slowly)
+                    break
+    return bW
 
 
-def fit_bpe_lm(Ctr, ytr, Cval, yval, V, w, merges=None, max_width=6000, device=None, top_classes=48,
-               top_k=2000, seed=0):
+def fit_bpe_lm(Ctr, ytr, Cval, yval, V, w, merges=None, max_width=4000, device=None, top_classes=48,
+               top_k=2000, seed=0, max_ctx=250_000):
     """The CSAMP multiclass top-K search (`fast_gl.multiclass_search`) selects the shared heavy
     characters; a GPU softmax regression fits their per-token weights, with L2 tuned on the
-    STORY-DISJOINT val (Cval,yval).  Returns a model dict for `_proba` etc."""
+    STORY-DISJOINT val (Cval,yval).  `max_ctx` caps the fit to the most frequent distinct contexts so
+    the char-feature matrix stays in memory at scale.  Returns a model dict for `_proba` etc."""
     device = device or get_device()
     Cd, counts, n_ctx, m = collapse_contexts(Ctr, ytr, V)
+    if len(Cd) > max_ctx:                                          # keep the most frequent contexts (memory)
+        keep = np.argsort(-n_ctx)[:max_ctx]
+        Cd, counts, n_ctx = Cd[keep], counts[keep], n_ctx[keep]
     Cdv, counts_v, _, _ = collapse_contexts(Cval, yval, V)         # story-disjoint val contexts
+    if len(Cdv) > max_ctx:
+        keepv = np.argsort(-counts_v.sum(1))[:max_ctx]
+        Cdv, counts_v = Cdv[keepv], counts_v[keepv]
     idx = _encode_qary(Cd, V)
     n_bits = w * (int(V).bit_length() - 1)
     topT = np.argsort(-counts.sum(0))[:top_classes]                # search over the most frequent tokens
@@ -123,16 +135,22 @@ def fit_bpe_lm(Ctr, ytr, Cval, yval, V, w, merges=None, max_width=6000, device=N
         codes = codes[np.argsort(-(coeffs ** 2).sum(0))[:top_k]]
     degs = degree_of_codes(codes, V, w) if len(codes) else np.zeros(0, int)
 
-    def feat(Cx, sel):
-        return np.hstack([np.ones((len(Cx), 1)), _char_np(Cx, codes[sel], V, w)]).astype(np.float32)
-    d2 = degs <= 2
-    W2, l2_2 = _softmax_fit(feat(Cd, d2), counts, feat(Cdv, d2), counts_v, device)
-    all_ = np.ones(len(codes), bool)
-    W3, l2_3 = _softmax_fit(feat(Cd, all_), counts, feat(Cdv, all_), counts_v, device)
+    order = np.argsort(degs > 2, kind="stable")                   # deg<=2 characters first, deg>=3 after
+    codes, degs = codes[order], degs[order]
+    n2 = int((degs <= 2).sum())
     base = np.bincount(ytr, minlength=V).astype(np.float64); base = (base + 1) / (base.sum() + V)
+
+    def feat(Cx, ncodes):
+        return np.hstack([np.ones((len(Cx), 1)), _char_np(Cx, codes[:ncodes], V, w)]).astype(np.float32)
+    W2 = _softmax_fit(feat(Cd, n2), counts, feat(Cdv, n2), counts_v, base, device)          # deg<=2
+    if n2 < len(codes):                                           # deg<=3 WARM-STARTED from deg<=2 (so deg<=3 >= deg<=2)
+        Winit = np.zeros((1 + len(codes), int(V)), np.float32); Winit[:W2.shape[0]] = W2
+        W3 = _softmax_fit(feat(Cd, len(codes)), counts, feat(Cdv, len(codes)), counts_v, base, device, W_init=Winit)
+    else:
+        W3 = W2
     dh = np.bincount(degs, minlength=w + 1).tolist() if len(codes) else [0] * (w + 1)
     print(f"[bpe_lm] CSAMP multiclass on {len(Cd)} distinct ctx -> {len(codes)} chars (degree {dh}); "
-          f"softmax L2 (val-tuned) deg<=2={l2_2:.0e} deg<=3={l2_3:.0e}", flush=True)
+          f"deg<=2 fit + deg<=3 warm-started (no L2)", flush=True)
     return dict(V=V, w=w, n_bits=n_bits, device=device, codes=codes, degs=degs,
                 W2=W2, W3=W3, base=base, merges=merges, dh=dh)
 
@@ -234,3 +252,32 @@ def run_bpe_lm_demo(vocab_size=512, window=3, n_stories=60000, max_pairs=1_500_0
     for p in prompts[:2]:
         print(f"  {generate(model, p, n_tokens=16)!r}", flush=True)
     return dict(model=model, uni=uni, ngram=ng, deg2=m2, deg3=m3)
+
+
+def run_bpe_lm_eval(vocab_size=512, window=2, n_stories=3_000_000, max_pairs=2_000_000, split="valid",
+                    shards=None, max_width=4000, device=None, seed=0, top_ks=(500, 1500), max_ctx=250_000):
+    """Held-out next-token CE/perplexity of the CSAMP LM vs the n-gram ceiling, with the deg<=2-vs-deg<=3
+    delta, val-selecting top_k on the story-disjoint val.  `max_ctx` caps the fit to the most frequent
+    distinct contexts (bounds memory at scale; the rare tail predicts ~unigram anyway)."""
+    import time
+    Ctr, ytr, Cval, yval, Cte, yte, V, w, merges = _bpe_split(window, vocab_size, n_stories, max_pairs,
+                                                              seed, split, shards, 20000)
+    base = (np.bincount(ytr, minlength=V).astype(float) + 1) / (len(ytr) + V)
+    uni = float(np.exp(-np.log(base[yte]).mean()))
+    ceil = ngram_perplexity(Ctr, ytr, Cte, yte, V)["ppl"]
+    print(f"===== BPE-LM V={V} w={w} m_tr={len(Ctr)} =====", flush=True)
+    print(f"  unigram PPL {uni:.1f} | {w}-gram CEILING PPL {ceil:.1f}", flush=True)
+    best = (float("inf"), 0, (0.0, 0.0))
+    for tk in top_ks:
+        t = time.time()
+        m = fit_bpe_lm(Ctr, ytr, Cval, yval, V, w, merges=merges, max_width=max_width, top_k=tk,
+                       device=device, max_ctx=max_ctx)
+        v = min(ce_perplexity(m, Cval, yval, deg3=False)["ppl"], ce_perplexity(m, Cval, yval, deg3=True)["ppl"])
+        te2, te3 = ce_perplexity(m, Cte, yte, deg3=False), ce_perplexity(m, Cte, yte, deg3=True)
+        print(f"  top_k={tk} (deg {m['dh']}): deg<=2 PPL={te2['ppl']:.1f} | deg<=3 PPL={te3['ppl']:.1f} "
+              f"(top1 {te3['top1']:.3f}) | deg-3 delta {te2['ppl'] - te3['ppl']:+.2f}  ({time.time() - t:.0f}s)", flush=True)
+        if v < best[0]:
+            best = (v, tk, (te2["ppl"], te3["ppl"]))
+    print(f"  >>> VAL-SELECTED top_k={best[1]}: deg<=2 {best[2][0]:.1f} | deg<=3 {best[2][1]:.1f}  "
+          f"(unigram {uni:.1f}, ceiling {ceil:.1f})", flush=True)
+    return dict(uni=uni, ceil=ceil, best_top_k=best[1], deg2=best[2][0], deg3=best[2][1])
