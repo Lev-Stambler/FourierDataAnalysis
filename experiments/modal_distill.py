@@ -175,7 +175,8 @@ def prep_fibers(V=512, w=6, k=3, M=12000, seed=0, n_stories=8000, n_eval=3000, w
     t2s = make_tok2slot(slot_ids, model.config.vocab_size)
     name = f"prep_V{V}_w{w}_k{k}_ctx{CTX_LEN}_M{M}_s{seed}{'_winf' if win_f else ''}.npz"
     np.savez_compressed(f"/cache/{name}", V=V, w=w, k=k, mask_id=mask_id, slot_ids=slot_ids,
-                        PRE=PRE, S=S, Ceval=t2s[WIN_e], yeval=t2s[y_e], P_eval=P_e)
+                        PRE=PRE, S=S, Ceval=t2s[WIN_e], yeval=t2s[y_e], P_eval=P_e,
+                        WIN_tok=WIN_e)                            # raw ids (slots are lossy at slot 0)
     vol.commit()
     print(f"[prep] saved /cache/{name}: {M} fibers, {n_eval} eval windows (win_f={win_f})", flush=True)
     return name
@@ -209,7 +210,9 @@ def gen_shard(prep_name, lo, hi, R=8, steps=None, temperature=1.0, seed=0):
     Cd, n_ctx, inv, m = soft_collapse(t2s[C_tok])
     fib_d = np.zeros(len(Cd), dtype=np.int64)
     fib_d[inv] = fib
-    P = label_model(model, PRE[fib_d], slot_ids[Cd], int(z["mask_id"]), slot_ids,
+    Rd = np.zeros_like(Cd)                                        # RAW ids per distinct ctx: slot 0
+    Rd[inv] = C_tok                                               # is lossy (-1 sentinel), never feed
+    P = label_model(model, PRE[fib_d], Rd, int(z["mask_id"]), slot_ids,   # slot_ids[Cd] to the model
                     batch=batch, device="cuda")
     np.savez_compressed(f"/cache/{out}", Cd=Cd, n_ctx=n_ctx.astype(np.int64), P=P, fib=fib_d + lo)
     vol.commit()
@@ -266,7 +269,11 @@ def measure_floor(name):
     z = np.load(f"/cache/{name}")
     model, tok, mask_id = load_dream(device="cuda")
     slot_ids = z["slot_ids"]
-    WIN_tok = slot_ids[z["Ceval"]]                                # slots -> Qwen ids (all in-alphabet)
+    if "WIN_tok" in z.files:
+        WIN_tok = z["WIN_tok"]                                    # raw ids (windows may contain OOV)
+    else:
+        assert (z["Ceval"] > 0).all(), "legacy npz lacks WIN_tok and has OOV slots"
+        WIN_tok = slot_ids[z["Ceval"]]                            # legacy all-in-alphabet w=6 files
     bos = np.full((len(WIN_tok), 1), tok.convert_tokens_to_ids("<|beginoftext|>"), dtype=np.int64)
     P_win = label_model(model, bos, WIN_tok, mask_id, slot_ids, batch=64, device="cuda")
     P_full = np.clip(z["P_eval"].astype(np.float64), 1e-12, 1)
