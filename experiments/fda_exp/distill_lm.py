@@ -115,6 +115,66 @@ def fit_additive(Cd_tr, n_tr, P_tr, Cd_val, n_val, P_val, V, w, device=None, ste
     return dict(kind="additive", V=V, w=w, E=bE, b=bb, base=base)
 
 
+def fit_staged(Cd_tr, n_tr, P_tr, Cd_val, n_val, P_val, V, w, device=None, steps=1200, lr=0.05,
+               patience=6, check=25, max_stages=None):
+    """STAGED backoff additive fit (the memorization fix, verified by the variant-A discriminator:
+    single-table SGD matches the closed-form bucket optimum, joint training memorizes).  Trains one
+    position table at a time, LAST position first, freezing earlier stages; each stage early-stops
+    on the fiber-disjoint val and is kept only if it improves val.  Returns the same 'additive'
+    model dict."""
+    import torch
+    device = device or get_device()
+    soft = torch.tensor(n_tr[:, None] * P_tr, dtype=torch.float32, device=device)
+    soft_v = torch.tensor(n_val[:, None] * P_val, dtype=torch.float32, device=device)
+    Ct = torch.tensor(np.asarray(Cd_tr, np.int64), device=device)
+    Cv = torch.tensor(np.asarray(Cd_val, np.int64), device=device)
+    N, Nv = float(soft.sum()), float(max(soft_v.sum().item(), 1.0))
+    m = float(n_tr.sum())
+    base = ((n_tr[:, None] * P_tr).sum(0).astype(np.float64) + 1.0) / (m + V)
+    E = torch.zeros(w, V, V, device=device)
+    b = torch.tensor(np.log(base), dtype=torch.float32, device=device)
+
+    def vce(Ew, bw):
+        with torch.no_grad():
+            out = bw.expand(len(Cv), V).clone()
+            for p in range(w):
+                out = out + Ew[p][Cv[:, p]]
+            return -(soft_v * torch.log_softmax(out, 1)).sum().item() / Nv
+
+    best_v = vce(E, b)
+    order = list(range(w - 1, -1, -1))[: (max_stages or w)]       # last position first
+    for stage, p in enumerate(order):
+        Ep = torch.zeros(V, V, device=device, requires_grad=True)
+        bp = b.clone().requires_grad_(True)
+        with torch.no_grad():                                     # frozen logits from prior stages
+            fixed_t = torch.stack([E[q][Ct[:, q]] for q in range(w) if q != p]).sum(0) if w > 1 \
+                else torch.zeros(len(Ct), V, device=device)
+        idx = Ct[:, p]
+        opt = torch.optim.Adam([Ep, bp], lr=lr)
+        sb, sE, sbp, bad = float("inf"), None, None, 0
+        for step in range(steps):
+            opt.zero_grad()
+            loss = -(soft * torch.log_softmax(fixed_t + Ep[idx] + bp, 1)).sum() / N
+            loss.backward(); opt.step()
+            if step % check == 0:
+                Etry = E.clone(); Etry[p] = Ep.detach()
+                v = vce(Etry, bp.detach())
+                if v < sb - 1e-4:
+                    sb, sE, sbp, bad = v, Ep.detach().clone(), bp.detach().clone(), 0
+                else:
+                    bad += 1
+                    if bad > patience:
+                        break
+        if sb < best_v - 1e-3:                                    # keep stage only if val improves
+            E[p], b, best_v = sE, sbp, sb
+            print(f"[staged] +pos {p}: val soft-CE {best_v:.3f}", flush=True)
+        else:
+            print(f"[staged] pos {p} no val gain ({sb:.3f} vs {best_v:.3f}); stop at "
+                  f"{stage} stages", flush=True)
+            break
+    return dict(kind="additive", V=V, w=w, E=E.cpu().numpy(), b=b.cpu().numpy(), base=base)
+
+
 def proba_any(model, C, deg3=True):
     """(n, V) student distribution for either model kind (CSAMP-spectrum head or additive)."""
     if model.get("kind") == "additive":
