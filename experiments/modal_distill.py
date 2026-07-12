@@ -181,31 +181,40 @@ def prep_fibers(V=512, w=6, k=3, M=12000, seed=0, n_stories=8000, n_eval=3000, w
     return name
 
 
-@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=10800)
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=10800, retries=2)
 def gen_shard(prep_name, lo, hi, R=8, steps=None, temperature=1.0, seed=0):
     """One shard: infill + collapse + label fibers [lo, hi).  Per-shard collapse is globally correct
-    because fixed strings are unique per fiber (duplicate contexts cannot span shards).  Returns
-    (Cd slots, n_ctx, P, global fiber id per distinct ctx)."""
+    because fixed strings are unique per fiber (duplicate contexts cannot span shards).  DURABLE:
+    saves its own npz to the volume and is skipped when it already exists, so one crashed shard never
+    loses its siblings' work.  Returns the shard npz name."""
     import numpy as np
 
     from fda_exp.distill_data import diffusion_infill, label_model, load_dream, make_tok2slot, soft_collapse
 
+    out = f"shard_{prep_name.replace('.npz', '')}_{lo}_{hi}_R{R}_st{steps or 0}_t{temperature}.npz"
     vol.reload()
+    import os
+    if os.path.exists(f"/cache/{out}"):
+        print(f"[shard {lo}:{hi}] cached: {out}", flush=True)
+        return out
     z = np.load(f"/cache/{prep_name}")
     model, tok, mask_id = load_dream(device="cuda")
     slot_ids, w = z["slot_ids"], int(z["w"])
     PRE, S = z["PRE"][lo:hi], z["S"][lo:hi]
+    batch = 32 if w > 16 else 64                                  # long windows: more cublas headroom
     C_tok, fib = diffusion_infill(model, PRE, S, w, slot_ids[1:], int(z["mask_id"]), R=R,
-                                  steps=steps, temperature=temperature, batch=64,
+                                  steps=steps, temperature=temperature, batch=batch,
                                   seed=seed + lo, device="cuda")
     t2s = make_tok2slot(slot_ids, model.config.vocab_size)
     Cd, n_ctx, inv, m = soft_collapse(t2s[C_tok])
     fib_d = np.zeros(len(Cd), dtype=np.int64)
     fib_d[inv] = fib
     P = label_model(model, PRE[fib_d], slot_ids[Cd], int(z["mask_id"]), slot_ids,
-                    batch=64, device="cuda")
-    print(f"[shard {lo}:{hi}] {m} ctx -> {len(Cd)} distinct, labeled", flush=True)
-    return Cd, n_ctx.astype(np.int64), P, (fib_d + lo)
+                    batch=batch, device="cuda")
+    np.savez_compressed(f"/cache/{out}", Cd=Cd, n_ctx=n_ctx.astype(np.int64), P=P, fib=fib_d + lo)
+    vol.commit()
+    print(f"[shard {lo}:{hi}] {m} ctx -> {len(Cd)} distinct, labeled -> {out}", flush=True)
+    return out
 
 
 @app.function(image=image, volumes={"/cache": vol}, timeout=14400)
