@@ -142,10 +142,136 @@ def fit_search(name, max_width=6000, top_classes=64, top_k=2000):
     return {k: (v if not isinstance(v, dict) else dict(v)) for k, v in res.items()}
 
 
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=3600)
+def prep_fibers(V=512, w=6, k=3, M=12000, seed=0, n_stories=8000, n_eval=3000, win_f=False):
+    """STAGE 0 (one GPU): slot vocab, M fiber anchors, and labeled REAL eval windows -> prep npz.
+    win_f=True targets the WINDOW-RESTRICTED function: every label (train shards + eval) uses one
+    CONSTANT 122-token story prefix, so f is fully determined by the window (no hidden-prefix info,
+    no 1.62-nat floor) while Dream still sees ctx_len tokens."""
+    import numpy as np
+
+    from fda_exp.distill_data import build_top_vocab, draw_fibers, label_model, load_dream, make_tok2slot
+    from fda_exp.hf_data import load_texts
+
+    model, tok, mask_id = load_dream(device="cuda")
+    texts = load_texts(n_stories, split="valid")
+    cut = int(0.85 * len(texts))
+    slot_ids, streams = build_top_vocab(model, tok, texts[:cut], V=V, mask_id=mask_id,
+                                        ctx_len=CTX_LEN, device="cuda")
+    PRE, S, _, _ = draw_fibers(streams, w, k, CTX_LEN, M, slot_ids[1:], seed=seed)
+    const_pre = np.concatenate([s for s in streams if len(s) >= CTX_LEN - w])[:CTX_LEN - w]
+    if win_f:
+        PRE = np.tile(const_pre, (len(PRE), 1))                   # labels see only the window vary
+    ev_streams = [np.asarray(tok(t, add_special_tokens=False)["input_ids"], np.int64)
+                  for t in texts[cut:]]
+    PRE_e, _, WIN_e, y_e = draw_fibers(ev_streams, w, k, CTX_LEN, n_eval, slot_ids[1:], seed=seed)
+    if win_f:
+        PRE_e = np.tile(const_pre, (len(PRE_e), 1))
+    P_e = label_model(model, PRE_e, WIN_e, mask_id, slot_ids, batch=64, device="cuda")
+    t2s = make_tok2slot(slot_ids, model.config.vocab_size)
+    name = f"prep_V{V}_w{w}_k{k}_ctx{CTX_LEN}_M{M}_s{seed}{'_winf' if win_f else ''}.npz"
+    np.savez_compressed(f"/cache/{name}", V=V, w=w, k=k, mask_id=mask_id, slot_ids=slot_ids,
+                        PRE=PRE, S=S, Ceval=t2s[WIN_e], yeval=t2s[y_e], P_eval=P_e)
+    vol.commit()
+    print(f"[prep] saved /cache/{name}: {M} fibers, {n_eval} eval windows (win_f={win_f})", flush=True)
+    return name
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=10800)
+def gen_shard(prep_name, lo, hi, R=8, steps=None, temperature=1.0, seed=0):
+    """One shard: infill + collapse + label fibers [lo, hi).  Per-shard collapse is globally correct
+    because fixed strings are unique per fiber (duplicate contexts cannot span shards).  Returns
+    (Cd slots, n_ctx, P, global fiber id per distinct ctx)."""
+    import numpy as np
+
+    from fda_exp.distill_data import diffusion_infill, label_model, load_dream, make_tok2slot, soft_collapse
+
+    vol.reload()
+    z = np.load(f"/cache/{prep_name}")
+    model, tok, mask_id = load_dream(device="cuda")
+    slot_ids, w = z["slot_ids"], int(z["w"])
+    PRE, S = z["PRE"][lo:hi], z["S"][lo:hi]
+    C_tok, fib = diffusion_infill(model, PRE, S, w, slot_ids[1:], int(z["mask_id"]), R=R,
+                                  steps=steps, temperature=temperature, batch=64,
+                                  seed=seed + lo, device="cuda")
+    t2s = make_tok2slot(slot_ids, model.config.vocab_size)
+    Cd, n_ctx, inv, m = soft_collapse(t2s[C_tok])
+    fib_d = np.zeros(len(Cd), dtype=np.int64)
+    fib_d[inv] = fib
+    P = label_model(model, PRE[fib_d], slot_ids[Cd], int(z["mask_id"]), slot_ids,
+                    batch=64, device="cuda")
+    print(f"[shard {lo}:{hi}] {m} ctx -> {len(Cd)} distinct, labeled", flush=True)
+    return Cd, n_ctx.astype(np.int64), P, (fib_d + lo)
+
+
+@app.function(image=image, volumes={"/cache": vol}, timeout=14400)
+def gen_parallel(V=512, w=6, k=3, M=12000, R=8, seed=0, shards=8, steps=0, temperature=1.0,
+                 win_f=False):
+    """Sharded stage 1: prep once, fan infill+labeling out over `shards` A10G containers, merge,
+    fiber-disjoint split, save the same npz schema fit_search consumes."""
+    import numpy as np
+
+    prep_name = prep_fibers.remote(V=V, w=w, k=k, M=M, seed=seed, win_f=win_f)
+    bounds = np.linspace(0, M, shards + 1, dtype=int)
+    args = [(prep_name, int(a), int(b), R, (steps or None), temperature, seed)
+            for a, b in zip(bounds[:-1], bounds[1:]) if b > a]
+    parts = list(gen_shard.starmap(args))
+    Cd = np.concatenate([p[0] for p in parts])
+    n_ctx = np.concatenate([p[1] for p in parts])
+    P = np.concatenate([p[2] for p in parts])
+    fib = np.concatenate([p[3] for p in parts])
+    rng = np.random.default_rng(seed)
+    va_fibers = rng.random(M) < 0.15                              # fiber-disjoint split
+    va = va_fibers[fib]
+    vol.reload()
+    z = np.load(f"/cache/{prep_name}")
+    tag = ("" if not steps and temperature == 1.0 else f"_st{steps}_t{temperature}") + \
+        ("_winf" if win_f else "")
+    name = _npz_name(V, w, k, M, R, seed).replace(".npz", tag + ".npz")
+    np.savez_compressed(f"/cache/{name}", V=V, w=w, k=k, ctx_len=CTX_LEN, M=M, R=R, seed=seed,
+                        slot_ids=z["slot_ids"],
+                        Cd_tr=Cd[~va], n_tr=n_ctx[~va], P_tr=P[~va],
+                        Cd_va=Cd[va], n_va=n_ctx[va], P_va=P[va],
+                        Ceval=z["Ceval"], yeval=z["yeval"], P_eval=z["P_eval"])
+    vol.commit()
+    print(f"[gen-parallel] saved /cache/{name}: {len(Cd)} distinct ctx "
+          f"(tr={int((~va).sum())} va={int(va.sum())})", flush=True)
+    return name
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=1800)
+def measure_floor(name):
+    """The info-theoretic floor for ANY window-only student vs full-context labels:
+    mean KL( Dream(next | real 122-tok prefix + window)  ||  Dream(next | window alone) )
+    on the eval windows.  If this >> target KL, the target needs the window-restricted f."""
+    import numpy as np
+    import torch
+
+    from fda_exp.distill_data import label_model, load_dream
+
+    vol.reload()
+    z = np.load(f"/cache/{name}")
+    model, tok, mask_id = load_dream(device="cuda")
+    slot_ids = z["slot_ids"]
+    WIN_tok = slot_ids[z["Ceval"]]                                # slots -> Qwen ids (all in-alphabet)
+    bos = np.full((len(WIN_tok), 1), tok.convert_tokens_to_ids("<|beginoftext|>"), dtype=np.int64)
+    P_win = label_model(model, bos, WIN_tok, mask_id, slot_ids, batch=64, device="cuda")
+    P_full = np.clip(z["P_eval"].astype(np.float64), 1e-12, 1)
+    kl = float((P_full * (np.log(P_full) - np.log(np.clip(P_win.astype(np.float64), 1e-12, 1))))
+               .sum(1).mean())
+    print(f"[floor] mean KL(full-ctx || window-only) over {len(WIN_tok)} eval windows = {kl:.3f} nats",
+          flush=True)
+    return kl
+
+
 @app.local_entrypoint()
 def main(regen: bool = False, v: int = 512, w: int = 6, k: int = 3, m: int = 4000, r: int = 8,
-         seed: int = 0, max_width: int = 6000, top_k: int = 2000):
+         seed: int = 0, max_width: int = 6000, top_k: int = 2000, shards: int = 0,
+         gen_steps: int = 0, temperature: float = 1.0, win_f: bool = False):
     name = _npz_name(v, w, k, m, r, seed)
-    if regen:
+    if regen and shards > 0:                                      # parallel sharded generation
+        name = gen_parallel.remote(V=v, w=w, k=k, M=m, R=r, seed=seed, shards=shards,
+                                   steps=gen_steps, temperature=temperature, win_f=win_f)
+    elif regen:
         name = gen_dataset.remote(V=v, w=w, k=k, M=m, R=r, seed=seed)
     print(fit_search.remote(name, max_width=max_width, top_k=top_k))
