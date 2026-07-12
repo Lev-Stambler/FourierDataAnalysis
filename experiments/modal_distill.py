@@ -239,7 +239,10 @@ def gen_parallel(V=512, w=6, k=3, M=12000, R=8, seed=0, shards=8, steps=0, tempe
             for a, b in zip(bounds[:-1], bounds[1:]) if b > a]
     parts = list(gen_shard.starmap(args))                         # durable shard npz names
     vol.reload()
-    zs = [np.load(f"/cache/{p}") for p in parts]
+    zs = []
+    for p in parts:                                               # EAGER read + close: npz handles
+        with np.load(f"/cache/{p}") as q:                         # left open block vol.commit()
+            zs.append({kk: q[kk] for kk in ("Cd", "n_ctx", "P", "fib")})
     Cd = np.concatenate([q["Cd"] for q in zs])
     n_ctx = np.concatenate([q["n_ctx"] for q in zs])
     P = np.concatenate([q["P"] for q in zs])
@@ -247,16 +250,16 @@ def gen_parallel(V=512, w=6, k=3, M=12000, R=8, seed=0, shards=8, steps=0, tempe
     rng = np.random.default_rng(seed)
     va_fibers = rng.random(M) < 0.15                              # fiber-disjoint split
     va = va_fibers[fib]
-    vol.reload()
-    z = np.load(f"/cache/{prep_name}")
+    with np.load(f"/cache/{prep_name}") as zp:                    # eager read + close (see above)
+        prep = {kk: zp[kk] for kk in ("slot_ids", "Ceval", "yeval", "P_eval")}
     tag = ("" if not steps and temperature == 1.0 else f"_st{steps}_t{temperature}") + \
         ("_winf" if win_f else "")
     name = _npz_name(V, w, k, M, R, seed).replace(".npz", tag + ".npz")
     np.savez_compressed(f"/cache/{name}", V=V, w=w, k=k, ctx_len=CTX_LEN, M=M, R=R, seed=seed,
-                        slot_ids=z["slot_ids"],
+                        slot_ids=prep["slot_ids"],
                         Cd_tr=Cd[~va], n_tr=n_ctx[~va], P_tr=P[~va],
                         Cd_va=Cd[va], n_va=n_ctx[va], P_va=P[va],
-                        Ceval=z["Ceval"], yeval=z["yeval"], P_eval=z["P_eval"])
+                        Ceval=prep["Ceval"], yeval=prep["yeval"], P_eval=prep["P_eval"])
     vol.commit()
     print(f"[gen-parallel] saved /cache/{name}: {len(Cd)} distinct ctx "
           f"(tr={int((~va).sum())} va={int(va.sum())})", flush=True)
