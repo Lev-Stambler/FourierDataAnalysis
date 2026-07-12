@@ -123,9 +123,20 @@ def fit_search(name, max_width=6000, top_classes=64, top_k=2000, wide_l2=False):
     def klrow(P, Q):                                              # constant-predictor calibration
         P = np.clip(np.asarray(P, np.float64), 1e-12, 1)
         return (P * (np.log(P) - np.log(np.clip(Q, 1e-12, 1)))).sum(1)
-    Pbar = (z["n_tr"][:, None] * z["P_tr"].astype(np.float64)).sum(0) / z["n_tr"].sum()
+    n_tr, P_tr = z["n_tr"].astype(np.float64), z["P_tr"].astype(np.float64)
+    Pbar = (n_tr[:, None] * P_tr).sum(0) / n_tr.sum()
     for split, P in (("tr", z["P_tr"]), ("va", z["P_va"]), ("ev", z["P_eval"])):
         res[f"kl_unigram_{split}"] = float(klrow(P, Pbar[None]).mean())
+    for j in (1, 2, 3):                                           # bucket-mean (suffix j-gram) refs:
+        key = lambda C: (C[:, w - j:].astype(np.int64) * (V ** np.arange(j))).sum(1)
+        uk, inv = np.unique(key(z["Cd_tr"]), return_inverse=True)
+        num = np.zeros((len(uk), V)); den = np.zeros(len(uk))
+        np.add.at(num, inv, n_tr[:, None] * P_tr)
+        np.add.at(den, inv, n_tr)
+        mean = (num + 1e-3 * Pbar[None] * den.mean()) / (den + 1e-3 * den.mean())[:, None]
+        lut = {int(u): mean[i] for i, u in enumerate(uk)}
+        Qe = np.stack([lut.get(int(x), Pbar) for x in key(z["Ceval"])])
+        res[f"kl_bucket{j}_ev"] = float(klrow(z["P_eval"], Qe).mean())
     print("\n######## DISTILL EVAL (real held-out long-context windows) ########", flush=True)
     for kk, vv in res.items():
         print(f"  {kk:>16}: {vv}", flush=True)
