@@ -73,15 +73,22 @@ def _char_np(Cd, codes, V, w):
 
 
 def _softmax_fit(X, counts, Xval, counts_val, device, steps=2500, lr=0.05,
-                 l2s=(3e-4, 1e-3, 3e-3, 1e-2, 3e-2), patience=6):
+                 l2s=(3e-4, 1e-3, 3e-3, 1e-2, 3e-2), patience=6, l2_intercept=True, l2_mask=None):
     """Softmax regression W (K,V) minimizing weighted cross-entropy on the train contexts, with the L2
     strength + stopping point selected on the STORY-DISJOINT val (the fix for cross-story overfitting:
-    a random train-context split can't see it).  Returns (W (K,V), chosen_l2)."""
+    a random train-context split can't see it).  Returns (W (K,V), chosen_l2).
+    l2_intercept=False exempts W's first row (the intercept column of X) from the penalty, so the fit
+    can never do worse than the base-rate predictor no matter how hard L2 squeezes the features.
+    l2_mask (K,) bool penalizes only the marked feature rows (overrides l2_intercept)."""
     Xt = torch.tensor(X, dtype=torch.float32, device=device)
     Ct = torch.tensor(counts, dtype=torch.float32, device=device)
     Xv = torch.tensor(Xval, dtype=torch.float32, device=device)
     Cv = torch.tensor(counts_val, dtype=torch.float32, device=device)
     N, Nv = float(Ct.sum()), float(max(Cv.sum().item(), 1.0))
+    if l2_mask is None:
+        l2_mask = np.ones(X.shape[1], bool)
+        l2_mask[0] = l2_intercept
+    mask_t = torch.tensor(np.asarray(l2_mask, bool), device=device)
     best = (float("inf"), np.zeros((X.shape[1], counts.shape[1])), l2s[0])
     for l2 in l2s:
         W = torch.zeros(X.shape[1], counts.shape[1], device=device, requires_grad=True)
@@ -89,7 +96,8 @@ def _softmax_fit(X, counts, Xval, counts_val, device, steps=2500, lr=0.05,
         bl, bW, bad = float("inf"), None, 0
         for step in range(steps):
             opt.zero_grad()
-            loss = -(Ct * torch.log_softmax(Xt @ W, dim=1)).sum() / N + l2 * (W * W).sum()
+            Wp = W[mask_t]
+            loss = -(Ct * torch.log_softmax(Xt @ W, dim=1)).sum() / N + l2 * (Wp * Wp).sum()
             loss.backward(); opt.step()
             if step % 15 == 0:
                 with torch.no_grad():

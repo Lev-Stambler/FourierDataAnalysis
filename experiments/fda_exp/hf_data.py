@@ -209,6 +209,21 @@ def tinystories_bpe_next_split(window=3, vocab_size=512, n_stories=60000, max_pa
     return Ctr, ytr, Cte, yte, vocab_size, window, merges
 
 
+def _pack_unique(C):
+    """DISTINCT rows of an integer (m,w) matrix: (Cd (D,w), inv (m,)) via fast 1D base packing when
+    the packed key fits int64 (>> np.unique axis=0), else row-wise unique."""
+    C = np.ascontiguousarray(C)
+    m, w = C.shape
+    base = int(C.max()) + 1 if C.size else 1
+    if base ** w < (1 << 62):
+        Vp = base ** np.arange(w)
+        uk, inv = np.unique((C.astype(np.int64) * Vp).sum(1), return_inverse=True)
+        Cd = ((uk[:, None] // Vp) % base).astype(np.int64)        # decode packed keys back to (D, w)
+    else:
+        Cd, inv = np.unique(C, axis=0, return_inverse=True)
+    return Cd, inv
+
+
 def collapse_contexts(C, y, W):
     """Collapse (m,w) contexts + (m,) next-token ids into DISTINCT contexts with next-token counts.
 
@@ -216,15 +231,7 @@ def collapse_contexts(C, y, W):
     Zipfian text D << m, the lever that makes the exact-W search tractable at large m while preserving
     the empirical distribution exactly: for the one-vs-rest target of class t, the per-context weighted
     sum is  sum_{x in c} f(x) = 2*counts[c,t] - n[c]  (f = 2*1[y=t]-1)."""
-    C = np.ascontiguousarray(C)
-    m, w = C.shape
-    base = int(C.max()) + 1 if C.size else 1
-    if base ** w < (1 << 62):                                     # fast 1D packed unique (>> np.unique axis=0)
-        Vp = base ** np.arange(w)
-        uk, inv = np.unique((C.astype(np.int64) * Vp).sum(1), return_inverse=True)
-        Cd = ((uk[:, None] // Vp) % base).astype(np.int64)        # decode packed keys back to (D, w)
-    else:
-        Cd, inv = np.unique(C, axis=0, return_inverse=True)
+    Cd, inv = _pack_unique(C)
     counts = np.zeros((len(Cd), W), dtype=np.int64)
     np.add.at(counts, (inv, np.asarray(y, np.int64)), 1)
     return Cd, counts, counts.sum(1), len(C)
