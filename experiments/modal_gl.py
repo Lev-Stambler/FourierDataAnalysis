@@ -121,10 +121,55 @@ def interactions():
     sys.stdout.flush(); vol.commit()
 
 
+@app.function(image=image, gpu="H100", cpu=16.0, memory=131072, volumes={"/cache": vol}, timeout=14400)
+def qary_bpe_sweep():
+    """Real byte-level BPE (power-of-2 V) + unit-modulus Walsh categorical CSAMP (`hadamard_gl`): does
+    degree-3 TOKEN structure exist / help next-token prediction at C_D = V^w/m ~ O(1)?
+    (a) GL recall vs brute-force spectrum where V^w is enumerable (correctness at scale);
+    (b,c) nested held-out degree<=2 vs +recovered-degree-3 with a C_D sweep (valid -> 1 -> 4 train
+    shards) to separate genuine high-order (benefit stable as C_D->1) from aliasing (benefit ->0)."""
+    import sys
+
+    import torch
+
+    from fda_exp.qary_gl_predict import run_bpe_next, run_bpe_recall
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    sys.stdout = _Tee("/cache/qary_bpe_results.txt")
+    print("device:", dev, torch.cuda.get_device_name(0) if dev == "cuda" else "", flush=True)
+
+    def go(fn, **kw):
+        try:
+            fn(device=dev, **kw)
+        except Exception as e:
+            print(f"  {fn.__name__}({kw}) FAILED: {repr(e)[:300]}", flush=True)
+        vol.commit()
+
+    print("\n===== (a) correctness: GL recall vs brute-force spectrum (enumerable V^w) =====", flush=True)
+    go(run_bpe_recall, window=2, vocab_size=256, n_stories=3_000_000, max_pairs=5_000_000, tau=0.06)
+    go(run_bpe_recall, window=2, vocab_size=512, n_stories=3_000_000, max_pairs=5_000_000, tau=0.06)
+
+    print("\n===== (b,c) PRIME V=512 w=3 : C_D sweep valid -> 1 shard -> 4 shards =====", flush=True)
+    for split, shards, mp in [("valid", None, 6_000_000), ("train", 1, 50_000_000), ("train", 4, 50_000_000)]:
+        go(run_bpe_next, window=3, vocab_size=512, n_stories=3_000_000, split=split, shards=shards,
+           max_pairs=mp, tau=0.04, max_width=40000, max_targets=128, n_fit=40000)
+
+    print("\n===== V=256 w=3 (densest, C_D<1) and V=1024 w=3 (realistic vocab) =====", flush=True)
+    go(run_bpe_next, window=3, vocab_size=256, n_stories=3_000_000, split="train", shards=1,
+       max_pairs=50_000_000, tau=0.04, max_width=40000, max_targets=128, n_fit=40000)
+    go(run_bpe_next, window=3, vocab_size=1024, n_stories=3_000_000, split="train", shards=4,
+       max_pairs=50_000_000, tau=0.04, max_width=40000, max_targets=96, n_fit=40000)
+
+    print("\n===== negative control: V=512 w=4 (C_D >> 1 even at full corpus) =====", flush=True)
+    go(run_bpe_next, window=4, vocab_size=512, n_stories=3_000_000, split="train", shards=4,
+       max_pairs=50_000_000, tau=0.05, max_width=40000, max_targets=64, n_fit=40000)
+    sys.stdout.flush(); vol.commit()
+
+
 @app.function(image=image, volumes={"/cache": vol})
 def show():
     import os
-    for name in ("interactions_results.txt", "qary_lang_results.txt", "phase1_results.txt", "phase3_results.txt"):
+    for name in ("qary_bpe_results.txt", "interactions_results.txt", "qary_lang_results.txt",
+                 "phase1_results.txt", "phase3_results.txt"):
         p = f"/cache/{name}"
         print(f"\n================= {name} =================")
         print(open(p).read() if os.path.exists(p) else "(not present yet)")

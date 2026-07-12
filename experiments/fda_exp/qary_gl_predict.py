@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .householder import householder_basis, qary_reconstruct, qary_spectrum
+from .householder import hadamard_basis, householder_basis, qary_reconstruct, qary_spectrum
 from .qary_gl import (
     _char_columns,
     _digits,
@@ -268,68 +268,176 @@ def run_language(window=4, vocab_size=32, n_stories=20000, max_pairs=800000, tau
           f"majority {base:.3f}")
 
 
+def _top_by_freq(codes, freq, cap):
+    """Keep the `cap` codes recovered for the most next-symbols (bounds fit cost + overfitting)."""
+    if len(codes) <= cap:
+        return codes
+    return np.array(sorted(codes, key=lambda c: -freq[int(c)])[:cap], dtype=np.int64)
+
+
 def _highorder_test(Dtr, ytr, Dte, yte, V, w, tau=0.06, n_exp=80000, n_fit=45000,
-                    device="cpu", max_width=4000, seed=0, m_gl=60000, label=""):
-    """Shared core.  Adaptive-tau categorical GL recovers heavy characters per next-symbol
-    (subsampled search + exact leaf), then the DECISIVE test: does adding GL's recovered degree>=3
-    characters ON TOP of the full degree-<=2 model (= Fourier-Lasso's forced fallback when V^w is
-    un-enumerable) improve held-out top-1?  If yes, language has recoverable high-order and GL does
-    what Lasso can't at scale; if not, the degree>=3 chars are noise."""
+                    device="cpu", max_width=4000, seed=0, m_gl=60000, label="",
+                    basis=householder_basis, search=None, deg2_full=True, max_targets=None,
+                    collapse=False):
+    """Shared core.  Adaptive-tau categorical GL recovers heavy characters per next-symbol, then the
+    DECISIVE test: does adding GL's recovered degree>=3 characters ON TOP of the degree-<=2 model
+    (= Fourier-Lasso's forced fallback when V^w is un-enumerable) improve held-out top-1?
+
+    basis: per-position orthonormal basis (`householder_basis` for general V; `hadamard_basis` for the
+    unit-modulus power-of-2 Walsh path -> no high-degree inflation).  search: optional
+    `callable(D, f, tau, seed) -> dict(status, codes)` (default = the Householder `qary_gl_search`
+    tree; the Walsh path passes `hadamard_gl_search`).  deg2_full=False builds the degree-<=2 baseline
+    from all degree-1 columns + GL's *recovered* heavy degree-2 codes -- feasible at large V, where the
+    full (V-1)^2 degree-2 design is not.  m_gl=None searches the full Dtr.  max_targets caps the
+    per-next-symbol GL loop to the most frequent targets."""
+    from collections import Counter
+
     from sklearn.linear_model import LogisticRegression
 
     from .audit import design_matrix
-    Psi = householder_basis(V)
+    Psi = basis(V)
     rng = np.random.default_rng(seed + 11)
     C_D = (V ** w) / len(Dtr)
     base = float((yte == np.bincount(ytr).argmax()).mean())
-    print(f"\n########## {label} (V={V}, w={w}, pairs_tr={len(Dtr)}, C_D={C_D:.1e}, "
-          f"noise~{1 / np.sqrt(min(len(Dtr), m_gl)):.4f}) ##########")
-    print(f"V^w={V ** w:.1e} >> 16384 -> Fourier-Lasso forced to degree<=2; majority base={base:.3f}")
+    print(f"\n########## {label} (V={V}, w={w}, pairs_tr={len(Dtr)}, C_D={C_D:.2e}) ##########")
+    print(f"V^w={V ** w:.1e}; majority base={base:.3f}", flush=True)
 
     fs = rng.choice(len(Dtr), min(n_fit, len(Dtr)), replace=False)   # subsample for logistic fits (RAM)
     Dfit, yfit = Dtr[fs], ytr[fs]
     ts = rng.choice(len(Dte), min(n_fit, len(Dte)), replace=False)
     Dtes, ytes = Dte[ts], yte[ts]
-    gs = rng.choice(len(Dtr), min(m_gl, len(Dtr)), replace=False)    # subsampled GL search (cheap exact-leaf)
-    Dgl, ygl = Dtr[gs], ytr[gs]
-    idx_gl = _encode_qary(Dgl, V)
+    if m_gl is None:
+        Dgl, ygl = Dtr, ytr                                         # full-data search (exact-W)
+    else:
+        gs = rng.choice(len(Dtr), min(m_gl, len(Dtr)), replace=False)
+        Dgl, ygl = Dtr[gs], ytr[gs]
+
+    if search is None:                                              # default: Householder qary_gl tree
+        def search(D, f, tau_t, sd, norm_m=None):
+            r = qary_gl_search(_encode_qary(D, V), f, w, V, Psi, tau_t, n_exp=n_exp, device=device,
+                               mode="csamp", seed=sd, max_width=max_width, norm_m=norm_m)
+            if r["status"] != "ok":
+                return r
+            return dict(status="ok", codes=np.array([c for c in (r["L"] or []) if c != 0], dtype=np.int64))
+
+    if collapse:                                                    # distinct contexts + per-target weighted f
+        from .hf_data import collapse_contexts
+        Cd, ctx_counts, ctx_n, m_orig = collapse_contexts(Dgl, ygl, V)
+        tgt_counts = ctx_counts.sum(0)
+        print(f"  collapsed {len(Dgl)} rows -> {len(Cd)} distinct contexts", flush=True)
+    else:
+        tgt_counts = np.bincount(ygl, minlength=V)
+    targets = [int(t) for t in np.argsort(-tgt_counts) if tgt_counts[t] >= 30]
+    if max_targets is not None:
+        targets = targets[:max_targets]
 
     codes_all, n_blow, taus = [], 0, []
-    for t in range(V):
-        if (ygl == t).sum() < 30:
-            continue
-        ft = (2 * (ygl == t) - 1).astype(np.float64)
-        # adaptive tau: start low (catch weaker high-order), raise x1.4 until the tree is feasible
-        # (contexts that don't repeat blow the width up x V/level at low tau).
+    for t in targets:
+        if collapse:
+            ft = (2.0 * ctx_counts[:, t] - ctx_n).astype(np.float64)   # sum_{x in c} f(x), f = 2*1[y=t]-1
+            Dsearch, nm = Cd, m_orig
+        else:
+            ft = (2 * (ygl == t) - 1).astype(np.float64)
+            Dsearch, nm = Dgl, None
+        # adaptive tau: start low (catch weaker high-order), raise x1.4 until the tree is feasible.
         tau_t, r = tau, None
         for _ in range(7):
-            r = qary_gl_search(idx_gl, ft, w, V, Psi, tau_t, n_exp=n_exp, device=device,
-                               mode="csamp", seed=seed + t, max_width=max_width)
+            r = search(Dsearch, ft, tau_t, seed + t, nm)
             if r["status"] == "ok":
                 break
             tau_t *= 1.4
         n_blow += r["status"] != "ok"; taus.append(tau_t)
         if r["status"] == "ok":
-            codes_all += [c for c in r["L"] if c != 0]
-    allcodes = np.array(sorted(set(int(c) for c in codes_all)), dtype=np.int64)
+            codes_all += [int(c) for c in r["codes"]]
+    freq = Counter(codes_all)                                       # chars recovered for more tokens = more robust
+    allcodes = np.array(sorted(freq), dtype=np.int64)
     degs = degree_of_codes(allcodes, V, w) if len(allcodes) else np.zeros(0, int)
     dh = np.bincount(degs, minlength=w + 1) if len(allcodes) else np.zeros(w + 1, int)
+    lo2 = allcodes[degs == 2] if len(allcodes) else np.empty(0, np.int64)
     hi = allcodes[degs >= 3] if len(allcodes) else np.empty(0, np.int64)
+    print(f"  GL recovered {len(allcodes)} chars ({n_blow}/{len(targets)} blowups, "
+          f"tau~{np.median(taus) if taus else 0:.2f}), degree {dh.tolist()} (deg2={len(lo2)}, >=3={len(hi)})",
+          flush=True)
+    hi, lo2 = _top_by_freq(hi, freq, 2000), _top_by_freq(lo2, freq, 4000)
 
-    d2f, d2t = design_matrix(Dfit, Psi, 2), design_matrix(Dtes, Psi, 2)
-    lr = LogisticRegression(max_iter=300).fit(d2f, yfit)
+    if deg2_full:                                                   # small V: enumerate the full degree-<=2 design
+        d2f, d2t = design_matrix(Dfit, Psi, 2), design_matrix(Dtes, Psi, 2)
+    else:                                                           # large V: deg-1 + GL's heavy deg-2 codes
+        d2f = np.hstack([design_matrix(Dfit, Psi, 1)] + ([_char_columns(Dfit, lo2, V, Psi, w)] if len(lo2) else []))
+        d2t = np.hstack([design_matrix(Dtes, Psi, 1)] + ([_char_columns(Dtes, lo2, V, Psi, w)] if len(lo2) else []))
+    lr = LogisticRegression(max_iter=200).fit(d2f, yfit)
     d2_1 = float((lr.classes_[lr.predict_proba(d2t).argmax(1)] == ytes).mean())
+    print(f"  degree<=2 baseline ({'full' if deg2_full else f'deg1+{len(lo2)} heavy deg2'})   "
+          f"top-1 {d2_1:.4f}", flush=True)
     if len(hi):
-        lrh = LogisticRegression(max_iter=300).fit(np.hstack([d2f, _char_columns(Dfit, hi, V, Psi, w)]), yfit)
+        lrh = LogisticRegression(max_iter=200).fit(np.hstack([d2f, _char_columns(Dfit, hi, V, Psi, w)]), yfit)
         d2hi = float((lrh.classes_[lrh.predict_proba(np.hstack([d2t, _char_columns(Dtes, hi, V, Psi, w)])).argmax(1)] == ytes).mean())
     else:
         d2hi = d2_1
-    print(f"  GL recovered {len(allcodes)} chars ({n_blow}/{V} blowups, tau~{np.median(taus) if taus else 0:.2f}), "
-          f"degree {dh.tolist()} (>=3: {len(hi)})")
-    print(f"  degree<=2 (= Lasso's forced fallback)   top-1 {d2_1:.4f}")
-    print(f"  degree<=2 + GL's {len(hi)} deg>=3 chars   top-1 {d2hi:.4f}   <== does high order add value?")
-    print(f"  majority baseline                       top-1 {base:.4f}")
-    return dict(d2=d2_1, d2hi=d2hi, base=base, n_hi=int(len(hi)), dh=dh.tolist())
+    print(f"  degree<=2 + GL's {len(hi)} deg>=3 chars   top-1 {d2hi:.4f}   <== does high order add value?", flush=True)
+    print(f"  majority baseline                       top-1 {base:.4f}", flush=True)
+    return dict(d2=d2_1, d2hi=d2hi, base=base, n_hi=int(len(hi)), n_lo2=int(len(lo2)), dh=dh.tolist())
+
+
+def run_bpe_next(window=3, vocab_size=512, n_stories=200000, max_pairs=3_000_000, tau=0.05,
+                 device="cpu", max_width=8000, seed=0, split="valid", shards=None,
+                 n_fit=25000, m_gl=None, max_targets=96):
+    """Next-token prediction on a REAL byte-level BPE (exact power-of-2 V) via the unit-modulus Walsh
+    categorical CSAMP search.  Reuses `_highorder_test` with the Hadamard basis (no degree inflation),
+    `hadamard_gl_search` (binary Walsh over packed token bits), and the feasible deg-1 + heavy-deg-2
+    baseline.  Grow `split='train'`/`shards`/`max_pairs` to drive C_D = V^w/m -> O(1)."""
+    from .hadamard_gl import hadamard_gl_search
+    from .hf_data import tinystories_bpe_next_split
+    # STORY-DISJOINT split: each document goes wholly to train or test BEFORE windowing, so recurring
+    # n-gram contexts cannot straddle the split (a random-row shuffle of pooled windows would leak them,
+    # inflating the nested degree-3 held-out comparison this test hinges on).
+    Ctr, ytr, Cte, yte, V, w, _merges = tinystories_bpe_next_split(
+        window, vocab_size, n_stories, max_pairs, test_frac=0.2, seed=seed, split=split, shards=shards)
+
+    def search(D, f, tau_t, sd, norm_m=None):
+        return hadamard_gl_search(D, f, w, V, tau_t, device=device, mode="csamp", seed=sd,
+                                  max_width=max_width, norm_m=norm_m)
+
+    return _highorder_test(Ctr, ytr, Cte, yte, V, w, tau=tau, n_fit=n_fit, device=device,
+                           max_width=max_width, seed=seed, m_gl=m_gl,
+                           label=f"BPE next-token V={V} w={window} split={split}",
+                           basis=hadamard_basis, search=search, deg2_full=False,
+                           max_targets=max_targets, collapse=True)
+
+
+def run_bpe_recall(window=2, vocab_size=256, n_stories=100000, max_pairs=4_000_000, tau=0.08,
+                   seed=0, split="valid", shards=None, n_targets=6, device="cpu", max_width=60000):
+    """Correctness-at-scale: on REAL BPE data with V^w enumerable, GL recall vs brute-force spectrum
+    (the same check that validated GB1, ported to the unit-modulus Walsh token path)."""
+    from .hadamard_gl import hadamard_gl_search, token_blocks
+    from .hf_data import collapse_contexts, tinystories_bpe_next
+    C, y, V, w = tinystories_bpe_next(window, vocab_size, n_stories, max_pairs, seed=seed,
+                                      split=split, shards=shards)
+    if V ** w > 5_000_000:
+        print(f"[recall] V^w={V ** w} too large to brute-force; skip", flush=True)
+        return dict(mean_recall=None)
+    H = hadamard_basis(V)
+    Cd, counts, n_ctx, m = collapse_contexts(C, y, V)             # GL SEARCH runs over distinct contexts
+    tgt_counts = counts.sum(0)                                    # (the sublinear search never sees V^w or all m)
+    print(f"\n#### BPE recall vs brute (V={V}, w={w}, m={m}, distinct={len(Cd)}, "
+          f"C_D={V ** w / m:.2e}, V^w={V ** w}) ####", flush=True)
+    recalls = []
+    for t in np.argsort(-tgt_counts)[:n_targets]:
+        if tgt_counts[t] < 30:
+            continue
+        fhat = qary_spectrum(C, (2 * (y == t) - 1).astype(np.float64), H)   # brute ground truth (enumerates V^w)
+        brute = set(int(s) for s in np.where(fhat ** 2 >= (tau / 2) ** 2)[0] if s != 0)
+        fsum = (2.0 * counts[:, t] - n_ctx).astype(np.float64)   # per-distinct-context weighted sum
+        r = hadamard_gl_search(Cd, fsum, w, V, tau=tau, device=device, max_width=max_width, norm_m=m)
+        if r["status"] != "ok":
+            print(f"  t={t}: blowup at tau={tau}", flush=True); continue
+        got = set(int(np.ravel_multi_index(d, (V,) * w)) for d in token_blocks(r["codes"], V, w))
+        rec = len(got & brute) / max(len(brute), 1)
+        recalls.append(rec)
+        print(f"  t={t} (n={tgt_counts[t]}): brute heavy={len(brute)}, GL={len(got)}, recall={rec:.3f}", flush=True)
+    mr = float(np.mean(recalls)) if recalls else 0.0
+    print(f"  mean recall over {len(recalls)} targets = {mr:.3f}", flush=True)
+    return dict(mean_recall=mr)
 
 
 def run_language_raw(V=32, window=6, n_stories=120000, max_pairs=1_000_000, tau=0.06,
@@ -349,7 +457,7 @@ def run_language_raw(V=32, window=6, n_stories=120000, max_pairs=1_000_000, tau=
 
 
 def run_char_next(window=8, n_stories=60000, max_pairs=1_500_000, tau=0.06, n_exp=90000,
-                  n_fit=45000, device="cpu", max_width=5000, seed=0, alphabet=None):
+                  n_fit=25000, device="cpu", max_width=5000, seed=0, alphabet=None):
     """CHARACTER-level next-char prediction: lowercase, vocab = alphabet (a-z + space), so there is
     NO <unk> and contexts repeat heavily (CSAMP-friendly), while V^w stays un-enumerable so Lasso is
     forced to degree-<=2.  Tests whether GL finds multi-character (high-order) structure that beats

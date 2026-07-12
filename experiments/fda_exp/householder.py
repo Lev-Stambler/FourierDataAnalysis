@@ -41,6 +41,30 @@ def walsh4() -> np.ndarray:
     ]).astype(np.float64)
 
 
+def hadamard_basis(V: int) -> np.ndarray:
+    """Psi (V x V) for a POWER-OF-2 alphabet: the true Walsh-Hadamard basis, unit-modulus (all +/-1).
+
+    `H[a, x] = (-1)^<a, x>` where `<a,x> = parity(a & x)` is the GF(2) inner product of the k-bit
+    codes of the contrast `a` and the symbol `x` (k = log2 V).  Row 0 is constant (psi_0 = 1), rows
+    are orthonormal under the uniform measure, and every entry is +/-1 -- so, unlike `householder_basis`
+    (a single reflection, +/-1 only for V=2,4), high-degree characters carry NO magnitude inflation and
+    the conditional/Parseval bucket weight is complete.  Because `H` is a tensor product over the k bits,
+    a V-ary character factors into binary Walsh parities: this is what lets `hadamard_gl` realize the
+    categorical CSAMP search as binary Walsh GL over the packed token bits (see `hadamard_gl.py`).
+    The LSB convention matches `_encode_qary`/`_digits` (position/bit 0 least significant), so the
+    decoded per-token contrast `a_p` indexes this Psi exactly as the bit search thresholds it.
+    Generalizes `walsh4` (== `hadamard_basis(4)`) to any V = 2^k.
+    """
+    k = int(V).bit_length() - 1
+    if V != (1 << k):
+        raise ValueError(f"hadamard_basis requires V a power of 2, got V={V}")
+    a = np.arange(V)
+    inner = np.zeros((V, V), dtype=np.int64)
+    for j in range(k):                                    # accumulate parity(a & x) bit by bit
+        inner ^= (((a[:, None] >> j) & 1) & ((a[None, :] >> j) & 1))
+    return (1.0 - 2.0 * inner).astype(np.float64)         # (-1)^<a,x>
+
+
 def qary_spectrum(Cd: np.ndarray, f: np.ndarray, Psi: np.ndarray) -> np.ndarray:
     """All V^w dataset coefficients of f over distinct contexts Cd (ids 0..V-1)."""
     V = Psi.shape[0]

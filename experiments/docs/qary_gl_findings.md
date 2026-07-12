@@ -9,22 +9,46 @@ tokens). Code: `fda_exp/qary_gl.py` (search), `fda_exp/qary_gl_predict.py` (pred
 ## The algorithm
 
 Characters `χ_α(x)=∏_p Ψ[α_p, x_p]`, `α∈[V]^w`, `Ψ` the Householder contrasts (orthonormal under uniform,
-`ψ_0≡1`). Dataset coefficient `f̂_D(α)=E_{x∼D}[f·χ_α]`. The V-ary CSAMP tree decides one position's contrast
-per level (branching V); node = prefix `J`, bucket weight `Ψ(J)=Σ_{β⊇J} f̂_D(β)² = E_z[(E_{x|z}[fχ_J])²]`
-estimated from partner pairs sharing the suffix `z`. Leaf kept iff `f̂_D(α)² ≥ τ²/4`. (SAMP draws the
-partner uniformly → blind to suffix/high-order structure; unit-tested.)
+`ψ_0≡1`). Dataset coefficient `f̂_D(α)=E_{x∼D}[f·χ_α]`. The V-ary tree decides one position's contrast per
+level (branching V); node = prefix `S` on positions `0..k`, suffix `z` = the un-split positions. The **bucket
+weight is the true Parseval sum** `W(S|J_k)=Σ_{U over suffix} f̂_D(S∪U)² = (V^{w-kk}/m²) Σ_z (Σ_{x∈D_z} f(x)χ_S(x_{0..k}))²`
+(`kk=k+1`), computed **exactly** by a group-by on the suffix `z=idx//V^{kk}`. Keep a child iff `W ≥ τ²/4`; at
+the last level `W=f̂_D(α)²`, so the leaf test is exact for free. (`mode='samp'` draws the partner uniformly →
+context-blind → blind to suffix/high-order structure; unit-tested.)
 
-## THE BUG (you were right again): leaf recall was 0.52, not a property of the data
+## THE BUG (Lev, again): the conditional bucket weight is not complete in the Householder basis
 
-At the final level the suffix is empty, so the CSAMP partner is a *uniformly random* row and the single
-leaf coefficient was being estimated from only `n_exp` samples (stddev ~1/√n_exp). GB1's heavy threshold
-τ/2 is comparably tiny, so **~half the true heavy characters were noise-pruned at the leaf** while noise
-false-positives were kept — 12,259 "recovered" but half the true top-128 missing (recall **0.52**).
+Earlier versions used the **conditional** bucket weight `Ψ(S|J)=E_z[(E_{x|z}[fχ_S])²]`. GL pruning needs
+**Completeness** — a heavy leaf keeps every ancestor bucket heavy, so pruning never drops a heavy character.
+The completeness proof is Cauchy–Schwarz on the tower identity `f̂_D(S∪U)=E_z[χ_U(z)v̄_S(z)]`, giving
+`f̂_D(S∪U)² ≤ E_z[χ_U(z)²]·Ψ(S|J)`. **This needs `E_z[χ_U(z)²] ≤ 1`.** For ±1 Walsh characters `χ_U²≡1`
+pointwise, so it holds under any measure. But the **real Householder contrasts are orthonormal only under
+*uniform*** — under the dataset's non-uniform context measure their norm exceeds 1, so `Ψ` can fall *below*
+the coefficient it should dominate and **the search silently prunes a genuinely heavy character**. Verified:
+V=3 gives worst `f̂²/Ψ = 1.85`, V=4-Helmert `2.60` (`verification/verify_identities.py` Round 4b;
+`tests/test_qary_gl.py::test_W_recovers_heavy_char_where_psi_would_prune`). The needed property is **pointwise
+unimodularity `|χ|=1`, not orthonormality.** (Correction — an earlier version of this note wrongly said
+`householder_basis(V)` is ±1 Walsh for every power of 2. It is a single Householder *reflection*, ±1 only for
+**V=2 and V=4**, NOT the Walsh–Hadamard matrix for V≥8 (verified: `max|Psi| ≈ √V`, e.g. 22.6 at V=512). So the
+conditional-Ψ bug bites for *every* alphabet with V≥3 except the V=4 coincidence — V=16/32 (language), V=20
+(GB1); only V=2 (Poelwijk) is unimodular. The shipped search sidesteps it entirely by using the Parseval `W`
+bucket weight, complete for **any** orthonormal basis (below), so no result was affected. A genuinely
+unimodular power-of-2 basis requires the *explicit* Walsh–Hadamard `H_2^{⊗k}` = `householder.hadamard_basis`,
+which the `hadamard_gl` token path uses for real-BPE experiments.)
 
-**Fix:** we hold the whole dataset, so compute the leaf coefficient **exactly** over all `m` rows
-(`qary_gl.qary_gl_search(..., exact_leaf=True)`). Internal levels stay CSAMP (the genuine sublinear search);
-only the final noise-dominated selection is made exact. Result: recall **0.52 → ~0.88**, recovered set
-12,259 → ~200 (clean), and GL now matches exact brute-force at matched K.
+**Fix — use the true Parseval bucket sum `W(S|J)=Σ_U f̂_D(S∪U)²`** (see *The algorithm*). `W ≥ f̂_D(S∪U)²`
+automatically (one term of a sum of squares), so Completeness/Monotonicity/Level-mass all hold for **any**
+orthonormal product basis, Householder included. Because we hold the whole dataset, `W` is computed *exactly*
+by a suffix group-by — no sampling and no self-pair diagonal correction needed. This **subsumes two earlier
+workarounds**: the `exact_leaf` special case (now automatic: `W=f̂²` at the leaf) and the self-pair
+U-statistic in `sample_partners` (that heuristic dropped the diagonal to avoid blow-up, estimating an
+off-diagonal quantity with *no* completeness guarantee; `W` keeps the diagonal, which is the honest blindness
+floor — so `W` correctly blows up on genuinely non-repeating data where recovery is information-theoretically
+impossible, instead of returning a false-confident support).
+
+> **Re-run needed.** The categorical numbers below (GB1 V=20, language V=16/32) were produced with the old
+> `Ψ`/`exact_leaf` estimator, which lacked completeness in the Householder basis — they must be re-run with
+> the `W` search before being trusted. Poelwijk (V=2, Walsh = unimodular) is unaffected.
 
 ## THE HIGH-ORDER WIN — Poelwijk GFP landscape (real data, V=2, w=13, sparse high-order epistasis)
 
@@ -33,7 +57,8 @@ terms yet be sparse in the Walsh basis* — the exact regime the theory targets.
 confirms real high-order value: **d≤1 0.35 → d≤2 0.74 → d≤3 0.80 → d≤4 0.83** (held-out Spearman,
 "combined"). Degree-3/4 epistasis adds ~+0.07 over additive+pairwise — additive/pairwise models cannot see it.
 
-Exact-leaf GL (V=2), 3 seeds, `n_exp=400k`, held-out Spearman (`fda_exp/qary_gl_predict.run_poelwijk`):
+GL (V=2, Walsh — unaffected by the Householder-completeness bug), 3 seeds, `n_exp=400k`, held-out Spearman
+(`fda_exp/qary_gl_predict.run_poelwijk`):
 
 | seed | GL-recon | GL+refit | degree-≤2 | dense degree-≤4 | Fourier-Lasso | GL degree hist (≥3) |
 |------|----------|----------|-----------|-----------------|---------------|---------------------|
@@ -51,12 +76,13 @@ via sublinear CSAMP search**, which required the exact-leaf recall fix to land.
 small enough to enumerate the entire spectrum and L1-select*. That route dies at any real scale
 (w=100 → 2^100 features); GL's CSAMP finds the same heavy high-order terms **without enumerating**, which is
 the whole point. So GL is not the best predictor on this small landscape; it is the demonstration that its
-*sublinear* high-order recovery has real predictive value. (Earlier binary-GL Poelwijk numbers, ~0.78, were
-understated by the same leaf-recall bug — still present in `gl_torch`; porting exact-leaf there is a TODO.)
+*sublinear* high-order recovery has real predictive value. (`gl_torch`, the older binary path, still uses the
+sampled `Ψ` leaf; the exact-`W` group-by in `qary_gl` supersedes it and should be ported over — a TODO.)
 
 ## GB1 — the verifiable anchor (real protein epistasis, V=20, w=4, m=149,361, V^w=160k enumerable)
 
-3 seeds, `n_exp=250k`, exact leaf (Spearman held-out):
+3 seeds, `n_exp=250k` (old `Ψ`/`exact_leaf` estimator — **re-run with `W` pending**, see the bug note above;
+Spearman held-out):
 
 | seed | GL-recon | GL-select+fit | brute@GL-K (recall) | brute top-K | degree≤2 |
 |------|----------|---------------|---------------------|-------------|----------|

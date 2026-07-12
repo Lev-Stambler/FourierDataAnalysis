@@ -457,6 +457,62 @@ This is the honest dataset analogue of "coefficient collection plus Parseval": t
   Bound the dataset spectral norm from the global one: $norm(hat(f)_calD)_1 <= norm(b)_1 dot norm(hat(f))_1$ by @lem:convolution, so a low-$L^1$ bias spectrum together with small $norm(hat(f))_1 <= s$ makes the reconstruction of @thm:context-gl efficient in the model-query setting — genuine on-dataset _learning_ of size-$s$ decision trees, not just coefficient listing.
 ]
 
+== Application: In-Context Next-Token Prediction
+
+The proof of @thm:context-gl uses only orthonormality of the characters, the reproducing kernel, and their unit modulus $|chi| = 1$, so — as the opening footnote of this section and the "general product alphabets" direction below both note — it holds verbatim over any product of finite abelian groups with its character basis.
+The token setting is the case $calT = ZZ_V$: a length-$w$ context of $V$-ary tokens, with $sans("CSAMP")$ realized _literally_ as $n$-gram retrieval — conditioning on a shared context suffix _is_ pulling the datapoints that share it.
+We run it end to end on a real corpus and lay out the algorithm exactly as executed.
+Two instantiations share the pipeline: a perplexity-scored *language model* (`bpe_lm.py` — one multiclass search feeding a fitted ridge head) and a high-order *discriminator* asking whether recovered degree-$3$ token structure lifts held-out prediction (`qary_gl_predict.run_bpe_next` — a per-token search feeding a fitted logistic head), the latter driven at scale by `modal_gl.qary_bpe_sweep` (with `bpe.py`, `hadamard_gl.py`, `fast_gl.py` underneath).
+
+#h3([The object])
+Fix a byte-level BPE tokenizer with an exact power-of-two vocabulary $V = 2^k$: the $256$ byte values are reserved ids and exactly $V - 256$ merges are learned, so every string encodes with no #raw("<unk>") bucket (`bpe.py`).
+Sliding a length-$w$ window over the token stream gives, at each position, a context $x = (t_1, dots, t_w) in {0, dots, V - 1}^w$ and its next token $y = t_(w + 1)$; $calD$ is the multiset of these $(x, y)$ pairs, part held out for evaluation (the split differs by instantiation — see below).
+The ambient space is $ZZ_V^w$, its characters $chi_alpha (x) = product_(p = 1)^w psi_(alpha_p) (t_p)$ indexed by mixed-radix codes $alpha in ZZ_V^w$; the *token-degree* of $chi_alpha$ is the number of positions $p$ with $alpha_p != 0$, so a degree-$d$ character is a $d$-token interaction.
+The goal is the heavy _dataset_ characters of the next-token rule — the token interactions that move the next-token distribution over _this_ corpus — recovered without ever leaving the data.
+
+#h3([Phase 1: heavy-character recovery — this is @thm:context-gl])
+For each target token $t$ frequent enough to estimate (count $>= 30$, capped at the most frequent targets), writing $hat(f)_calD^((t)) (alpha) = EE_calD [f_t chi_alpha]$ for the dataset coefficients of its one-vs-rest indicator:
++ *One-vs-rest target.* Take $f_t (x) = 2 dot ind [y = t] - 1 in {-1, +1}$, a bounded function on the context cube; its heavy dataset characters are what we search for.
++ *Collapse repeated contexts.* Text is Zipfian — contexts recur — so replace $calD$ by its _distinct_ contexts $c$, each carrying next-token counts $n_(c, t)$ and total $n_c$; the per-context weighted target sum is $sum_(x "in" c) f_t (x) = 2 n_(c, t) - n_c$ (`collapse_contexts`).
+  Passing the original row count as the Parseval normalization keeps every bucket weight and coefficient _exact_ for the full empirical measure while the group-by cost scales with the number of _distinct_ contexts.
+  This is the operational face of property 5 of @lem:psi-properties: context repetition ($c_k << |calD|$) is precisely what bounds the live buckets and makes the search tractable.
++ *Search.* Run the context-conditioning tree of @thm:context-gl to recover $L_t = {alpha : |hat(f)_calD^((t)) (alpha)| >= tau}$.
+  The split order is the natural one for sequences (@thm:context-gl, first remark): coordinates are split oldest-first, so the _retained_ un-split part is always the contiguous recent context — an $n$-gram suffix — that the estimator conditions on.
+  In place of the sampled conditional weight $Psi$ of @lem:psi-estimator, the implementation keeps a bucket by the _exact_ Parseval weight $sum_(U subset.eq Jbar) hat(f)_calD^((t)) (S union U)^2$ (@lem:pair-form), evaluated as a group-by over the shared suffix: it dominates every descendant coefficient (completeness, now for _any_ orthonormal basis) and equals $hat(f)_calD^((t)) (S)^2$ at the last level, so the leaf test is exact.
+  The threshold is adaptive — start at $tau$, raise it $times 1.4$ (up to seven tries) until the live-bucket width fits a fixed budget — the deterministic guess-and-double variant noted after @thm:context-gl.
++ *Exact coefficients.* On the recovered set compute $hat(f)_calD^((t)) (alpha) = EE_calD [f_t chi_alpha]$ directly over the collapsed contexts (no enumeration of the $V^w$ spectrum), so the numbers are exact, not estimated.
+
+The _discriminator_ runs this loop once per target token (`hadamard_gl_search`); the _language model_ instead runs a single multiclass top-$K$ search over the most frequent tokens jointly (`fast_gl.multiclass_search`), recovering one shared character set. Both are the same categorical CSAMP over packed bits.
+
+Choosing $V = 2^k$ is what makes this both cheap and clean.
+The Walsh character basis is then unit-modulus and a tensor product over each token's $k$ bits, so a $V$-ary character factors into a single $plus.minus 1$ parity over the $w k$ packed context bits: the branch-$V$, depth-$w$ categorical search collapses onto the branch-$2$, depth-$(w k)$ binary search of the Boolean cube — about $V \/ (2 log_2 V)$ fewer node expansions ($28 times$ at $V = 512$) — and, being $plus.minus 1$, carries none of the $V^(deg \/ 2)$ magnitude inflation that a non-unit-modulus $V$-ary basis puts on high-degree characters (which would over-rank them by degree).
+The categorical search _is_ binary Goldreich-Levin under the hood, read out as token interactions (`hadamard_gl.py`).
+
+#h3([Phase 2: select-then-fit the predictor])
+The theoretical predictor is the reconstruction clause of @thm:context-gl applied to each target: from the recovered $L_t$,
+$
+g_t (x) = normCInv (hat(f)_calD^((t)) (emptyset) + sum_(alpha in L_t) hat(f)_calD^((t)) (alpha) dot chi_alpha (x)), quad quad EE_calD [(f_t - g_t)^2] <= eps .
+$
+Since $g_t$ is a function of the context alone, it also lies within $eps$ of the $L^2 (calD)$-best context predictor, the conditional mean $EE_calD [f_t | x] = 2 Pr_calD [y = t | x] - 1$ (Pythagoras: $EE_calD [(EE_calD [f_t | x] - g_t)^2] <= EE_calD [(f_t - g_t)^2] <= eps$), so $g_t approx 2 Pr[y = t | x] - 1$ — _with_ the density rescaling $normCInv$ that the reconstruction clause carries.
+
+The implementation does _not_ use these closed-form weights.
+It treats the recovered characters ${chi_alpha : alpha in L}$ as a _feature basis_ and fits their per-token weights by a cheap convex objective — a closed-form weighted ridge onto the empirical next-token distribution over distinct contexts (`bpe_lm.py`), or a logistic regression onto the token label (`run_bpe_next`) — then clips and normalizes over $t$.
+Fitting rather than reconstructing is forced by the non-product structure of real text (below): under $calD$ the recovered characters are _correlated_ and $L_t$ is _truncated_, so the closed-form weights $normCInv hat(f)_calD^((t)) (alpha)$ — which are $L^2 (calD)$-optimal only when the characters are $calD$-orthonormal — are not the best weights for the selected set. GL supplies the _selection_ of which token interactions matter, and the fit supplies the _weights_.
+
+#h3([Evaluation and the statistical axis])
+The two instantiations are scored differently.
+The _language model_ (`bpe_lm.py`) uses a genuinely *story-disjoint* split — each document goes wholly to train or to test — and reports held-out cross-entropy / perplexity for its ridge head at degree $<= 2$ versus degree $<= 3$, against an add-one *unigram* floor and a full-context *$n$-gram lookup* (empirical $Pr[y | x]$ backed off to unigram — the "degree-$infinity$" memorizer that the sparse model is trying to match with a handful of characters).
+The _discriminator_ (`run_bpe_next`) reports held-out top-$1$ for the nested comparison degree-$<= 2$ — its _feasible_ baseline being degree-$1$ columns plus GL's recovered heavy degree-$2$ characters, since the full $(V - 1)^2$ degree-$2$ design is out of reach at large $V$ — versus the same plus GL's recovered degree-$>= 3$ characters: does recovered high-order token structure buy held-out predictability?
+Everything here is governed by the density factor $normC = V^w \/ m$ of the Mass Identity and the birthday horizon of @lem:blindness: _short_ windows are the repetition-rich regime ($normC -> O(1)$) where the search provably works, while _long_ windows push $normC >> 1$, contexts stop colliding, and any recovered degree-$3$ is aliasing rather than signal.
+The scale sweep `modal_gl.qary_bpe_sweep` isolates exactly this: (a) where $V^w$ is still enumerable it checks GL's heavy set for *recall against the brute-force dataset spectrum* (correctness at scale), and (b) it tracks the degree-$3$ benefit across a $normC$ sweep (validation split $-> 1 -> 4$ training shards, plus an over-long-window negative control) — a benefit that survives as $normC -> O(1)$ is genuine high-order; one that evaporates was aliasing.
+
+#CLAUDE[
+  _Provenance: Phase 1 (recovery) is a theorem — @thm:context-gl over $ZZ_V^w$, using the exact Parseval bucket weight of @lem:pair-form; Phase 2 (the fitted predictor) is empirical, not a guarantee._
+  The clean object is the closed-form reconstruction $g_t = normCInv (dots)$ above, exact in $L^2 (calD)$ with the _full_ heavy set. The code instead _fits_ the character weights (ridge / logistic), because on real text $calD$ is not a product law: the characters are not $calD$-orthonormal, so with a truncated, correlated selected set the fixed weights $normCInv hat(f)_calD^((t))$ are no longer $L^2 (calD)$-best, and refitting them beats reading the raw coefficients. GL earns its keep as the _selector_ of the predictive interactions; the fit is a low-cost head over them.
+  The recovery step is validated cleanly on its own terms: on a real byte-level BPE at $normC approx 0.013$, the Walsh categorical search reaches *recall $1.000$* against the exact brute-force dataset spectrum ($45931 \/ 45932$ heavy characters for a single target).
+  Two honest caveats on the discriminator. (i) `run_bpe_next` currently splits _rows_ (windows pooled across documents, then permuted), not documents, so recurring contexts can straddle train and test and inflate the degree-$3$ top-$1$ delta; the story-disjoint number to trust is the language model's CE / perplexity, and the discriminator should be re-run story-disjoint. (ii) Whether recovered degree-$3$ token interactions genuinely beat degree-$<= 2$, and whether any edge is stable as $normC -> O(1)$, is exactly what the sweep is measuring. _(Quantitative results pending.)_
+]
+
 == Discussion and Open Directions
 
 The most closely related work is the Active Fourier Auditor @ajarra2024active, which likewise estimates spectral properties of a model over a data distribution; it orthonormalizes the parity basis to that distribution (following @heidari2021finding) and reports a few scalar functionals (robustness, individual/group fairness), whereas our dataset Goldreich-Levin keeps the fixed characters over the empirical measure and recovers the heavy coefficients themselves.

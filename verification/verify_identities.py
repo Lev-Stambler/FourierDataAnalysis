@@ -415,6 +415,117 @@ check(f"normalized reconstruction on D: f(x) = sum breve_f breve_phi ({f[x0]:.6f
       abs(f[x0] - recon) < TOL)
 
 # =====================================================================
+# Round 4b: q-ary / HOUSEHOLDER basis.  The conditional bucket weight
+# Psi(S|J) = E_z[vbar_S^2] loses COMPLETENESS for non-unimodular characters
+# (|chi| != 1), so the categorical GL search can prune a genuinely heavy
+# character.  The true Parseval bucket sum W(S|J) = sum_U fhat_D(S u U)^2
+# restores completeness/monotonicity/level-mass for ANY orthonormal product
+# basis, and is exactly the group-size-weighted CSAMP estimator.  (Binary
+# Round 4 passes because +-1 Walsh characters are unimodular; V=3 Householder
+# characters are not.)  Distinct points only -- repeats break the Mass identity.
+# =====================================================================
+print("\n--- Round 4b: q-ary Householder Psi failure + Parseval-sum W fix ---")
+
+
+def helmert(V):
+    """Real orthonormal-under-uniform contrast basis, row 0 == 1 (Householder-type;
+    |chi(x)| != 1 pointwise for V >= 3, unlike +-1 Walsh)."""
+    M = [[1.0] * V]
+    for a in range(1, V):
+        v = [1.0] * a + [-float(a)] + [0.0] * (V - a - 1)
+        s = (sum(t * t for t in v) / V) ** 0.5
+        M.append([t / s for t in v])
+    return M
+
+
+def qchi(alpha, x, P):                                   # alpha, x: tuples; P: basis table (row a = contrast a)
+    p = 1.0
+    for i in range(len(alpha)):
+        p *= P[alpha[i]][x[i]]
+    return p
+
+
+def qgroups(Dq, k):                                      # group points by suffix x[k:]
+    g = defaultdict(list)
+    for x in Dq:
+        g[x[k:]].append(x)
+    return g
+
+
+def qfhat(Dq, fq, alpha, P):
+    return sum(fq[x] * qchi(alpha, x, P) for x in Dq) / len(Dq)
+
+
+def qpsi(Dq, fq, k, S, P):                               # conditional weight Psi(S|J_k), S over coords 0..k-1
+    mq = len(Dq); tot = 0.0
+    for z, grp in qgroups(Dq, k).items():
+        vbar = sum(fq[x] * qchi(S, x[:k], P) for x in grp) / len(grp)
+        tot += (len(grp) / mq) * vbar * vbar
+    return tot
+
+
+def qW(Dq, fq, k, S, V, P):                              # Parseval bucket sum W(S|J_k), exact group-by
+    mq = len(Dq); nq = len(Dq[0]); tot = 0.0
+    for z, grp in qgroups(Dq, k).items():
+        G = sum(fq[x] * qchi(S, x[:k], P) for x in grp)
+        tot += G * G
+    return (V ** (nq - k)) / mq ** 2 * tot               # (V^{n-k}/m^2) sum_z G_z^2
+
+
+Vq, nq = 3, 3
+P = helmert(Vq)
+a = 1
+vstar = max(range(Vq), key=lambda x: P[a][x] ** 2)       # value where chi_a^2 is largest (> 1)
+# distinct, non-uniform D: keep ALL points with last coord == vstar, and a thin slice of the rest,
+# so the suffix marginal concentrates where chi_a^2 > 1 (this is what breaks Psi-completeness).
+Dq = [x for x in itertools.product(range(Vq), repeat=nq)
+      if x[nq - 1] == vstar or (x[0] + x[1]) % Vq == 0]
+alpha = (a, 0, a)                                        # planted heavy character (contrast a at coords 0 and 2)
+fq = {x: qchi(alpha, x, P) for x in Dq}
+mq = len(Dq)
+C_Dq = Vq ** nq / mq                                     # density constant (distinct points)
+pref = lambda k: list(itertools.product(range(Vq), repeat=k))
+suff = lambda k: list(itertools.product(range(Vq), repeat=nq - k))
+
+ok_parseval = ok_Wcomplete = ok_mono = ok_mass = True
+psi_fails = False
+ef2 = sum(v * v for v in fq.values()) / mq
+for k in range(nq + 1):
+    for S in pref(k):
+        Ws = qW(Dq, fq, k, S, Vq, P)
+        if abs(Ws - sum(qfhat(Dq, fq, S + U, P) ** 2 for U in suff(k))) > 1e-9:
+            ok_parseval = False                          # (1) W == Parseval bucket sum
+        Ps = qpsi(Dq, fq, k, S, P)
+        for U in suff(k):
+            c2 = qfhat(Dq, fq, S + U, P) ** 2
+            if c2 > Ps + 1e-9:
+                psi_fails = True                         # (2a) Psi-completeness violated somewhere
+            if c2 > Ws + 1e-9:
+                ok_Wcomplete = False                     # (2b) W-completeness holds everywhere
+        if k < nq:
+            for d in range(Vq):                          # (3) W monotone: child <= parent
+                if qW(Dq, fq, k + 1, S + (d,), Vq, P) > Ws + 1e-9:
+                    ok_mono = False
+    if abs(sum(qW(Dq, fq, k, S, Vq, P) for S in pref(k)) - C_Dq * ef2) > 1e-8:
+        ok_mass = False                                  # (4) level mass sum_S W = C_D E_D[f^2]
+check("q-ary: W(S|J) = sum_U fhat_D(S u U)^2 (Parseval bucket sum) at all levels", ok_parseval)
+check("q-ary: conditional-weight Psi VIOLATES completeness (Psi < fhat^2) for real Householder", psi_fails)
+check("q-ary: Parseval-sum W satisfies completeness (W >= fhat^2) everywhere", ok_Wcomplete)
+check("q-ary: W monotone along the tree (child <= parent)", ok_mono)
+check(f"q-ary: level mass sum_S W = C_D E_D[f^2] ({C_Dq * ef2:.6f}) at all levels", ok_mass)
+
+# (5) W == group-size-weighted CSAMP estimator: (V^(n-k)/m) E_{x~D, x'~D_z}[ |D_z| f chi_S f' chi_S' ]
+k = 1; S = (a,)
+E_est = 0.0
+for z, grp in qgroups(Dq, k).items():
+    vbar = sum(fq[x] * qchi(S, x[:k], P) for x in grp) / len(grp)
+    for x in grp:
+        E_est += (1.0 / mq) * len(grp) * fq[x] * qchi(S, x[:k], P) * vbar   # i.i.d. partner, incl. diagonal
+W_est = (Vq ** (nq - k)) / mq * E_est
+check(f"q-ary: W = (V^(n-k)/|D|) E[|D_z| f chi_S f' chi_S'] CSAMP estimator ({W_est:.6f} vs {qW(Dq, fq, k, S, Vq, P):.6f})",
+      abs(W_est - qW(Dq, fq, k, S, Vq, P)) < 1e-9)
+
+# =====================================================================
 # Round 5: eps_D-closeness reconstruction from the recovered heavy list
 # (augmented Theorem 2.2).  g = C_D^-1 sum_{S in L} ftilde_D(S) chi_S.
 #   Identity:  E_D[(f-g)^2] = C_D^-1 [ sum_{S notin L} fhat_D(S)^2

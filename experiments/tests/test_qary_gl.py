@@ -60,6 +60,43 @@ def test_recall_vs_bruteforce_and_coeffs_match():
         assert abs(qary_coeffs_at(C, f, [c], V, Psi, w)[0] - fhat[_msd(c, V, w)]) < 1e-6
 
 
+def test_W_recovers_heavy_char_where_psi_would_prune():
+    """The crux fix. On NON-uniform V=3 data, a planted heavy Householder character has a level-0
+    ancestor bucket whose *conditional* weight Psi = E_z[vbar_S^2] falls BELOW its coefficient^2
+    (Psi-Completeness FAILS for the real Householder basis, |chi_U| != 1), while the *Parseval*
+    bucket weight W = sum_U f_hat(S u U)^2 stays >= it.  A Psi-threshold in the gap would prune the
+    ancestor and drop the character; the W-based search (what qary_gl_search now computes) recovers it."""
+    # V must have NO +-1 Hadamard (householder_basis is exactly +-1/Walsh when V is a power of 2,
+    # i.e. unimodular -> completeness already holds).  V=3 is the smallest genuinely non-unimodular case.
+    V, w, m = 3, 3, 6000
+    Psi = householder_basis(V)
+    a = 1                                                      # a contrast whose |chi| varies (V=3: not +-1)
+    vstar = int((Psi[a] ** 2).argmax())                       # value where chi_a^2 is largest (> 1)
+    rng = np.random.default_rng(0)
+    p2 = np.full(V, 0.10 / (V - 1)); p2[vstar] = 0.90         # concentrate pos2 on vstar -> E[chi_a(x2)^2] > 1
+    C = np.stack([rng.integers(0, V, m), rng.integers(0, V, m),
+                  rng.choice(V, m, p=p2)], axis=1).astype(np.int64)
+    alpha = [a, 0, a]                                          # degree-2: contrast a at pos0 and pos2
+    f = _char(C, alpha, Psi)                                   # planted heavy character
+    code = _code(alpha, V)
+
+    # LEVEL-0 ancestor bucket S = {contrast a at position 0}; suffix = positions (1,2)
+    g = f * Psi[a, C[:, 0]]                                    # f * chi_S(x_0)
+    _, inv, cnt = np.unique(C[:, 1] * V + C[:, 2], return_inverse=True, return_counts=True)
+    G = np.zeros(len(cnt)); np.add.at(G, inv, g)              # per-context group sums
+    Psi_anc = float(((cnt / m) * (G / cnt) ** 2).sum())       # E_z[vbar_S^2]  (conditional weight)
+    W_anc = float(V ** (w - 1) / m ** 2 * (G ** 2).sum())     # sum_U f_hat(S u U)^2  (Parseval weight)
+    f2 = float((f * _char(C, alpha, Psi)).mean()) ** 2        # f_hat_D(alpha)^2  (the leaf)
+
+    assert Psi_anc < f2, (Psi_anc, f2)                        # Psi-Completeness FAILS on Householder
+    assert W_anc >= f2 - 1e-9, (W_anc, f2)                    # W-Completeness holds
+
+    tau = float(np.sqrt(4.0 * np.sqrt(Psi_anc * f2)))         # tau^2/4 = geomean(Psi_anc, f2) -> in the gap
+    assert Psi_anc < tau ** 2 / 4 <= f2 + 1e-9               # a Psi-search prunes the ancestor; leaf stays heavy
+    r = qary_gl_search(_encode_qary(C, V), f, w, V, Psi, tau=tau, n_exp=20000, device="cpu", mode="csamp")
+    assert r["status"] == "ok" and code in set(r["L"]), (r["status"], r.get("L"))
+
+
 def test_blindness_csamp_vs_samp_full_degree():
     V, w = 4, 5
     C, Psi = _cube(V, w), householder_basis(V)

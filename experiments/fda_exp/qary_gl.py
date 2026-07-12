@@ -1,15 +1,26 @@
 """Categorical ("q-ary") Goldreich-Levin over a dataset, in the HOUSEHOLDER basis.
 
 Generalizes the binary Walsh GL (`gl_torch.gl_search_torch`) to a V-ary alphabet: the tree
-decides one position's Householder contrast per level (branching factor V), and the CSAMP
-bucket-weight estimator uses the real Householder characteristic function
-`chi_J(x) = prod_{p<=k} Psi[alpha_p, x_p]` instead of a +/-1 Walsh parity.
+decides one position's Householder contrast per level (branching factor V).  Characters
+chi_alpha(x)=prod_p Psi[alpha_p,x_p], alpha in [V]^w, degree=#{p:alpha_p!=0}; dataset
+coefficient f_hat_D(alpha)=E_{x~D}[f chi_alpha].
 
-Math: characters chi_alpha(x)=prod_p Psi[alpha_p,x_p], alpha in [V]^w, degree=#{p:alpha_p!=0};
-coefficient f_hat_D(alpha)=E_{x~D}[f chi_alpha].  Node = prefix J=(alpha_1..alpha_k); bucket
-weight Psi(J)=sum_{beta:beta_1:k=J} f_hat_D(beta)^2 = E_z[(E_{x_1:k|z}[f chi_J])^2] with z the
-suffix (positions k+1..w).  CSAMP draws x~D and a partner x' sharing z; the leaf test reduces
-to f_hat_D(alpha)^2 >= tau^2/4.  SAMP draws x' uniformly -> blind to high-order structure.
+Bucket weight (THE FIX).  The GL tree needs Completeness -- a heavy leaf keeps every ancestor
+bucket heavy -- so that pruning never drops a heavy character.  The *conditional* bucket weight
+Psi(S|J)=E_z[(E_{x|z}[f chi_S])^2] only satisfies Completeness when |chi|=1 pointwise (the +/-1
+Walsh property); for the REAL Householder characters (V>=3) on a non-uniform dataset it FAILS
+(E_z[chi_U(z)^2] != 1), so the search silently drops heavy characters.  We instead use the true
+Parseval bucket sum
+
+    W(S|J_k) = sum_{U over the suffix} f_hat_D(S u U)^2
+             = (V^{w-kk}/m^2) * sum_z ( sum_{x in group z} f(x) chi_S(x_{0..k}) )^2 ,   kk = k+1,
+
+with z = the suffix positions kk..w-1.  W >= f_hat_D(S u U)^2 automatically (one term of a sum
+of squares) for ANY orthonormal product basis, so Completeness/Monotonicity/Level-mass all hold
+for Householder; at the last level (kk=w) the single empty-suffix group gives W = f_hat_D(S)^2
+(subsuming the old exact-leaf special case).  Since we hold the whole dataset, W is computed
+EXACTLY by a group-by on the suffix -- no sampling, no self-pair diagonal correction needed.
+mode='samp' keeps a context-blind estimate (independent partner) to demonstrate blindness.
 
 Convention: mixed-radix LSD throughout -- a character CODE = sum_p a_p * V^p, digit
 a_p = (code // V^p) % V, degree = #nonzero digits.  (Kept internally consistent; do NOT mix
@@ -17,6 +28,8 @@ with householder.qary_spectrum's C-order flat indices -- decode to a multi-index
 """
 
 from __future__ import annotations
+
+import math
 
 import numpy as np
 import torch
@@ -40,28 +53,10 @@ def degree_of_codes(codes, V, w):
     return (_digits(codes, V, w) != 0).sum(1)
 
 
-def sample_partners(gid, rr, rng):
-    """CSAMP: for each sampled row rr[e], a random *distinct* row sharing gid (the shared suffix).
-
-    Excludes self-pairs.  A self-pair (x'=x) contributes f(x)^2 chi_J(x)^2, whose expectation is
-    ~1 for every bucket J; when suffixes rarely repeat (language!), most draws would be self-pairs
-    and this term inflates EVERY bucket weight by ~(self-pair fraction), so the whole tree clears
-    the threshold and blows up.  Returns (partner, valid); valid=False for singleton groups where
-    no distinct partner exists (those experiments are dropped, keeping the estimator unbiased)."""
-    order = np.argsort(gid, kind="stable")
-    uniq, start, counts = np.unique(gid[order], return_index=True, return_counts=True)
-    grp = np.searchsorted(uniq, gid[rr])
-    cnt = counts[grp]
-    off = (rng.random(len(rr)) * cnt).astype(np.int64)
-    partner = order[start[grp] + off]
-    self_hit = partner == rr                                     # landed on x itself -> shift within group
-    off2 = (off + 1) % np.maximum(cnt, 1)
-    partner = np.where(self_hit, order[start[grp] + off2], partner)
-    return partner, cnt >= 2                                     # valid only where a distinct partner exists
-
-
 def _qary_psi_batch(codes_dev, xdig_rr, xdig_rp, f_rr, f_rp, Psi_dev, V, w, chunk=1024):
-    """Psi(bucket) for every code, via Householder-character products over the shared pairs.
+    """Context-BLIND bucket estimate (mode='samp' only): Psi ~ mean over independent pairs of
+    f chi_S(x) * f chi_S(x').  Used to demonstrate that samples-only sampling is blind to
+    suffix/high-order structure; the real (mode='csamp') search uses the exact W group-by below.
     xdig_rr / xdig_rp: (w, E) token digits of the sampled rows.  Returns (L,) tensor."""
     L = codes_dev.shape[0]
     E = xdig_rr.shape[1]
@@ -81,40 +76,56 @@ def _qary_psi_batch(codes_dev, xdig_rr, xdig_rp, f_rr, f_rp, Psi_dev, V, w, chun
     return out
 
 
-def _qary_exact_coeffs(codes_dev, xdig_all, f_all, Psi_dev, V, w, chunk=1024):
-    """Exact f_hat_D(alpha) = mean_x f(x) chi_alpha(x) over ALL rows (noise-free leaf test).
-    xdig_all: (w, m) token digits of every row; f_all: (m,).  Returns (L,) tensor."""
+def _qary_bucket_Q(codes_dev, xdig_all, f_all, gid, ng, Psi_dev, V, kk, chunk=1024):
+    """Reduced Parseval bucket statistic for every child code S (a prefix character on positions
+    0..kk-1):  Q(S) = sum_z ( sum_{x in group z} f(x) chi_S(x_{0..kk-1}) )^2 .  The bucket weight is
+    W(S) = (V^{w-kk}/m^2) * Q(S); the (level-constant) prefactor is applied in log-space by the
+    caller.  gid: (m,) row -> suffix-group index in [0, ng); xdig_all: (w, m) token digits.
+    Returns (L,) float64 numpy array (exact group-by, no sampling)."""
     L = codes_dev.shape[0]
     M = xdig_all.shape[1]
-    chunk = max(1, min(chunk, 40_000_000 // max(M, 1)))
-    Vp = torch.tensor(V ** np.arange(w), dtype=torch.int64, device=codes_dev.device)
-    out = torch.empty(L, dtype=torch.float32, device=codes_dev.device)
+    chunk = max(1, min(L, 60_000_000 // max(M + ng, 1)))         # bound chi (c x M) + G (c x ng) tensors
+    Vp = torch.tensor(V ** np.arange(kk), dtype=torch.int64, device=codes_dev.device)   # prefix only
+    out = torch.empty(L, dtype=torch.float64, device=codes_dev.device)
     for i in range(0, L, chunk):
         cc = codes_dev[i:i + chunk]
-        adig = (cc[:, None] // Vp[None, :]) % V                      # (c, w) code digits
+        adig = (cc[:, None] // Vp[None, :]) % V                      # (c, kk) prefix code digits
         chi = torch.ones((cc.shape[0], M), device=codes_dev.device)
-        for p in range(w):
+        for p in range(kk):
             rowsel = Psi_dev[adig[:, p]]                             # (c, V)
             chi = chi * rowsel[:, xdig_all[p]]                       # (c, M)
-        out[i:i + chunk] = (f_all[None, :] * chi).mean(dim=1)
-    return out
+        g = (f_all[None, :] * chi).double()                         # (c, M)  f(x) chi_S(x_prefix)
+        G = torch.zeros((cc.shape[0], ng), dtype=torch.float64, device=codes_dev.device)
+        G.index_add_(1, gid, g)                                     # (c, ng)  per-suffix-group sums
+        out[i:i + chunk] = (G * G).sum(dim=1)
+    return out.cpu().numpy()
 
 
 def qary_gl_search(idx_np, f_np, w, V, Psi, tau, n_exp=20000, device=None,
-                   mode="csamp", seed=0, max_width=200_000, exact_leaf=True):
+                   mode="csamp", seed=0, max_width=200_000, norm_m=None):
     """Run categorical GL; return recovered heavy character codes + per-level widths.
 
-    idx_np: mixed-radix codes of the contexts (`_encode_qary`).  mode='csamp' = real oracle
-    (partner shares suffix idx//V^kk); mode='samp' = context-blind partner (blindness demo).
-    Leaf kept iff f_hat_D(alpha)^2 >= tau^2/4, i.e. |f_hat_D(alpha)| >= tau/2.
+    idx_np: mixed-radix codes of the contexts (`_encode_qary`).  A leaf is heavy iff
+    f_hat_D(alpha)^2 >= tau^2/4, i.e. |f_hat_D(alpha)| >= tau/2.
 
-    exact_leaf: at the final level the suffix is empty (partner is a uniform row), so the CSAMP
-    estimate of the single leaf coefficient is just (mean over n_exp) with stddev ~1/sqrt(n_exp).
-    Since we hold the whole dataset, compute that leaf coefficient EXACTLY over all m rows instead
-    -- removes the noise that otherwise drops ~half the true heavy characters (recall ~0.5 -> ~1).
+    norm_m: Parseval normalization (defaults to len(idx_np)).  Set it to the ORIGINAL row count when
+    `idx_np` holds frequency-collapsed DISTINCT contexts and `f_np` holds the per-context weighted sum
+    `sum_{x in c} f(x)` -- then W and the leaf coefficient are exact for the full empirical measure
+    while the group-by cost scales with the (much smaller) number of distinct contexts.
+
+    mode='csamp' (real search): bucket weight is the exact Parseval sum
+        W(S|J_k) = (V^{w-kk}/m^2) * sum_z ( sum_{x in group z} f(x) chi_S(x_{0..k}) )^2 ,  kk=k+1,
+    a group-by on the suffix z = idx//V^kk (see module docstring).  W >= f_hat_D(S u U)^2 for every
+    descendant, so a heavy leaf keeps every ancestor bucket >= its coefficient^2 -- Completeness
+    holds for the real Householder basis, unlike the conditional weight Psi=E_z[vbar^2] (which needs
+    |chi|=1).  At the last level W = f_hat_D(S)^2 exactly, so the leaf test is exact for free.
+
+    mode='samp' (blindness demo): context-blind estimate from independent partners -- recovers
+    nothing beyond low order, illustrating why context (suffix) conditioning is essential.
     """
     device = device or get_device()
     m = len(idx_np)
+    M_norm = m if norm_m is None else int(norm_m)                   # #rows for Parseval (orig m if collapsed)
     thresh = tau * tau / 4.0
     rng = np.random.default_rng(seed)
     idx_np = idx_np.astype(np.int64)
@@ -123,6 +134,7 @@ def qary_gl_search(idx_np, f_np, w, V, Psi, tau, n_exp=20000, device=None,
     Psi_dev = torch.tensor(Psi, dtype=torch.float32, device=device)
     xdig_all = torch.tensor((idx_np[None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
     f_all = torch.tensor(f_np, dtype=torch.float32, device=device)
+    log_thresh = math.log(thresh) + 2.0 * math.log(M_norm)          # W >= thresh  <=>  log Q >= this - (w-kk)logV
 
     live = np.array([0], dtype=np.int64)                            # empty character (constant)
     widths, experiments = [], 0
@@ -130,29 +142,35 @@ def qary_gl_search(idx_np, f_np, w, V, Psi, tau, n_exp=20000, device=None,
         kk = k + 1
         children = np.unique((live[:, None] + (np.arange(V) * (V ** k))[None, :]).ravel())
         codes_dev = torch.tensor(children, dtype=torch.int64, device=device)
-        if exact_leaf and kk == w:                                  # last level: exact single coeff
-            coef = _qary_exact_coeffs(codes_dev, xdig_all, f_all, Psi_dev, V, w).cpu().numpy()
-            psi = coef * coef
+        if mode == "csamp":
+            # exact Parseval bucket weight via a group-by on the suffix z = idx // V^kk
+            z = idx_np // (V ** kk)
+            _, inv = np.unique(z, return_inverse=True)
+            ng = int(inv.max()) + 1
+            gid = torch.tensor(inv, dtype=torch.int64, device=device)
+            Q = _qary_bucket_Q(codes_dev, xdig_all, f_all, gid, ng, Psi_dev, V, kk)
+            # keep iff W = (V^{w-kk}/m^2) Q >= thresh; compare in log-space (V^{w-kk} overflows).
+            log_lhs = log_thresh - (w - kk) * math.log(V)           # -> -inf at deep no-repeat levels
+            with np.errstate(divide="ignore"):
+                keep = np.log(Q) >= log_lhs
+            live = children[keep]
         else:
+            # context-blind baseline (samples only): independent partner -> blind Psi estimate
             rr = rng.integers(0, m, size=n_exp)
-            if mode == "csamp":
-                rp, valid = sample_partners(idx_np // (V ** kk), rr, rng)
-                rr, rp = rr[valid], rp[valid]                       # drop self-pair-only (singleton-suffix) draws
-            else:
-                rp = rng.integers(0, m, size=n_exp)
-            experiments += len(rr)
-            if len(rr) == 0:                                        # no distinct partners -> nothing estimable
-                widths.append(0); live = np.empty(0, np.int64); break
+            rp = rng.integers(0, m, size=n_exp)
+            experiments += n_exp
             xdig_rr = torch.tensor((idx_np[rr][None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
             xdig_rp = torch.tensor((idx_np[rp][None, :] // Vp[:, None]) % V, dtype=torch.int64, device=device)
             f_rr = torch.tensor(f_np[rr], dtype=torch.float32, device=device)
             f_rp = torch.tensor(f_np[rp], dtype=torch.float32, device=device)
             psi = _qary_psi_batch(codes_dev, xdig_rr, xdig_rp, f_rr, f_rp, Psi_dev, V, w).cpu().numpy()
-        live = children[psi >= thresh]
+            live = children[psi >= thresh]
         widths.append(int(len(live)))
         if len(live) > max_width:
             return dict(status="blowup", level=kk, width=int(len(live)),
                         widths=widths, experiments=experiments, L=None)
+        if len(live) == 0:
+            break
     return dict(status="ok", L=sorted(int(s) for s in live), widths=widths, experiments=experiments)
 
 
