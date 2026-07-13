@@ -25,18 +25,22 @@ high-support moments.  Constant-output and continuation-residual controls, super
 held-out document evaluation therefore separate the theorem from the empirical compression claim.
 
 The cyclic token-id geometry remains a modeling choice, not a linguistic fact.
-The experiment therefore included an exactly parameter-matched centered one-hot simplex control.  Fourier
-won this test comparison, $18.22%$ to $16.38%$ top-one agreement, but fixed random vocabulary permutations
-remain necessary before attributing that gap to meaningful token-id geometry.
+The first experiment included an exactly parameter-matched *additive* centered one-hot landmark ablation,
+which Fourier beat $18.22%$ to $16.38%$ on top-one agreement.  The corrected support-matched tensor-simplex
+control reached $18.70%$: slightly higher top-one but worse KL ($3.5546$ versus $3.4659$).  Thus the completed
+controls provide no top-one advantage for the cyclic labeling, and fixed random vocabulary permutations
+remain necessary before making a stronger geometry claim.
 
-Most importantly, the predeclared $90%$ target was not met: the best $27.10 times$ smaller student reached
-only $18.22%$ top-token agreement.  The result supports a modest predictive benefit from the recovered
-features over the matched $16.86%$ no-feature control, while empirically demonstrating that Dataset GL's
-heavy-correlation guarantee alone is far from a high-agreement compression theorem.
+Most importantly, the predeclared $90%$ target was not met: the primary Fourier student reached $18.22%$
+and the best parameter-matched student, tensor simplex, reached only $18.70%$ top-token agreement at a
+$27.10 times$ full-checkpoint parameter ratio.  Fourier still improves KL and top-one over the matched
+$16.86%$ no-feature control, while the experiment demonstrates that Dataset GL's heavy-correlation
+guarantee alone is far from a high-agreement compression theorem.
 
-Immediate next steps are to extend the measured three-level live-width profile toward lens $128$, run the
-fixed token-id permutations, and test variance-sensitive simultaneous bounds before spending samples on a
-frontier that Hoeffding leaves unresolved.
+Immediate next steps are to extend the measured three-depth profile toward all $128$ generated coordinates,
+run the fixed token-id permutations, and test
+variance-sensitive simultaneous bounds before spending samples on a frontier that Hoeffding leaves
+unresolved.
 
 #h1([Acknowledgments])
 

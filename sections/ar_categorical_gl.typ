@@ -112,7 +112,7 @@ $
 #lemma[Permutation-symmetric simplex][
   For every $u,v in ZZ_q$,
   $
-  angle.l s(u),s(v) angle.r
+  chevron.l s(u),s(v) chevron.r
   = cases(
     1 &"if" u=v,
     -1/(q-1) &"if" u != v,
@@ -125,14 +125,14 @@ $
 ]<lem:simplex-control>
 #proof[
   The centered coordinate vectors satisfy
-  $angle.l e_u-bold(1)/q,e_v-bold(1)/q angle.r = ind[u=v]-1/q$.
+  $chevron.l e_u-bold(1)/q,e_v-bold(1)/q chevron.r = ind[u=v]-1/q$.
   Multiplication by $q/(q-1)$ gives the displayed Gram matrix, and summing the centered vectors gives zero.
 ]
 
 For a position set $S$, their tensor kernel is
 $
 K_S(x,x')
-= product_(j in S) angle.l s(x_j),s(x'_j) angle.r,
+= product_(j in S) chevron.l s(x_j),s(x'_j) chevron.r,
 $
 which depends only on the equality pattern of the tokens on $S$, not on their numerical ids.
 
@@ -164,10 +164,10 @@ encoding artifact, not evidence of a linguistic interaction.
   sum_("supp"(alpha)=S)
     norm(EE[F(X) overline(chi_alpha(X))])_2^2
   = (q-1)^|S| EE_(X,X' "i.i.d.")
-    [angle.l F(X),F(X') angle.r K_S(X,X')].
+    [chevron.l F(X),F(X') chevron.r K_S(X,X')].
   $
-  Thus complete support-level energy is invariant under every permutation of the category labels, although
-  sparse selection of individual cyclic characters is not.
+  Thus complete support-level energy is invariant under a simultaneous relabeling of the categories and
+  pushforward of the data law, although sparse selection of individual cyclic characters is not.
 ]<lem:character-simplex-support>
 #proof[
   In one coordinate,
@@ -411,7 +411,7 @@ $N_k <= 4 R_k / tau^2$.
   + $|hat(f)_calD(alpha)| >= tau ==> alpha in L$;
   + $alpha in L ==> |hat(f)_calD(alpha)| >= tau/2$.
 
-  It performs at most
+  On the same probability-$1-delta$ event, it performs at most
   $
   O(n N dot log(n q N / delta) / tau^4)
   $
@@ -483,7 +483,8 @@ Large $q$ increases the branching factor but does not create hidden Boolean vari
   $
   Then the same search lists every $alpha$ with
   $norm(hat(F)_calD(alpha))_2 >= tau$, with soundness threshold $tau/2$ and the same asymptotic
-  complexity.
+  conditional-sampling experiment count.  Forming each paired target inner product adds $O(q)$ arithmetic
+  here (or $O(m)$ for an $m$-dimensional output), unless that operation is charged to the label oracle.
 ]<cor:ar-qary-vector>
 #proof[
   Apply the scalar identities coordinatewise and sum them.
@@ -537,7 +538,8 @@ $
   = q^k EE_(Z,L_k)[sum_y p_(Z,L_k)(y)^2 norm(F(Z,L_k,y))_2^2].
   $
   Therefore the reverse-time search recovers every $alpha$ with $sqrt(calE(alpha)) >= tau$, with the
-  same soundness threshold and live-width-dependent complexity as @thm:ar-qary-gl.
+  same soundness threshold and live-width-dependent conditional-sample complexity as @thm:ar-qary-gl,
+  plus the vector inner-product arithmetic stated in @cor:ar-qary-vector.
 ]<thm:random-context-vector-gl>
 #proof[
   For each fixed $z$, apply the Hilbert-space versions of conditional Jensen and Parseval used in
@@ -551,7 +553,7 @@ For the paired estimator, both draws must share the same real $Z$ and generated 
 inner product linear in its first argument,
 $
 Psi_k^F(a)
-= EE[angle.l F(Z,L_k,Y),F(Z,L_k,Y') angle.r
+= EE[chevron.l F(Z,L_k,Y),F(Z,L_k,Y') chevron.r
   overline(chi_a(Y)) chi_a(Y')].
 $
 Using independent real contexts instead estimates a different, cancellation-prone pooled quantity.
@@ -581,8 +583,9 @@ alone guarantees top-token agreement without a teacher-margin condition.
 === What is and is not proved for the implementation
 
 + *Proved:* full rollouts sampled with the KV loop are draws from the declared conditional law; resampling a suffix
-  from the cached left prefix is exact $sans("CSAMP")$; the reverse-time $q$-ary search recovers every heavy
-  categorical coefficient subject to the stated live-width complexity.
+  from the shared left prefix is exact $sans("CSAMP")$, whether its deterministic activations are recomputed or an
+  implementation-safe cache object is cloned; the reverse-time $q$-ary search recovers every heavy categorical
+  coefficient subject to the stated live-width complexity.
 + *Proved:* the raw next-token probability vector may be used as the label even if generation uses a
   temperature or restricted sampling kernel, because it is simply a bounded function on the sampled
   continuation.

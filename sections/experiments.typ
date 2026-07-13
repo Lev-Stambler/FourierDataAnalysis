@@ -44,26 +44,27 @@ F_"res"(Z,X)
 $
 and a constant unit-vector target measures correlations caused only by the rollout density.
 At a GL level, the cache shared by a pair contains the real $Z$ followed by the generated left prefix
-$L_k$; it is forked before drawing either child token.
+$L_k$.  The executed code repeats that identical token context and recomputes its deterministic activations
+for the two draws; this is distributionally equivalent to an implementation-safe KV-cache fork, but is not
+literal cache-object cloning.
 
 == Search and feasibility gate
 
 Each parent uses probability-weighted, Hermitian-symmetrized difference bins followed by
 $248077 dot "ifft"$.  The implementation is native PyTorch: it constructs Hermitian histograms with
 `scatter_add_`, evaluates parent blocks with batched `torch.fft.ifft`, and keeps only a block's top
-children rather than materializing the full parent-by-alphabet frontier.  Screening and confirmation use
-fresh independent outer contexts.  We test bucket
-energies $0.10,0.05,0.02$, beginning with $256$ context pairs and doubling to at most $4096$.
-The theorem-backed frontier retains both confidently heavy and statistically unresolved children.
-It descends only while its width is at most $64$.  Exceeding that cap is reported as
-`spectral_blowup` or `statistically_unresolved`; a separate top-$64$ beam may continue only as a labeled
-heuristic feature search.  The empirical bank retains the top $1024$ candidates separately at each of
-degrees one, two, and three, hence at most $3072$ characters before constant and conjugate deduplication.
+children rather than materializing the full parent-by-alphabet frontier.  Each depth resamples new
+continuations from the same fixed outer contexts; the executed run has no separate confirmation set.
+The $0.10$ bucket-energy diagnostic uses $4096$ context pairs and reports a simultaneous interval over the
+$248077$ children of each parent.  The executable path is a capped top-$1024$ beam and is never labeled as
+the theorem-backed heavy-plus-unresolved frontier.  It retains candidates separately at suffix depths one,
+two, and three, hence at most $3072$ characters before constant and conjugate deduplication.  These depths
+permit categorical degrees at most three and do not constitute a degree-$128$ search.
 
-Before a full search we measure levels one through three for raw, residual, and constant targets, benchmark
-the prime-length GPU inverse FFT, and project the cost of all remaining suffix tokens and transforms.
-Two fixed random token-id permutations and the exact simplex support kernel from
-@lem:character-simplex-support measure sensitivity to the cyclic id geometry.
+At level one we measure raw, residual, and constant targets and benchmark the prime-length GPU inverse FFT;
+deeper heuristic levels use the residual target.  Fixed random token-id permutations and the complete exact
+simplex support-kernel stability check were predeclared but not executed, and no robustness claim based on
+those controls is made below.
 
 == Student, baselines, and loss
 
@@ -77,36 +78,49 @@ static-shape `torch.compile` graph in `max-autotune-no-cudagraphs` mode.  The la
 autotuning while avoiding CUDA-graph capture, which is incompatible with the flash-attention path on the
 tested PyTorch 2.13/A10 stack.
 
-We compare a parameter-matched model without Fourier features, a low-degree-only adapter, raw versus
-residual feature searches, and a Nyström simplex predictive control.  For every retained complex character,
-the simplex model receives two real landmark coordinates
+The completed fit compares a parameter-matched model without Fourier features, an additive simplex
+landmark ablation, and a support-matched tensor-simplex Nyström control.  For every retained complex
+character, the additive ablation receives two real one-position
+coordinates
 $phi_(j,a)(x)=(q 1{x_j=a}-1)/sqrt(q(q-1))$, chosen from frequent tokens evenly across the searched support.
 Thus the Fourier and simplex projections have exactly the same width; the no-feature control spends those
 same parameters on a terminal-state adapter.  The finite landmark set is explicitly an approximation.  If
 all $q$ landmarks at one position were retained, their inner product would be exactly
 $(q 1{x_j=x'_j}-1)/(q-1)$, which is invariant under every permutation of token ids.
+Because these features are additive across positions, this first run is not the support-matched tensor
+simplex control of @lem:character-simplex-support and cannot by itself isolate cyclic geometry from
+interaction-order capacity.
 
-The student minimizes the full-tokenizer teacher-to-student KL.  Cached BF16 teacher logits use float32
-normalizers during training, while the final teacher distributions are recomputed in float32.  KL is the
-supervised loss, not a Fourier target or theorem consequence.
+The tensor control instead attaches two categorical landmark tuples $a_S$ to every recovered support $S$
+and evaluates exact kernel columns
+$K_S(x,a_S)=product_(j in S)(q 1{x_j=a_j}-1)/(q-1)$.
+It therefore matches the Fourier support multiset and projection width while replacing cyclic phases with
+permutation-symmetric equality contrasts.  Its $2874$ columns are still a finite Nyström approximation, not
+the exponentially large complete frame.
+
+The student minimizes the full-tokenizer teacher-to-student KL.  Cached BF16 teacher logits are converted to
+float32 and normalized there during training and evaluation; there is no fresh float32 teacher forward.  KL
+is the supervised loss, not a Fourier target or theorem consequence.
 
 == Budget and predeclared evaluation
 
 Modal spending is capped at $25$: $23$ for aggregate GPU seconds and $2$ reserved for CPU, memory, and
 storage.  The allocations are $1$ for compatibility, $4$ for the spectral gate, at most $6$ for the
 remaining search, $6$ for labels, and $6$ for fitting and evaluation.  Every stage reads a persistent cost
-ledger, reuses revision-matched shards, projects its cost from measured throughput, and refuses a launch
-that would exceed the cap.
+ledger, reuses shape-validated shards, projects its cost from measured throughput, and refuses a launch
+that would exceed the cap.  The executed artifacts did not pin or record the exact Hugging Face revision,
+so shape validation is not a revision-integrity guarantee.
 
-The target split sizes are $2000$ search, $20000$ distillation, $2000$ validation, and $5000$ test contexts.
+The executed split sizes are $4096$ search, $20000$ distillation, $2000$ validation, and $5000$ test contexts.
 If the label allocation cannot support $20000$ training examples, the pipeline uses the largest multiple of
 $256$ that fits, with a minimum of $4096$, and records the reduction.
 
 The primary metric is strict agreement between teacher and student argmax over all $248077$ tokenizer ids
 after the generated token $128$.  Success is a point estimate of at least $90%$ on unseen FineWeb documents;
-we also report a $95%$ Wilson interval, full-tokenizer KL, top-five agreement, the teacher top-two margin,
-agreement stratified by margin, parameter and byte compression, latency, memory, live widths, density
-controls, categorical degrees, supports, token-id permutations, and simplex support stability.
+the completed artifact reports a $95%$ Wilson interval, full-tokenizer KL, top-five agreement, the mean
+teacher top-two margin, parameter compression, the measured three-depth widths, density diagnostics, and
+categorical degrees.  Margin strata, latency, peak memory, token-id permutations, and exact simplex-support
+stability remain unreported rather than being silently treated as successful controls.
 
 == Results
 
@@ -120,24 +134,35 @@ $4096$-pair search retained $3072$ heuristic candidates and $1437$ distinct nonc
 conjugate deduplication: $689$ of degree one, $566$ of degree two, and $182$ of degree three.
 
 At level one the residual maximum was $0.19121$ and the simultaneous Hoeffding radius over all $248077$
-children was $0.09302$.  Hence the lower confidence endpoint, $0.09819$, narrowly misses the strict $0.10$
-energy gate but clears the predeclared $0.05$ gate.  This certifies the top first-order bucket at the latter
-threshold; it does *not* certify the complete adaptive frontier.  In particular, the degree-two and
-degree-three bank remains a labeled heuristic.  The constant control reached essentially $1$, confirming
-that rollout-density correlations are substantial, while residualization removes the prefix-only output
-component rather than the rollout density itself.
+children was $0.09302$.  Its $0.09819$ lower endpoint misses the $0.10$ energy gate and clears $0.05$, but
+the maximizing child is the zero-frequency/DC bucket $Psi_1(0)$, which the student later drops.  It is *not*
+a certificate for a nonconstant first-order feature.  All residual children were unresolved at $0.10$, and
+the saved summary does not identify a certified nonconstant child at $0.05$.  Every reported best value at
+depths one through three is likewise on the all-zero path and is excluded before fitting; the remaining
+degree-one through degree-three bank is entirely heuristic.  For the constant target the DC value $1$ is
+tautological, but $239496$ non-DC children also had lower endpoints at least $0.10$, directly demonstrating
+a broad rollout-density spectrum.  These 99% simultaneous intervals cover conditional-rollout randomness
+for the fixed $4096$ search contexts, not population FineWeb sampling by themselves.
+Consequently the actual theorem frontier at energy $0.10$ has all $248077$ children in its
+heavy-plus-unresolved set, exceeds the width-$64$ cap at level one, and terminates as `spectral_blowup`.
+Only the separately labeled heuristic beam descends to depths two and three.
 
 Table @tab:qwen-final reports the untouched test split.  Fourier attained $18.22%$ strict top-token
 agreement with Wilson $95%$ interval $[17.17%,19.31%]$, top-five agreement $39.14%$, and full-tokenizer KL
 $3.4659$.  Against the exactly parameter-matched no-feature adapter, this is a $1.36$ percentage-point
-top-one gain and a $0.0897$ KL reduction.  The centered-simplex control reached $16.38%$ and KL $3.5445$;
-therefore the cyclic characters helped in this run, but the comparison does not establish that tokenizer-id
-geometry is intrinsically meaningful.  The intervals overlap and no unregistered significance claim is
-made.
+top-one gain and a $0.0897$ KL reduction.  The additive simplex control reached $16.38%$ and KL $3.5445$;
+this is the additive landmark ablation above, not a tensor-support basis match.  The cyclic features helped
+relative to the additive and no-feature controls.  The subsequently run support-matched tensor-simplex
+control reached $18.70%$ top-one agreement (Wilson $95%$ interval $[17.64%,19.80%]$), top-five $37.84%$,
+and KL $3.5546$.  It slightly exceeds Fourier on top-one while Fourier is better by $0.0887$ KL and $1.30$
+top-five percentage points.  The intervals overlap; in particular, this control removes the apparent
+top-one advantage for cyclic token-id geometry, and no unregistered significance claim is made.
 
-Each student has $31472320$ parameters versus the teacher's measured $852985920$, a $27.10 times$
-same-precision parameter reduction.  The twelve-layer escalation did not beat the eight-layer Fourier
+Each student has $31472320$ parameters versus all $852985920$ parameters loaded from the multimodal teacher
+checkpoint, a $27.10 times$ same-precision full-checkpoint parameter reduction.  This denominator includes
+the vision tower unused by the text-only task and is not an active-text-parameter ratio.  The twelve-layer escalation did not beat the eight-layer Fourier
 checkpoint on validation KL.  The primary $90%$ target is therefore decisively *not met*; Dataset GL's
 correlation-recovery theorem is not a compression or argmax-agreement theorem.  Reconciled A10 time,
-including conservative full-duration charges for interrupted jobs, cost at most $4.59$, well below the
-$23$ GPU and $25$ overall caps.
+including conservative full-duration charges for interrupted jobs and the tensor-control rerun, cost at
+most $4.81$, well below the $23$ GPU cap.  CPU, storage, and memory charges were not independently
+reconciled in the committed artifacts, so the $25$ overall cap is not claimed as an audited total.

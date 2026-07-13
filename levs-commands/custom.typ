@@ -1,6 +1,6 @@
 /////////////////////////// General Commands ///////////////////////////
 #let FF = math.bb("F")
-#let otimes = $times.circle$
+#let otimes = $times.o$
 #let circ = $" " circle.small" "$
 /////////////////////////// End General Commands ///////////////////////////
 
@@ -14,5 +14,4 @@
 #let OracPerp = $Orac^bot$ // Oracle
 #let Orac2Perp = $Orac2^bot$ // Oracle
 /////////////////////////// End Custom Commands ///////////////////////////
-
 

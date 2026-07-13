@@ -140,10 +140,10 @@
 
 ///////////////// Symbols from Latex That I like //////////////////
 #let circ = $" " circle.small" "$
-#let otimes = $times.circle$
-#let bigotimes = $times.circle.big$
-#let oplus = $plus.circle$
-#let bigoplus = $plus.circle.big$
+#let otimes = $times.o$
+#let bigotimes = $times.o.big$
+#let oplus = $plus.o$
+#let bigoplus = $plus.o.big$
 #let subseteq = $subset.eq$
 
 ///////////////// Math Symbols //////////////////

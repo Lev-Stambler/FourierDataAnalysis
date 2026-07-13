@@ -157,9 +157,13 @@ def spectral(prefix_path: str, pairs: int = 256, levels: int = 3, beam: int = 10
     prefixes = np.load(prefix_path)["search"][:pairs]
     report = run_spectral_gate(model, prefixes, q, levels=levels, pairs=pairs, beam=beam)
     report["prefix_path"] = prefix_path
-    report["theorem_status"] = "uncertified" if any(
-        p["unresolved"] for lv in report["levels"] for p in lv["parents"]
-    ) else "certified"
+    # This executable path is deliberately a capped top-beam feature search,
+    # not the full heavy-plus-unresolved theorem frontier with adaptive failure
+    # allocation.  It must never emit a theorem-level positive certificate.
+    report["theorem_status"] = "uncertified"
+    report["theorem_status_reason"] = (
+        "capped heuristic beam; per-parent intervals are diagnostics, not an adaptive frontier certificate"
+    )
     _write_json(out, report)
     _record_gpu("spectral", started, {"pairs": pairs, "levels": levels})
     print(json.dumps({k: report[k] for k in ("q", "pairs", "theorem_status", "targets_level1")}, indent=2), flush=True)
@@ -245,6 +249,43 @@ def fit(train_path: str, val_path: str, test_path: str, spectral_path: str):
     return result
 
 
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
+def fit_tensor_simplex(train_path: str, val_path: str, test_path: str, spectral_path: str):
+    """Fit the support-matched tensor-simplex control without rerunning labels."""
+    import json, time, os, numpy as np, torch
+    from fda_exp.qwen_argl import (evaluate_student, load_frequency_file,
+                                   select_tensor_simplex_landmarks, train_student)
+
+    vol.reload(); _check_budget("fit-tensor-simplex", 2.0); started = time.time()
+    freq = load_frequency_file(spectral_path)
+    factor_path = f"{ROOT}/teacher_vocab_rank64.pt"
+    if not os.path.exists(factor_path):
+        raise RuntimeError("teacher vocabulary factor is missing; run the main fit first")
+    initial_vocab = torch.load(factor_path, map_location="cpu", weights_only=True)
+    feature_width = 2 * len(freq)
+    landmarks = select_tensor_simplex_landmarks(
+        train_path, freq, 248077, feature_width
+    )
+    checkpoint = f"{ROOT}/student_tensor_simplex.pt"
+    fit_result = train_student(
+        train_path, val_path, np.zeros((0, 128), dtype=np.int64), checkpoint,
+        initial_vocab=initial_vocab, feature_kind="tensor_simplex", landmarks=landmarks,
+    )
+    result = {
+        "fit": fit_result,
+        "test": evaluate_student(checkpoint, test_path),
+        "spectral_path": spectral_path,
+        "landmarks": int(len(landmarks)),
+        "support_matched": True,
+        "tokenizer_q": 248077,
+    }
+    _write_json(f"{ROOT}/tensor_simplex_summary.json", result)
+    _record_gpu("fit-tensor-simplex", started, {"landmarks": int(len(landmarks))})
+    vol.commit()
+    print(json.dumps(result, indent=2), flush=True)
+    return result
+
+
 @app.local_entrypoint()
 def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
          val_n: int = 512, test_n: int = 1000, pairs: int = 256, levels: int = 3,
@@ -267,3 +308,8 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
         val_path = f"{ROOT}/val_n{val_n}.pt"
         test_path = f"{ROOT}/test_n{test_n}.pt"
         fit.remote(train_path, val_path, test_path, spectral_path)
+    if stage == "tensor-simplex":
+        train_path = f"{ROOT}/train_n{train_n}.pt"
+        val_path = f"{ROOT}/val_n{val_n}.pt"
+        test_path = f"{ROOT}/test_n{test_n}.pt"
+        fit_tensor_simplex.remote(train_path, val_path, test_path, spectral_path)

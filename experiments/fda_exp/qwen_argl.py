@@ -209,7 +209,7 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
     live = np.zeros((1, 0), dtype=np.int32)
     banks = []
     report = {"q": q, "levels": [], "targets_level1": {}, "beam": beam,
-              "parent_block": parent_block, "pairs": len(prefixes)}
+              "parent_block": parent_block, "pairs": len(prefixes), "frontier_cap": 64}
     radius = hoeffding_radius(len(prefixes), q)
     for k in range(levels):
         pair = collect_level_pairs(model, prefixes, k, q, seed=seed + 1009 * k)
@@ -239,15 +239,28 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
                 unresolved = ((scores - radius < 0.10) &
                               (scores + radius >= 0.10)).sum(1).cpu().numpy()
                 topv_cpu = topv.cpu().numpy()
+                topids_cpu = topids.cpu().numpy()
                 for bi, parent in enumerate(live[lo:lo + parent_block]):
                     summary = dict(parent=parent.tolist(), target=target,
                                    max=float(topv_cpu[bi, 0]),
+                                   argmax_child=int(topids_cpu[bi, 0]),
                                    min_top=float(topv_cpu[bi, -1]), radius=float(radius),
                                    certified_heavy=int(heavy[bi]),
                                    unresolved=int(unresolved[bi]))
                     parent_summaries.append(summary)
                     if k == 0:
                         report["targets_level1"][target] = summary
+                        if target == "residual":
+                            theorem_width = int(heavy[bi] + unresolved[bi])
+                            report["theorem_frontier"] = {
+                                "status": ("spectral_blowup" if theorem_width > report["frontier_cap"]
+                                           else "not_implemented_beyond_gate"),
+                                "level": 1,
+                                "threshold_energy": 0.10,
+                                "heavy_plus_unresolved_width": theorem_width,
+                                "cap": report["frontier_cap"],
+                                "note": "the heuristic beam below is separate from this feasibility gate",
+                            }
                 if target == "residual":
                     # The global top beam can contain at most `beam` children
                     # from a parent, so merging per-parent top beams is exact.
@@ -263,7 +276,17 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
                     all_candidates.extend((float(v), a) for v, a in
                                           zip(vals.cpu().numpy(), alphas))
                 del scores, topv, topids, phase
-        all_candidates.sort(key=lambda t: t[0], reverse=True)
+        # For real/vector-probability targets, a and -a have identical bucket
+        # energy and one cosine/sine pair spans both characters.  Canonicalize
+        # before truncation so conjugates do not consume half the GPU beam.
+        unique = {}
+        for score, alpha in all_candidates:
+            pos = tuple(int(x) for x in (np.asarray(alpha, dtype=np.int64) % q))
+            neg = tuple(int(x) for x in ((-np.asarray(alpha, dtype=np.int64)) % q))
+            key = min(pos, neg)
+            if key not in unique or score > unique[key][0]:
+                unique[key] = (score, np.asarray(key, dtype=np.int32))
+        all_candidates = sorted(unique.values(), key=lambda t: t[0], reverse=True)
         kept = all_candidates[:beam]
         live = np.stack([a for _, a in kept]) if kept else np.zeros((0, k + 1), np.int32)
         full = np.zeros((len(live), ROLLOUT_LEN), dtype=np.int32)
@@ -342,7 +365,7 @@ def load_frequency_file(path):
     for row in np.asarray(data.get("frequencies", []), dtype=np.int64):
         if not np.any(row):
             continue  # the student already has biases and a terminal representation
-        pos = tuple(int(x) for x in row)
+        pos = tuple(int(x) for x in (row % q))
         neg = tuple(int(x) for x in ((-row) % q))
         key = min(pos, neg)
         if key not in seen:
@@ -361,7 +384,7 @@ def _fourier_features(tokens, frequencies, q):
 
 
 def _simplex_features(tokens, landmarks, q):
-    """Centered normalized one-hot coordinates for Nyström landmarks.
+    """Additive centered one-hot coordinates for legacy one-position landmarks.
 
     Summing over all q landmarks at one position gives exactly
     ``(q * 1[x=x'] - 1) / (q - 1)``.  We retain a data-chosen subset.
@@ -374,8 +397,54 @@ def _simplex_features(tokens, landmarks, q):
     return (q * equal.float() - 1.0) / math.sqrt(q * (q - 1.0))
 
 
+def _tensor_simplex_features(tokens, landmarks, q):
+    """Nyström columns of the exact centered-simplex tensor support kernel.
+
+    Each landmark is a length-N row with ``-1`` outside its support and a
+    tokenizer id on its support.  The resulting feature is
+
+        prod_{j in S} (q 1[x_j=a_j] - 1) / (q - 1) = K_S(x, a).
+
+    It is categorical and support-matched; no bit representation is used.
+    """
+    import torch
+
+    if landmarks.numel() == 0:
+        return tokens.new_zeros((len(tokens), 0), dtype=torch.float32)
+    if landmarks.ndim != 2 or landmarks.shape[1] != tokens.shape[1]:
+        raise ValueError("tensor-simplex landmarks must have shape (width, token_positions)")
+    active = landmarks >= 0
+    if not torch.all(active.any(dim=1)):
+        raise ValueError("every tensor-simplex landmark needs a nonempty support")
+    degree = active.sum(1)
+    max_degree = int(degree.max().item())
+    positions = torch.zeros((len(landmarks), max_degree), dtype=torch.long, device=landmarks.device)
+    values = torch.zeros_like(positions)
+    mask = torch.arange(max_degree, device=landmarks.device)[None] < degree[:, None]
+    for row in range(len(landmarks)):
+        pos = torch.nonzero(active[row], as_tuple=False).flatten()
+        positions[row, :len(pos)] = pos
+        values[row, :len(pos)] = landmarks[row, pos]
+    return _packed_tensor_simplex_features(tokens, positions, values, mask, q)
+
+
+def _packed_tensor_simplex_features(tokens, positions, values, mask, q):
+    """GPU-friendly sparse evaluation of tensor-simplex kernel columns."""
+    import torch
+
+    if positions.numel() == 0:
+        return tokens.new_zeros((len(tokens), 0), dtype=torch.float32)
+    equal = tokens[:, positions] == values[None]
+    factors = torch.where(
+        mask[None],
+        (q * equal.float() - 1.0) / (q - 1.0),
+        torch.ones((), dtype=torch.float32, device=tokens.device),
+    )
+    return factors.prod(dim=-1)
+
+
 def select_simplex_landmarks(train_path, frequencies, q, width=None):
-    """Choose frequent token landmarks evenly over the searched support."""
+    """Choose additive one-position landmarks for the legacy ablation."""
     import torch
 
     frequencies = np.asarray(frequencies, dtype=np.int64).reshape(-1, ROLLOUT_LEN)
@@ -385,7 +454,7 @@ def select_simplex_landmarks(train_path, frequencies, q, width=None):
     support = np.flatnonzero(np.any(frequencies != 0, axis=0))
     if not len(support):
         raise ValueError("simplex landmarks need a nonempty searched support")
-    data = torch.load(train_path, map_location="cpu", weights_only=True)
+    data = torch.load(train_path, map_location="cpu", weights_only=True, mmap=True)
     rollout = data["contexts"][:, -ROLLOUT_LEN:].long()
     ranked = []
     for pos in support:
@@ -398,6 +467,54 @@ def select_simplex_landmarks(train_path, frequencies, q, width=None):
         token_i = rank // len(support)
         rows.append((int(support[pos_i]), int(ranked[pos_i][token_i])))
     return np.asarray(rows, dtype=np.int64)
+
+
+def select_tensor_simplex_landmarks(train_path, frequencies, q, width=None):
+    """Choose a parameter-matched tensor landmark bank on recovered supports.
+
+    The default contributes two real kernel columns for every retained complex
+    Fourier character.  Repeated supports receive different marginal-frequency
+    ranks so they do not collapse to duplicate columns.
+    """
+    import collections
+    import torch
+
+    frequencies = np.asarray(frequencies, dtype=np.int64).reshape(-1, ROLLOUT_LEN)
+    width = int(2 * len(frequencies) if width is None else width)
+    if width == 0:
+        return np.zeros((0, ROLLOUT_LEN), dtype=np.int64)
+    if not len(frequencies):
+        raise ValueError("tensor-simplex landmarks need recovered frequencies")
+    if width > 2 * len(frequencies):
+        raise ValueError("at most two tensor landmarks per Fourier character are supported")
+
+    specs = []
+    next_rank = collections.defaultdict(int)
+    for row in frequencies:
+        support = tuple(int(j) for j in np.flatnonzero(row))
+        if not support:
+            raise ValueError("tensor-simplex landmarks require nonconstant supports")
+        for _ in range(2):
+            specs.append((support, next_rank[support]))
+            next_rank[support] += 1
+    specs = specs[:width]
+
+    needed = collections.defaultdict(int)
+    for support, rank in specs:
+        for pos in support:
+            needed[pos] = max(needed[pos], rank + 1)
+    data = torch.load(train_path, map_location="cpu", weights_only=True, mmap=True)
+    rollout = data["contexts"][:, -ROLLOUT_LEN:].long()
+    ranked = {}
+    for pos, count_needed in needed.items():
+        counts = torch.bincount(rollout[:, pos], minlength=q)
+        ranked[pos] = torch.topk(counts, min(count_needed, q), sorted=True).indices.cpu().numpy()
+
+    landmarks = np.full((len(specs), ROLLOUT_LEN), -1, dtype=np.int64)
+    for i, (support, rank) in enumerate(specs):
+        for pos in support:
+            landmarks[i, pos] = int(ranked[pos][rank])
+    return landmarks
 
 
 def teacher_vocab_factor(model, q, rank=64):
@@ -439,6 +556,24 @@ def build_student(q, frequencies, layers=8, d_model=384, rank=64, heads=6, ff=15
                                     dtype=torch.long)
             self.register_buffer("landmarks", marks, persistent=True)
             self.feature_kind = feature_kind
+            if feature_kind == "tensor_simplex" and len(marks):
+                active = marks >= 0
+                degree = active.sum(1)
+                max_degree = int(degree.max().item())
+                positions = torch.zeros((len(marks), max_degree), dtype=torch.long)
+                values = torch.zeros_like(positions)
+                mask = torch.arange(max_degree)[None] < degree[:, None]
+                for row in range(len(marks)):
+                    pos = torch.nonzero(active[row], as_tuple=False).flatten()
+                    positions[row, :len(pos)] = pos
+                    values[row, :len(pos)] = marks[row, pos]
+            else:
+                positions = torch.zeros((0, 0), dtype=torch.long)
+                values = torch.zeros((0, 0), dtype=torch.long)
+                mask = torch.zeros((0, 0), dtype=torch.bool)
+            self.register_buffer("tensor_positions", positions, persistent=False)
+            self.register_buffer("tensor_values", values, persistent=False)
+            self.register_buffer("tensor_mask", mask, persistent=False)
             feature_width = 2 * len(freq) if feature_kind == "fourier" else len(marks)
             self.feature_proj = (torch.nn.Linear(feature_width, d_model, bias=False)
                                  if feature_width else None)
@@ -461,6 +596,10 @@ def build_student(q, frequencies, layers=8, d_model=384, rank=64, heads=6, ff=15
                     phi = _fourier_features(tokens, self.frequencies, self.q)
                 elif self.feature_kind == "simplex":
                     phi = _simplex_features(tokens, self.landmarks, self.q)
+                elif self.feature_kind == "tensor_simplex":
+                    phi = _packed_tensor_simplex_features(
+                        tokens, self.tensor_positions, self.tensor_values, self.tensor_mask, self.q
+                    )
                 else:
                     raise ValueError(f"unknown feature kind {self.feature_kind}")
                 h = h + torch.sigmoid(self.gate(h)) * self.feature_proj(phi)
@@ -506,8 +645,11 @@ def train_student(train_path, val_path, frequencies, out_path, layers=8, epochs=
     va = torch.load(val_path, map_location="cpu", weights_only=True)
     q = int(tr["q"])
     frequencies = np.asarray(frequencies, dtype=np.int64).reshape(-1, ROLLOUT_LEN)
-    landmarks = np.asarray(np.zeros((0, 2), np.int64) if landmarks is None else landmarks,
-                           dtype=np.int64).reshape(-1, 2)
+    landmark_width = ROLLOUT_LEN if feature_kind == "tensor_simplex" else 2
+    landmarks = np.asarray(
+        np.zeros((0, landmark_width), np.int64) if landmarks is None else landmarks,
+        dtype=np.int64,
+    ).reshape(-1, landmark_width)
     degrees, degree_counts = np.unique((frequencies != 0).sum(1), return_counts=True)
     degree_histogram = ({str(int(d)): int(c) for d, c in zip(degrees, degree_counts)}
                         if feature_kind == "fourier" else {})

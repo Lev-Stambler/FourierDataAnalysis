@@ -9,6 +9,5 @@
 
 /////////// Packages that I like ///////////
 #import "@preview/lovelace:0.3.0": *
-#import "@preview/physica:0.9.4": *
+#import "@preview/physica:0.9.8": *
 #import "@preview/ouset:0.2.0": *
-

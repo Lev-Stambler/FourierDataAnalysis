@@ -199,6 +199,23 @@ def test_simplex_features_reproduce_exact_one_position_kernel():
     assert torch.allclose(got, want, atol=1e-6)
 
 
+def test_tensor_simplex_features_are_exact_support_kernel_columns():
+    import torch
+    from fda_exp.qwen_argl import _tensor_simplex_features
+
+    q = 7
+    tokens = torch.tensor([[2, 1, 5], [2, 4, 6], [0, 1, 5]])
+    landmarks = torch.tensor([[2, -1, 5], [-1, 1, -1]])
+    got = _tensor_simplex_features(tokens, landmarks, q)
+    mismatch = -1.0 / (q - 1)
+    want = torch.tensor([
+        [1.0, 1.0],
+        [mismatch, mismatch],
+        [mismatch, 1.0],
+    ])
+    assert torch.allclose(got, want, atol=1e-6)
+
+
 def test_fourier_simplex_and_no_feature_controls_are_parameter_matched():
     from fda_exp.qwen_argl import build_student
 
@@ -211,6 +228,24 @@ def test_fourier_simplex_and_no_feature_controls_are_parameter_matched():
     baseline = build_student(frequencies=np.zeros((0, 128), int), feature_kind="none",
                              matched_feature_width=4, **kw)
     counts = [sum(p.numel() for p in m.parameters()) for m in (fourier, simplex, baseline)]
+    assert counts[0] == counts[1] == counts[2]
+
+
+def test_fourier_tensor_simplex_and_no_feature_controls_are_parameter_matched():
+    from fda_exp.qwen_argl import build_student
+
+    q, terms = 11, 3
+    freq = np.zeros((terms, 128), dtype=np.int64)
+    freq[:, -1] = np.arange(1, terms + 1)
+    marks = np.full((2 * terms, 128), -1, dtype=np.int64)
+    marks[:, -1] = np.arange(2 * terms) % q
+    kw = dict(q=q, layers=1, d_model=12, rank=4, heads=3, ff=24)
+    fourier = build_student(frequencies=freq, feature_kind="fourier", **kw)
+    tensor = build_student(frequencies=np.zeros((0, 128), int), feature_kind="tensor_simplex",
+                           landmarks=marks, **kw)
+    baseline = build_student(frequencies=np.zeros((0, 128), int), feature_kind="none",
+                             matched_feature_width=2 * terms, **kw)
+    counts = [sum(p.numel() for p in m.parameters()) for m in (fourier, tensor, baseline)]
     assert counts[0] == counts[1] == counts[2]
 
 
