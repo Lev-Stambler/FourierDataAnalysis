@@ -275,7 +275,7 @@ Structured datasets (dense ones, or subcube-like ones as above) satisfy it natur
 
 == Notation Summary
 
-The recurring symbols (the last four families are introduced in the Goldreich-Levin section):
+The recurring symbols from the general dataset Fourier preliminaries:
 
 #table(
   columns: (auto, 1fr),
@@ -290,9 +290,5 @@ The recurring symbols (the last four families are introduced in the Goldreich-Le
   [$normC = |calT|^n \/ |calD|$], [density constant; the exact factor in the mass identity],
   [$calD compose f$], [the lift: $f$ on $calD$, $0$ elsewhere; $hat((calD compose f)) = normCInv hat(f)_calD$],
   [$overline(W)^k_calD [f] = sum_(\#alpha = k) ncoeff(alpha)^2$], [normalized level weight; $sum_k overline(W)^k = EE_calD [f^2]$],
-  [$b_V$, $B_theta$], [bias spectrum of $calD$ (dataset coefficients of $1$); its $theta$-heavy set],
-  [$overline(v)_S (z)$, $Psi(S|J)$], [average with context $z$ fixed; conditional bucket weight $EE_z [overline(v)_S (z)^2]$],
-  [$c_k$, $R_k$], [context profile (distinct contexts at level $k$); level mass $sum_S Psi$],
-  [$N_k$, $N$], [live-bucket profile: buckets with $Psi >= tau^2\/4$ at level $k$; its maximum],
   table.hline(stroke: 0.7pt),
 )

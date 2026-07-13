@@ -7,12 +7,16 @@
 #show: thmrules
 #show: eqrules
 
-= Numerical Verification
+= Verification Contract
 
-Every identity, counterexample, and theorem constant in this note was verified numerically on random and structured instances, exact to $10^(-9)$: the mass and closeness identities, the normalized Parseval identities, the pair-form and blindness lemmas, the convolution identity and its heavy-bias tail bound, all five properties of the conditional bucket weight $Psi$ together with the unbiasedness of its estimator, the subcube and half-cube aliasing examples, the dataset sensitivity bounds, the corrected learning bound, the $eps_calD$-closeness reconstruction bound of the context-conditioning theorem (@thm:context-gl), and the candidate-generation constants of both Goldreich-Levin theorems.
-The self-contained script (Python, standard library only) lives at #raw("verification/verify_identities.py") in the repository; run it with #raw("python3 verification/verify_identities.py").
-
-#TODO[Deferred proofs and the general finite-abelian-group statements, as they accumulate.]
+The categorical implementation is checked first on enumerable autoregressive models.
+The required tests cover: $ZZ_q$ orthogonality for composite $q$; exact agreement between KV continuation
+and the enumerated conditional law; the weighted level-mass identity; unbiasedness of the paired-suffix
+estimator; equality of the all-child DFT with $q$ separately computed child buckets; recovery of a planted
+degree-$n$ character; and invariance of the centered one-hot simplex kernel under vocabulary permutations.
+The existing identity script #raw("verification/verify_identities.py") remains a regression suite for the
+general dataset Fourier identities in the preliminaries; the autoregressive categorical tests live with the
+new experiment code.
 
 = Notes
 

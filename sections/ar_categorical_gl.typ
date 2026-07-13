@@ -7,16 +7,13 @@
 == Autoregressive Categorical Dataset GL from a Fixed Prefix
 
 We now give the construction used by the long-context experiment.
-It differs from the indexed-corpus instantiation below in two essential ways.
-First, a datapoint is a length-$n$ continuation sampled autoregressively from one fixed real prefix; it is
-not a window retrieved from a flat corpus.
-Second, every token position is one $q$-ary variable.
+A datapoint is a length-$n$ continuation sampled autoregressively from one fixed real prefix, and every
+token position is one $q$-ary variable.
 There is no binary encoding of token ids, no bit-degree, and no Walsh parity across pieces of a token.
 
 The key observation is an ordering observation.
-The context-conditioning tree of @thm:context-gl need not split coordinates oldest-first.
-If it splits them *newest-first*, then the coordinates left fixed by a bucket are always an ordinary left
-prefix.
+Goldreich--Levin may process coordinates in any fixed order.
+We process them *newest-first*, so the coordinates left fixed by a bucket are always an ordinary left prefix.
 Conditional sampling is therefore exactly autoregressive continuation: cache the fixed prefix and draw a
 fresh suffix.
 
@@ -73,6 +70,55 @@ The support $"supp"(alpha) = {j : alpha_j != 0}$ and its token-degree never refe
 For real-valued targets, $hat(f)(-alpha) = overline(hat(f)(alpha))$; an implementation may store the
 conjugate pair or its equivalent real sine/cosine pair without changing the categorical variables.
 
+=== Basis dependence and the one-hot control
+
+The $ZZ_q$ basis is native categorical but not permutation-invariant.
+It assigns the vocabulary a cyclic group law: the phase relation between token ids $1$ and $2$ differs from
+the relation between ids $1$ and $33$.
+This structure is algorithmically valuable — it gives unit-modulus multiplicative characters and the
+all-children transform of @lem:qary-all-children — but it is not semantic structure supplied by a tokenizer.
+
+The permutation-symmetric control is the centered one-hot, or regular-simplex, representation.
+For token $v$, let
+$
+s(v)
+= sqrt(q/(q-1)) (e_v - frac(1,q) bold(1)) in RR^q.
+$
+Then
+$
+angle.l s(u),s(v) angle.r
+= cases(
+  1 &"if" u=v,
+  -1/(q-1) &"if" u != v,
+)
+quad "and" quad
+sum_(v in ZZ_q) s(v)=0.
+$
+Every unequal token pair therefore has the same relation.
+The vectors span the $(q-1)$-dimensional categorical contrast space as a symmetric tight frame.
+For a position set $S$, their tensor kernel is
+$
+K_S(x,x')
+= product_(j in S) angle.l s(x_j),s(x'_j) angle.r,
+$
+which depends only on the equality pattern of the tokens on $S$, not on their numerical ids.
+
+A full scaled one-hot family $sqrt(q)e_v$ is an orthonormal basis, but its tensor coefficients are merely a
+rescaled lookup table for complete strings and it has no distinguished constant-versus-interaction degree.
+The centered simplex restores that distinction but is a redundant frame, not a multiplicative
+unit-modulus character basis.
+Consequently @thm:ar-qary-gl is stated for $ZZ_q$ characters, while the experiment uses the simplex
+representation as a mandatory control:
+
++ run theorem-backed Dataset GL in the $ZZ_q$ basis;
++ group recovered characters by their token-position support and refit those supports with simplex features;
++ repeat the $ZZ_q$ search under fixed random vocabulary permutations;
++ on small enumerable problems, compute both full representations and compare support-level energy and
+  held-out prediction.
+
+A result that appears only for one token-id permutation and disappears in the simplex control is an
+encoding artifact, not evidence of a linguistic interaction.
+
 === The fixed-prefix rollout distribution
 
 Fix a real token prefix $pi$ once and for all, a continuation length $n$ (in the experiment, $n=128$),
@@ -88,6 +134,10 @@ calD_(pi,theta)^n (x)
 = product_(j = 1)^n Q_theta (x_j | pi, x_1, dots, x_(j-1)).
 $
 This law is generally far from uniform and far from a product law.
+In the intended application the same model $f_theta$ supplies both objects: its transformed probabilities
+define $Q_theta$ and its raw probabilities define the label $P_theta$.
+The generated strings are synthetic in the everyday sense but exactly in-distribution for
+$calD_(pi,theta)^n$ by construction.
 
 Let the bounded terminal label be any deterministic function of the fixed prefix and continuation,
 $
@@ -212,7 +262,7 @@ $
   Averaging over $Z$ proves the identity and the displayed bound.
 ]
 
-The weighted level mass is the correct extension of the empirical-set formula in @lem:psi-properties.
+The weighted level mass also explains the finite empirical case.
 If a conditional fiber contains $m_z$ equally likely rows, then $p_z(y)=1/m_z$ on that fiber and its
 collision term is $sum_y p_z(y)^2=1/m_z$.
 For an autoregressive law it is instead the conditional collision probability of two independent suffixes.
