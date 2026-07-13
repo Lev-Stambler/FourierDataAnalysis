@@ -273,7 +273,7 @@ GPU-equivalent dollars.  It does not launch
 tens of millions of teacher evaluations.  Its artifact status is `oracle_mismatch` and its frequencies, if
 any, are rejected by the certified Fourier-student loader.
 
-#let part2-results-ready = false
+#let part2-results-ready = true
 #if part2-results-ready [
   #include "../experiments/results/qwen35_argl/part2_results.typ"
 ] else [

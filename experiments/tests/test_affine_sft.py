@@ -1,6 +1,7 @@
 """Part 2 affine-SFT algebra and oracle-separation tests."""
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -19,6 +20,7 @@ from fda_exp.affine_sft import (
     noiseless_qsft_control,
     normalized_importance_ess,
     random_full_column_rank,
+    render_part2_typst,
     run_toy_audit,
     run_qwen_affine_audit,
 )
@@ -173,3 +175,21 @@ def test_qwen_audit_keeps_natural_sampling_and_chosen_points_separate(
     assert report["chosen_affine_point_control"]["contexts"] == 2
     assert report["prefix_compatible_control"]["pairs_in_final_coordinate_subspace"] == 2
     assert report["frequencies"] == []
+
+
+def test_checked_modal_artifacts_validate_and_render_the_part2_claims():
+    root = Path(__file__).resolve().parents[1]
+    results = root / "results" / "qwen35_argl"
+    rendered = render_part2_typst(
+        results / "part2_toy.json",
+        results / "part2_qwen.json",
+        results / "part2_centered_root.json",
+        root / "part2_protocol.json",
+    )
+    assert "all 8 of" in rendered
+    assert "0 of 64 independent natural pairs" in rendered
+    assert "41112786" in rendered
+    assert "energy lower bound $0.039345 > 0.001$" in rendered
+    checked_fragment = (results / "part2_results.typ").read_text()
+    assert "oracle_mismatch" in checked_fragment
+    assert "No Part 2 artifact contains a" in checked_fragment

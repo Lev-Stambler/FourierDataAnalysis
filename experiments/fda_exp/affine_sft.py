@@ -645,3 +645,116 @@ def run_qwen_affine_audit(model, prefixes, q: int,
         },
         "frequencies": [],
     }
+
+
+def _load_json_with_hash(path: str | Path) -> tuple[dict, str]:
+    raw = Path(path).read_bytes()
+    return json.loads(raw), hashlib.sha256(raw).hexdigest()
+
+
+def render_part2_typst(toy_path: str | Path, qwen_path: str | Path,
+                       centered_path: str | Path,
+                       protocol_file: str | Path | None = None) -> str:
+    """Validate checked artifacts and render their immutable Typst result fragment."""
+    protocol, protocol_hash = load_protocol(protocol_file)
+    toy, toy_hash = _load_json_with_hash(toy_path)
+    qwen, qwen_hash = _load_json_with_hash(qwen_path)
+    centered, _ = _load_json_with_hash(centered_path)
+    for name, artifact in (("toy", toy), ("qwen", qwen)):
+        if artifact.get("protocol_sha256") != protocol_hash:
+            raise ValueError(f"{name} artifact does not match the registered protocol hash")
+    if (not toy["q_sft"]["all_trials_recovered"]
+            or toy["theorem_status"] != "oracle_control"):
+        raise ValueError("toy q-SFT control did not pass its registered criterion")
+    if (qwen["theorem_status"] != "oracle_mismatch" or qwen.get("frequencies")
+            or qwen["token_129_sampled_for_label"]):
+        raise ValueError("Qwen artifact violated the registered oracle separation")
+    score_min = min(centered["score_quantiles"])
+    radius_max = max(centered["radius_quantiles"])
+    fixed_energy_lower = score_min - radius_max
+    fixed_rms_lower = math.sqrt(max(fixed_energy_lower, 0.0))
+    population_rms_lower = max(
+        fixed_rms_lower - centered["calibration"]["bucket_rms_allowance_upper"], 0.0
+    )
+    population_energy_lower = population_rms_lower ** 2
+    if not np.isclose(
+        fixed_energy_lower, centered["conservative_fixed_calibrated_energy_lower"]
+    ) or not np.isclose(
+        fixed_rms_lower, centered["conservative_fixed_calibrated_rms_lower"]
+    ):
+        raise ValueError("centered fixed-target lower bounds are inconsistent")
+    if not np.isclose(
+        population_rms_lower,
+        centered["conservative_population_centered_rms_lower_after_allowance"],
+    ) or not np.isclose(
+        population_energy_lower,
+        centered["conservative_population_centered_energy_lower_after_allowance"],
+    ):
+        raise ValueError("centered population lower bounds are inconsistent")
+    threshold = float(protocol["energy_threshold"])
+    if not (centered["all_q_root_children_above_registered_threshold"]
+            and population_energy_lower > threshold):
+        raise ValueError("centered artifact does not certify the registered root conclusion")
+
+    toy_error = max(
+        toy["density_transform_max_error"],
+        toy["affine_alias_max_error"],
+        toy["affine_energy_max_error"],
+    )
+    natural = qwen["natural_generator"]
+    prefix = qwen["prefix_compatible_control"]
+    dense = qwen["dense_affine_pair_event"]
+    chosen = qwen["chosen_affine_point_control"]
+    projection = qwen["q_sft_cost_projection"]
+    projected_seconds = projection["projected_gpu_seconds_at_measured_throughput"]
+    projected_days = projected_seconds / 86400.0
+    projected_dollars = projected_seconds * 0.000306
+    anchored = chosen["families"]["anchored"]
+    random = chosen["families"]["random"]
+    return f'''=== Checked Part 2 results <sec:part2-results>
+
+*Artifact integrity.*  Both Modal artifacts match protocol
+`{protocol_hash}`.  The toy artifact SHA-256 is `{toy_hash}` and the Qwen artifact SHA-256 is
+`{qwen_hash}`.  The compact centered-root record points to the 63,678,333-byte source artifact with
+SHA-256 `{centered["source_sha256"]}`.  No Part 2 artifact contains a frequency bank accepted by the
+student loader.
+
+*Exact affine control.*  The largest error among the density transform, affine alias, and vector pair
+identities was ${toy_error:.3g}$.  Noiseless scalar q-SFT recovered all {toy["q_sft"]["trial_reports"][0]["sparsity"]}
+planted native-$q$ coefficients in all {toy["q_sft"]["successful_trials"]} of
+{toy["q_sft"]["trials"]} registered trials, with zero false positives and maximum coefficient error
+${toy["q_sft"]["max_value_error"]:.3g}$.  This is a successful chosen-point oracle control, not strict
+Dataset GL.
+
+*What Qwen sampled.*  Qwen generated {2 * natural["contexts"]} new length-$128$ continuations from
+{natural["contexts"]} real contexts at temperature one.  Token $129$ was not sampled: its full distribution
+was read as the vector label.  All {prefix["pairs_in_final_coordinate_subspace"]} of
+{prefix["contexts"]} prefix-compatible shared-prefix controls lay in the one-coordinate suffix subspace.
+In contrast,
+{dense["memberships"]} of {dense["pairs"]} independent natural pairs lay on their sampled dense affine
+line; the uniform nonzero-difference benchmark has log-base-ten probability
+${dense["uniform_nonzero_difference_log10_probability"]:.3f}$.
+
+*Affine weight concentration.*  The natural-continuation median log mass was
+${natural["log_mass_quantiles"][1]:.3f}$.  The median chosen-point log masses were
+${anchored["log_mass_quantiles"][1]:.3f}$ on naturally anchored lines and
+${random["log_mass_quantiles"][1]:.3f}$ on independent random lines.  The corresponding median normalized
+importance ESS values were ${anchored["normalized_ess_quantiles"][1]:.6f}$ and
+${random["normalized_ess_quantiles"][1]:.6f}$; the anchored value is exactly one effective point among
+{chosen["points_per_context"]}.
+
+*Scale decision.*  Density scoring plus the separate $X$-only label ran at
+${chosen["measured_points_per_second"]:.4f}$ chosen points per second.  The registered four-group,
+zero-delay-inclusive projection requires {projection["projected_chosen_values"]} chosen values, or about
+${projected_seconds:.0f}$ A10G seconds (${projected_days:.1f}$ days and ${projected_dollars:.0f}$ dollars at
+the ledger rate).  The full affine run was therefore not launched.  Its status is `oracle_mismatch`, not a
+failed prefix-Dataset-GL theorem.
+
+*Registered $T=10^(-3)$ root conclusion.*  The centered root source has conservative fixed-calibration
+energy lower bound ${fixed_energy_lower:.6f}$, equivalently RMS lower bound ${fixed_rms_lower:.6f}$.  The
+calibration allowance is an RMS allowance: subtracting it gives population-centered RMS lower bound
+${population_rms_lower:.6f}$ and therefore energy lower bound ${population_energy_lower:.6f} > 0.001$.
+Hence all {centered["q"]} root children survive at the registered energy threshold.  The complete
+reverse-time traversal is recorded as infeasible at its certified root width; no top-$K$ bank is
+substituted.
+'''
