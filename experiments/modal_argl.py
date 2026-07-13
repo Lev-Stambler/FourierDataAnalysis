@@ -264,7 +264,7 @@ def spectral_eb(prefix_path: str, pairs: int = 4096, levels: int = 1, beam: int 
 def spectral_centered(prefix_path: str, calibration_path: str, pairs: int = 4096,
                       levels: int = 1, beam: int = 109000):
     """Strict root feasibility gate for the independently centered hard vector."""
-    import json, time, numpy as np
+    import json, math, time, numpy as np
     from fda_exp.qwen_argl import (argmax_mean_from_labeled_split, load_teacher,
                                    run_spectral_gate)
 
@@ -274,6 +274,15 @@ def spectral_centered(prefix_path: str, calibration_path: str, pairs: int = 4096
     if os.path.exists(out):
         return out
     mean, calibration = argmax_mean_from_labeled_split(calibration_path, 248077)
+    calibration_delta = 0.01
+    mean_l2_error = ((1.0 + math.sqrt(math.log(1.0 / calibration_delta)))
+                     / math.sqrt(calibration["rows"]))
+    calibration.update({
+        "mean_l2_error_probability": 1.0 - calibration_delta,
+        "mean_l2_error_upper": mean_l2_error,
+        "bucket_rms_allowance_upper": mean_l2_error / math.sqrt(2.0),
+        "bound": "dimension-free McDiarmid plus E||mean_hat-mean||_2 <= 1/sqrt(n)",
+    })
     model, _, q, _ = load_teacher()
     prefixes = np.load(prefix_path)["search"][:pairs]
     checkpoint = (
