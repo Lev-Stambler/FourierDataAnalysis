@@ -1257,20 +1257,29 @@ def fit_sparse3(m_fibers: int = M_FIBERS, r: int = R_FILLS,
         fit12 = fit_softmax_slots(F12_tr, A_tr / n_tr[:, None], n_tr,
                                   F12_va, A_va / n_va[:, None], n_va,
                                   steps=3000, lr=0.01)
-        fit123 = fit_softmax_slots(F123_tr, A_tr / n_tr[:, None], n_tr,
-                                   F123_va, A_va / n_va[:, None], n_va,
-                                   steps=3000, lr=0.01)
         te12 = eval_slots(fit12["W"], fit12["b"], F12_te, A_te / n_te[:, None], n_te)
-        te123 = eval_slots(fit123["W"], fit123["b"], F123_te,
-                           A_te / n_te[:, None], n_te)
+        # INCREMENTAL deg-3: triples fitted on the FROZEN deg-1+2 residual
+        # (flat joint refit demonstrably overfits; staged > flat, third time)
+        n12 = F12_tr.shape[1]
+        off_tr = F12_tr @ fit12["W"] + fit12["b"]
+        off_va = F12_va @ fit12["W"] + fit12["b"]
+        off_te = F12_te @ fit12["W"] + fit12["b"]
+        W3, vk3, improved3 = _fit_block(F123_tr[:, n12:], off_tr,
+                                        A_tr / n_tr[:, None], n_tr,
+                                        F123_va[:, n12:], off_va,
+                                        A_va / n_va[:, None], n_va,
+                                        steps=2000, lr=0.005)
+        te123 = eval_slots(np.concatenate([fit12["W"], W3]), fit12["b"],
+                           F123_te, A_te / n_te[:, None], n_te)
         summary["encodings"][name] = {
             "n_triples": int(len(tt)),
             "triple_top": float(top_t[0][1]) if top_t else 0.0,
+            "deg3_improved": bool(improved3),
             "deg12_TEST_kl": te12["kl"], "deg123_TEST_kl": te123["kl"],
             "deg123_TEST_top1": te123["top1"]}
         np.savez_compressed(f"{ROOT}/model_sparse3_{name}.npz",
                             anchors=anchors, pair_i=ii, pair_j=jj, triples=tt,
-                            W=fit123["W"], b=fit123["b"], mu=mu,
+                            W=np.concatenate([fit12["W"], W3]), b=fit12["b"], mu=mu,
                             slot_ids=data["slot_ids"], fill_len=fill_len,
                             B=codes.shape[1])
         vol.commit()
