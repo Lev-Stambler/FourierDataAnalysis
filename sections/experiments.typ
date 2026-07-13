@@ -412,3 +412,143 @@ failure statement is union-bounded with the separate Dataset-GL transcript budge
 $delta_"GL"+delta_"eval"=0.05$.  Dataset-GL completeness certifies recovery of heavy correlations; the
 untouched exact-binomial lockbox certifies agreement of the resulting frozen predictor.  Neither is
 silently substituted for the other.
+
+== Walsh--Hadamard characters over LSH token codes <sec:whlsh>
+
+The cyclic $ZZ_q$ basis assigns the vocabulary an arbitrary group law: characters couple token ids that are
+numerically close for tokenizer-internal reasons only, and @sec:qwen-experiment therefore treats
+id-permutation sensitivity as an artifact detector.  This variant replaces the id geometry with an
+embedding-derived binary one.  Every token $t$ receives a code $c(t) in {0,1}^B$ by sign-LSH: rows of the
+teacher's input-embedding matrix are mean-centered and projected onto $B$ fixed Gaussian directions, so
+that tokens with nearby embeddings share most bits.  $B$ is doubled (nested projections, fixed seed) while
+additional bits still separate distinct embedding rows, capped where the measured collision curve flattens;
+the residual colliding rows -- a near-duplicate tail including exactly duplicated embedding rows, which no
+projection separates -- receive deterministic tie-break bits, so all $q=248077$ codes are distinct.  The
+realized $B$, the collision-versus-$B$ curve, tie-break count, and duplicate-group sizes are reported.  A sequence is encoded as the concatenation of its tokens'
+codes and characters are Walsh--Hadamard parities of those bits -- the $q=2$ specialization of the
+categorical machinery, so the phase, histogram, and confidence-interval primitives are reused unchanged.
+
+Sampling remains token-granular: the gate reuses the conditional rollout law and pair collection of
+@sec:qwen-experiment verbatim, and one shared rollout per level scores every encoding, so comparisons are
+exactly matched.  Within the newly resampled token, masks of up to three bits are grown greedily by
+single-bit additions re-scored on the same pairs; this within-token search is a declared heuristic with the
+same epistemic status as the categorical beam, and conservative simultaneous intervals are still reported
+per parent.  The control is a code table of i.i.d. uniform bits at the same width $B$: unique codes with no
+locality.  Any gap between the LSH and control encodings on identical rollouts, identical training data,
+and an identical student isolates the embedding geometry as the explanatory factor, in the same spirit as
+the token-id permutation control.
+
+The student, data splits, loss, and evaluation battery are those of @sec:qwen-experiment; the only change
+is the gated feature map, which becomes the $plus.minus 1$ parity of each selected bit mask (characters are
+real at $q=2$, so there is no sine block).  Spending is tracked on a separate ledger capped at $12$ so the
+variant cannot consume the pre-registered categorical budget; the label and prefix artifacts are shared
+byte-for-byte.
+
+#let whlsh-results-ready = false
+#if whlsh-results-ready [
+  #include "../experiments/results/qwen35_argl/whlsh_macros.typ"
+  #include "../experiments/results/qwen35_argl/whlsh_tables.typ"
+] else [
+  #block(stroke: 0.6pt + gray, inset: 8pt)[
+    *Not yet run.*  This box is replaced only by result fragments generated from the Modal
+    `summary_whlsh.json` artifact.
+  ]
+]
+
+== Canonical dataset GL over LSH codes: fibers, exact buckets, and the two-scale result <sec:whlsh-canonical>
+
+An isolated single-module implementation (`experiments/canonical/qary_lsh_dataset_gl.py`) runs the
+dataset-GL fiber recipe directly: $M$ anchors in real FineWeb text supply the fixed conditioning
+(a real prefix whose last $k=3$ tokens are the deduplicated fixed string), the teacher itself fills the
+remaining $61$ window tokens $R=8$ times per fiber as the natural-language sampler, and the terminal
+next-token distribution (512 slots) labels every row.  The search is the exact-Parseval csamp group-by
+tree over the filled span's $61 times 133$ LSH bits with $tau$ as the statistical parameter, an ordered
+bounded frontier deduplicated by on-data equivalence, and centered targets (an uncentered target admits
+bias-artifact characters: biased bits give coefficients aligned with the unigram with zero conditional
+content -- token-id bits produced 511 such characters whose fit is exactly the unigram).  Per-level
+widths, pre-filter leaf norms, and frontier masks are persisted, so changing $tau$ is a re-filter rather
+than a re-descent.  Every bucket computation is verified against brute-force enumeration at small $n$ in
+the module's tests.
+
+Two results, measured on identical fibers, targets, and fits:
+
++ *The exact degree-one spectrum contains hundreds of heavy characters -- and the bounded-frontier
+  tree buries them.*  Computing every degree-one coefficient exactly (one GEMM, no search) shows
+  top centered norms of $0.048$ for LSH ($217$ characters $>= 0.01$, all on the last token) against
+  $0.044$ for random codes ($171$), with LSH carrying $40%$ more total degree-one mass ($0.174$ vs
+  $0.124$).  The ordered tree, by contrast, reported only noise-order statistics ($approx 0.006$,
+  scaling as $1\/sqrt(m)$): in the singleton-suffix region every bucket weight is provably equal
+  ($chi^2 = 1$ makes each bucket the total mass), so the width-bounded frontier tie-breaks
+  arbitrarily and a heavy single-bit leaf -- created exactly once, at its own level -- survives to
+  the exact leaf test only by luck.  This is the earlier campaign's documented degree-one
+  under-allocation failure; the complete degree-one basis must be evaluated exactly (it is one
+  GEMM) rather than entrusted to the frontier, which is needed only for degree $>= 2$.  Done this
+  way, the recovery-then-build program works end to end, verified on a strictly untouched test
+  split: a model of the $approx 220$ exactly certified LSH characters plus the $1000$ heaviest
+  exactly certified pairs reaches test KL $1.103$ against the unigram floor $1.630$ -- surpassing
+  every fitted student of this section -- while the random-code certified set reaches $1.200$.  The
+  degree-two spectrum itself is the sharpest encoding measurement of all: LSH concentrates $485"k"$
+  anchored pairs above $0.01$ ($27%$) where random codes hold $19.8"k"$ ($1.4%$), a $25times$
+  low-degree-concentration gap; encodings converge as degree grows, so the LSH advantage is
+  precisely that it needs less degree.  The recovered model is $625"k"$ parameters and runs as a
+  standalone demo.
+
++ *The aggregate is decisively encoding-dependent.*  Fitting the complete degree-one basis of the
+  filled span (held-out slot KL against the unigram floor $1.6303$, $M=8000$):
+
+  #table(columns: 4,
+    [Encoding], [Features], [Held-out KL], [Gain (nats)],
+    [sign-LSH of teacher embeddings], [8113], [1.4915], [*0.139*],
+    [token-id bits], [1098], [1.5975], [0.033],
+    [random codes (capacity-matched)], [8113], [1.6303], [0.000])
+
+  The random-code fit never improves on its unigram initialization by a single accepted step; the
+  identical fit on LSH bits extracts $0.139$ nats.  The ordering is monotone in the semantic content of
+  the code table.  (Optimization footnote: on peaked soft labels the degree-one fit diverges at the
+  default learning rate and the best-validation floor masks the failure as "no signal"; the reported
+  fits use learning rate $0.004$ over $4000$ steps.)
+
+Together: the LSH encoding advantage over arbitrary orderings is real and reproducible, and it is
+carried by the mass of many individually sub-threshold coefficients rather than by any certifiable
+single character at practical fiber counts.  Consistently, appending each encoding's searched
+frontier (the 64 heaviest deduplicated multi-bit masks) to the degree-one basis changes no held-out
+KL (LSH $1.4915 -> 1.4977$, random codes $1.6303 -> 1.6303$): at these fiber counts the searched
+interaction characters are order statistics of noise, and the degree-one aggregate already saturates
+the recoverable signal.
+
+Finally, the STAGED backoff student (one token block of degree-one features at a time, nearest the
+prediction first, each block accepted only if fiber-disjoint validation improves) extracts far more
+than the flat joint fit and preserves the encoding gap at higher absolute quality:
+
+#table(columns: 5,
+  [Student], [Accepted blocks], [Held-out KL], [Gain (nats)], [Top-1],
+  [staged, LSH codes], [3], [1.1232], [*0.507*], [0.659],
+  [staged, random codes], [4], [1.2849], [0.345], [0.655],
+  [staged, token-id bits], [7], [1.3965], [0.234], [0.652],
+  [flat degree-one, LSH], [--], [1.4915], [0.139], [--],
+  [unigram], [--], [1.6303], [0.000], [0.653])
+
+The per-block efficiency ordering is the sharpest signature of the encoding: LSH extracts the most
+information from the fewest tokens (three blocks), random codes act as token-lookup keys (four
+blocks, two-thirds the gain), and token-id bits crawl to position eight for half of it.  Honest
+signal localizes near the prediction, echoing the earlier campaign's localization finding.  Top-1
+agreement barely moves for any window student -- the teacher's argmax matches the majority slot on
+$65%$ of held-out rows, so the distributional (KL) view is where window-scale structure lives.  A
+full-context flat degree-one fit, by contrast, is rejected wholesale by the validation floor:
+prefix bits identify fibers, and the flat student memorizes them.
+
+On real cached contexts (story-disjoint splits, untouched test set) the staged student reproduces
+and extends every finding: LSH $1.4001$ held-out KL against unigram $1.8702$ ($-0.470$ nats) versus
+random codes $1.5819$; doubling the training contexts ($20"k" -> 40"k"$) improves both encodings by
+$approx 0.045$ nats -- the data-scaling law transfers to the student -- while the encoding gap
+($approx 0.18$ nats) is scale-stable and the accepted depth stays at three tokens.  Hereditary
+degree-two pairs among the individually proven bits are rejected by the validation gate for every
+encoding, the third independent confirmation that degree one saturates the parity class.
+
+Finally, the transformer-level attribution.  A 30M-parameter student with the proven degree-one
+masks as gated features (40k contexts, full-tokenizer evaluation) reaches $21.2%$ top-1 against a
+$19.3%$ baseline -- but the identical architecture with random-code masks reaches $20.9%$: the
+feature lift is generic capacity, not geometry.  The complete picture is a *two-regime law*: the
+LSH encoding is worth $0.18$--$0.21$ nats precisely in bottlenecked models, where the code is the
+model's only access to the tokens (the Walsh-polynomial compression regime), and nothing in models
+that already see the tokens through an embedding table.
