@@ -206,6 +206,27 @@ def test_scalable_fourier_correction_starts_as_exact_zero_residual():
     assert sum(p.numel() for p in correction.parameters()) == 2 * 3 * 3 + 3 * 11
 
 
+def test_pure_fourier_vector_student_parameterization_and_causal_windows():
+    import torch
+    from fda_exp.qwen_argl import (build_fourier_vector_student,
+                                   _sample_rollout_windows)
+
+    q, terms, rank = 17, 5, 3
+    frequencies = torch.randint(0, q, (terms, 128))
+    model = build_fourier_vector_student(q, frequencies, output_rank=rank, chunk_size=2)
+    assert sum(p.numel() for p in model.parameters()) == 2 * terms * rank + q * rank + q
+    assert model(torch.randint(0, q, (4, 128))).shape == (4, q)
+
+    context = torch.arange(2 * 256).reshape(2, 256)
+    generator = torch.Generator().manual_seed(3)
+    windows, targets = _sample_rollout_windows(context, 4, generator)
+    assert windows.shape == (8, 128)
+    assert targets.shape == (8,)
+    # Every target immediately follows its corresponding length-128 window.
+    for row in range(len(windows)):
+        assert targets[row] == windows[row, -1] + 1
+
+
 def test_simplex_kernel_is_permutation_invariant():
     q = 7
     x = np.array([[0, 1, 2], [4, 1, 6]])

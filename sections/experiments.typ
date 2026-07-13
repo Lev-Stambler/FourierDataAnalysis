@@ -271,23 +271,47 @@ resource ceiling, it terminates with that width as an honest infeasibility resul
 *engineering bank* may retain the best $K$ discovery-ranked, confirmation-measured characters for fitting.
 Only the first output receives the completeness guarantee; the second is always labeled a capped heuristic.
 
-=== Residual correction of a strong compressed backbone
+=== The compressed model is the Fourier representation
 
-The $18%$ run trained a small terminal student from scratch, so it confounded spectral feature quality with
-backbone capacity.  The escalation first profiles frozen truncated-layer and output-rank versions of the
-teacher, then selects the strongest backbone that satisfies the declared parameter ceiling.  It trains that
-backbone on a disjoint distillation split, freezes it before GL search, and learns a Fourier correction on
-all $128$ generated positions plus the terminal position.
+Qwen is kept fixed and is used only as the teacher, label oracle, and conditional sampler.  No teacher
+block is deleted, copied into the student, or used as a residual backbone.  For a recovered character bank
+$S subset.eq ZZ_q^128$ of size $K$, the student logits are
+$
+ell_S(x)
+=b+sum_(alpha in S)
+  (c_alpha cos(2 pi chevron.l alpha,x chevron.r/q)
+   +d_alpha sin(2 pi chevron.l alpha,x chevron.r/q)),
+quad
+Q_S(dot|x)="softmax"(ell_S(x)).
+$
+Here $c_alpha,d_alpha in RR^q$ are genuinely vector-valued Fourier output coefficients.  A dense
+$2K times q$ coefficient table would not be a compression, so the implementation learns a joint rank-$r$
+factorization
+$
+c_alpha=A_(alpha,:) U,
+quad d_alpha=B_(alpha,:) U,
+quad
+A,B in RR^(K times r),
+quad U in RR^(r times q).
+$
+This restricts the recovered coefficient vectors to a learned output subspace but does not change the input
+characters or encode tokens into bits.  Its parameter count, including the output bias, is
+$2 K r+r q+q$.  At $K=109000$, $r=64$, and $q=248077$, this is $30077005$ parameters.  The rank is selected on
+validation agreement; the full-$q$ softmax and argmax are always evaluated.
 
-For the cheap primary gate, let $b(Z,X)$ be the frozen backbone's top token and use
-$
-R(Z,X)=frac(e_(g(Z,X))-e_(b(Z,X)),sqrt(2)).
-$
-Its norm is at most one and its paired inner product again requires only four equality tests.  Consequently
-Dataset GL searches for tokenizer-native characters correlated with the teacher-minus-backbone decision
-residual, precisely where a correction is needed.  A probability or logit residual may be used as a
-secondary distillation loss, but does not replace this bounded primary target.  The final student is the
-frozen compressed backbone plus the chunked Fourier correction head.
+The packed GPU evaluator stores only each character's nonzero token positions and $ZZ_q$ frequencies.
+For fixed chunks of $8192$ terms it gathers the required tokenizer ids, performs one integer dot product
+modulo $q$, evaluates sine and cosine, and accumulates directly into the rank-$r$ state.  The compiled
+PyTorch path therefore never allocates a batch-by-$K$-by-$128$ tensor or a $2K times q$ table.
+
+Training uses terminal hard teacher argmax as the primary label and terminal full-distribution KL as a
+secondary objective.  Each teacher rollout also supplies up to $128$ ordinary next-token samples: the
+last $128$ tokens before a sampled token form an additional tokenizer-native input window, and the sampled
+token is an unbiased hard-label draw from the teacher distribution at that window.  These extra causal
+rows increase fitting data but do not count as independent GL pairs or alter the terminal evaluation law.
+The first-level $109000$ run characterizes the energy scale only; a final high-order bank must retain and
+confirm complete $128$-coordinate character indices, and its capped engineering status remains distinct
+from the uncapped Dataset-GL transcript above.
 
 === What would constitute a provable $80%$ agreement result
 

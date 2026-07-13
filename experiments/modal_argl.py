@@ -314,43 +314,30 @@ def fit_tensor_simplex(train_path: str, val_path: str, test_path: str, spectral_
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
-def capacity_profile(test_path: str, n: int = 512):
-    """Measure the layer/rank ceiling before spending on another student fit."""
-    import json, time
-    from fda_exp.qwen_argl import load_teacher, teacher_capacity_profile
+def fit_fourier_vector(train_path: str, val_path: str, spectral_path: str,
+                       output_rank: int = 64):
+    """Fit the pure vector-valued Fourier compression model."""
+    import json, time, os
+    from fda_exp.qwen_argl import load_frequency_file, train_fourier_vector_student
 
-    vol.reload(); _check_budget("capacity-profile", 2.0); started = time.time()
-    out = f"{ROOT}/capacity_profile_n{n}.json"
-    import os
-    if os.path.exists(out):
-        return out
-    model, _, q, _ = load_teacher()
-    result = teacher_capacity_profile(model, test_path, q, n=n)
-    _write_json(out, result)
-    _record_gpu("capacity-profile", started, {"n": n})
+    vol.reload(); _check_budget("fit-fourier-vector", 6.0); started = time.time()
+    frequencies = load_frequency_file(spectral_path)
+    out = f"{ROOT}/fourier_vector_k{len(frequencies)}_r{output_rank}.pt"
+    summary_path = f"{ROOT}/fourier_vector_k{len(frequencies)}_r{output_rank}.json"
+    if os.path.exists(out) and os.path.exists(summary_path):
+        return summary_path
+    result = train_fourier_vector_student(
+        train_path, val_path, frequencies, out,
+        output_rank=output_rank, epochs=3, max_train=4096,
+        batch_size=8, sampled_windows=3,
+    )
+    result["spectral_path"] = spectral_path
+    result["teacher_role"] = "fixed label oracle and conditional sampler only"
+    _write_json(summary_path, result)
+    _record_gpu("fit-fourier-vector", started, result)
     vol.commit()
     print(json.dumps(result, indent=2), flush=True)
-    return out
-
-
-@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
-def layer_drop_profile(test_path: str, n: int = 512):
-    """Evaluate nonconsecutive influence-ranked Qwen block removal."""
-    import json, time
-    from fda_exp.qwen_argl import load_teacher, teacher_layer_drop_profile
-
-    vol.reload(); _check_budget("layer-drop-profile", 3.0); started = time.time()
-    out = f"{ROOT}/layer_drop_profile_n{n}.json"
-    import os
-    if os.path.exists(out):
-        return out
-    model, _, q, _ = load_teacher()
-    result = teacher_layer_drop_profile(model, test_path, q, n=n)
-    _write_json(out, result)
-    _record_gpu("layer-drop-profile", started, {"n": n})
-    vol.commit()
-    print(json.dumps(result, indent=2), flush=True)
-    return out
+    return summary_path
 
 
 @app.local_entrypoint()
@@ -382,9 +369,8 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
         val_path = f"{ROOT}/val_n{val_n}.pt"
         test_path = f"{ROOT}/test_n{test_n}.pt"
         fit_tensor_simplex.remote(train_path, val_path, test_path, spectral_path)
-    if stage == "capacity":
-        test_path = f"{ROOT}/test_n{test_n}.pt"
-        capacity_profile.remote(test_path, min(test_n, 512))
-    if stage == "layer-drop":
-        test_path = f"{ROOT}/test_n{test_n}.pt"
-        layer_drop_profile.remote(test_path, min(test_n, 512))
+    if stage == "fourier-vector":
+        train_path = f"{ROOT}/train_n{train_n}.pt"
+        val_path = f"{ROOT}/val_n{val_n}.pt"
+        eb_path = f"{ROOT}/spectral_eb_energy_p{pairs}_l{levels}_b{beam}.json"
+        fit_fourier_vector.remote(train_path, val_path, eb_path, 64)

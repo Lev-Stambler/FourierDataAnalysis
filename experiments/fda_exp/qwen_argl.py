@@ -571,7 +571,7 @@ def chunked_fourier_low_rank(tokens, positions, alphas, q, cosine_weight,
 
 def build_scalable_fourier_correction(frequencies, q, hidden_size=1024,
                                       adapter_rank=32, chunk_size=8192):
-    """Low-rank Fourier residual head for a frozen language-model backbone."""
+    """Low-rank tokenizer-native Fourier head with a vector-valued output."""
     import torch
 
     freq = torch.as_tensor(frequencies, dtype=torch.long)
@@ -589,8 +589,8 @@ def build_scalable_fourier_correction(frequencies, q, hidden_size=1024,
             self.output = torch.nn.Linear(adapter_rank, hidden_size, bias=False)
             torch.nn.init.normal_(self.cosine_weight, std=1.0 / math.sqrt(max(len(freq), 1)))
             torch.nn.init.normal_(self.sine_weight, std=1.0 / math.sqrt(max(len(freq), 1)))
-            # Zero initialization preserves the frozen backbone exactly before
-            # fitting while allowing output gradients on the first step.
+            # Zero initialization starts at constant logits while allowing
+            # output-factor gradients on the first fitting step.
             torch.nn.init.zeros_(self.output.weight)
 
         def forward(self, rollout_tokens):
@@ -601,6 +601,175 @@ def build_scalable_fourier_correction(frequencies, q, hidden_size=1024,
             return self.output(latent)
 
     return FourierCorrection()
+
+
+def build_fourier_vector_student(q, frequencies, output_rank=64, chunk_size=8192,
+                                 initial_bias=None):
+    """Pure Fourier compression model with factorized q-vector coefficients."""
+    import torch
+
+    head = build_scalable_fourier_correction(
+        frequencies, q, hidden_size=q, adapter_rank=output_rank,
+        chunk_size=chunk_size,
+    )
+
+    class FourierVectorStudent(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.head = head
+            self.bias = torch.nn.Parameter(torch.zeros(q))
+            if initial_bias is not None:
+                value = torch.as_tensor(initial_bias, dtype=self.bias.dtype)
+                if value.shape != self.bias.shape:
+                    raise ValueError("initial output bias has the wrong tokenizer width")
+                with torch.no_grad():
+                    self.bias.copy_(value)
+            self.q = int(q)
+            self.output_rank = int(output_rank)
+
+        def forward(self, token_window):
+            return self.head(token_window) + self.bias
+
+    return FourierVectorStudent()
+
+
+def _sample_rollout_windows(context, samples_per_context, generator=None):
+    """Draw causal length-128 windows and their teacher-sampled next tokens."""
+    import torch
+
+    batch, width = context.shape
+    if width != REAL_LEN + ROLLOUT_LEN:
+        raise ValueError("expected real prefix concatenated with 128-token rollout")
+    endpoints = torch.randint(
+        REAL_LEN, width, (batch, samples_per_context),
+        device=context.device, generator=generator,
+    )
+    offsets = torch.arange(-REAL_LEN, 0, device=context.device)
+    indices = endpoints[..., None] + offsets
+    expanded = context[:, None, :].expand(-1, samples_per_context, -1)
+    windows = torch.gather(expanded, 2, indices)
+    targets = torch.gather(context, 1, endpoints)
+    return windows.reshape(-1, REAL_LEN), targets.reshape(-1)
+
+
+def train_fourier_vector_student(train_path, val_path, frequencies, out_path,
+                                 output_rank=64, epochs=3, max_train=4096,
+                                 batch_size=8, sampled_windows=3, lr=3e-4,
+                                 device="cuda"):
+    """Fit vector Fourier coefficients with hard argmax and soft KL targets."""
+    import torch
+    import torch.nn.functional as torch_f
+    from torch.utils.data import DataLoader, TensorDataset
+
+    tr = torch.load(train_path, map_location="cpu", weights_only=True, mmap=True)
+    va = torch.load(val_path, map_location="cpu", weights_only=True, mmap=True)
+    q = int(tr["q"])
+    frequencies = np.asarray(frequencies, dtype=np.int64).reshape(-1, ROLLOUT_LEN)
+
+    # A mean-logit bias gives the constant character a useful initialization
+    # without learning from validation or audit rows.
+    bias_sum = torch.zeros(q, dtype=torch.float64)
+    for lo in range(0, min(max_train, len(tr["teacher_logits"])), 128):
+        bias_sum += tr["teacher_logits"][lo:lo + 128].double().sum(0)
+    bias = (bias_sum / min(max_train, len(tr["teacher_logits"]))).float()
+    bias -= bias.mean()
+    base_model = build_fourier_vector_student(
+        q, frequencies, output_rank=output_rank, initial_bias=bias
+    ).to(device)
+    parameters = sum(p.numel() for p in base_model.parameters())
+    expected = 2 * len(frequencies) * output_rank + q * output_rank + q
+    if parameters != expected:
+        raise RuntimeError(f"unexpected Fourier parameter count {parameters} != {expected}")
+    torch.set_float32_matmul_precision("high")
+    model = torch.compile(
+        base_model, mode="max-autotune-no-cudagraphs", fullgraph=False, dynamic=False
+    )
+    optimizer = torch.optim.AdamW(base_model.parameters(), lr=lr, weight_decay=0.01)
+    train_n = min(int(max_train), len(tr["contexts"]))
+    train_loader = DataLoader(
+        TensorDataset(tr["contexts"][:train_n], tr["teacher_logits"][:train_n]),
+        batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True,
+    )
+    val_loader = DataLoader(
+        TensorDataset(va["contexts"], va["teacher_logits"]),
+        batch_size=batch_size, shuffle=False, pin_memory=True,
+    )
+
+    def validate():
+        model.eval()
+        agree = top5 = total = 0
+        kl_sum = 0.0
+        with torch.inference_mode():
+            for context, teacher_logits in val_loader:
+                context = context.to(device).long()
+                teacher_logits = teacher_logits.to(device).float()
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    logits = model(context[:, -ROLLOUT_LEN:])
+                teacher_probability = torch.softmax(teacher_logits, 1)
+                kl = (teacher_probability * (
+                    torch.log_softmax(teacher_logits, 1)
+                    - torch.log_softmax(logits.float(), 1)
+                )).sum(1)
+                teacher_top = teacher_logits.argmax(1)
+                agree += int((logits.argmax(1) == teacher_top).sum())
+                top5 += int((logits.topk(5, 1).indices == teacher_top[:, None]).any(1).sum())
+                kl_sum += float(kl.sum())
+                total += len(context)
+        return {"top1": agree / total, "top5": top5 / total, "kl": kl_sum / total}
+
+    best = None
+    best_state = None
+    rng = torch.Generator(device=device).manual_seed(20260713)
+    for epoch in range(epochs):
+        model.train()
+        for step, (context, teacher_logits) in enumerate(train_loader):
+            context = context.to(device).long()
+            teacher_logits = teacher_logits.to(device).float()
+            sampled_input, sampled_target = _sample_rollout_windows(
+                context, sampled_windows, rng
+            )
+            terminal_input = context[:, -ROLLOUT_LEN:]
+            all_input = torch.cat([terminal_input, sampled_input], 0)
+            optimizer.zero_grad(set_to_none=True)
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                all_logits = model(all_input)
+            terminal_logits = all_logits[:len(context)].float()
+            sampled_logits = all_logits[len(context):].float()
+            teacher_probability = torch.softmax(teacher_logits, 1)
+            terminal_log_probability = torch.log_softmax(terminal_logits, 1)
+            hard_terminal = torch_f.nll_loss(
+                terminal_log_probability, teacher_logits.argmax(1)
+            )
+            soft_terminal = -(teacher_probability * terminal_log_probability).sum(1).mean()
+            sampled_loss = torch_f.cross_entropy(sampled_logits, sampled_target)
+            loss = 0.55 * hard_terminal + 0.25 * soft_terminal + 0.20 * sampled_loss
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(base_model.parameters(), 1.0)
+            optimizer.step()
+            if step and step % 128 == 0:
+                print(f"[fourier-vector] epoch={epoch + 1} step={step}/{len(train_loader)} "
+                      f"loss={float(loss):.4f}", flush=True)
+        metrics = validate()
+        print(f"[fourier-vector] epoch={epoch + 1} val={metrics}", flush=True)
+        if best is None or metrics["top1"] > best["top1"]:
+            best = metrics
+            best_state = {k: v.detach().cpu() for k, v in base_model.state_dict().items()}
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({
+        "state_dict": best_state, "frequencies": frequencies,
+        "q": q, "output_rank": output_rank, "params": parameters,
+        "val": best, "train_n": train_n, "epochs": epochs,
+        "sampled_windows": sampled_windows,
+        "compile_mode": "max-autotune-no-cudagraphs",
+    }, out_path)
+    return {
+        "path": str(out_path), "params": parameters, "terms": len(frequencies),
+        "output_rank": output_rank, "val": best, "train_n": train_n,
+        "epochs": epochs, "sampled_windows": sampled_windows,
+        "compile_mode": "max-autotune-no-cudagraphs",
+    }
 
 
 def _simplex_features(tokens, landmarks, q):
@@ -746,180 +915,6 @@ def teacher_vocab_factor(model, q, rank=64):
         # student's compressed input and output maps.
         u, s, _ = torch.pca_lowrank(e, q=rank, center=False, niter=2)
         return (u * s[None]).cpu()
-
-
-def teacher_capacity_profile(model, test_path, q, n=512, batch=8,
-                             layers=(8, 12, 16, 20, 22, 24),
-                             ranks=(64, 128, 256, 512, 1024)):
-    """Profile layer truncation and exact embedding-PCA rank on cached contexts.
-
-    This is a diagnostic upper-bound path: it keeps actual teacher block
-    activations and asks how much agreement survives layer truncation and a
-    rank-r tied vocabulary projection.  It does not count as a trained Dataset
-    GL student, but identifies whether output rank or context modeling is the
-    binding bottleneck before another distillation run.
-    """
-    import torch
-
-    data = torch.load(test_path, map_location="cpu", weights_only=True, mmap=True)
-    contexts = data["contexts"][:n]
-    labels = data["teacher_logits"][:n]
-    language = model.model.language_model
-    layers = tuple(int(x) for x in layers if 0 < int(x) <= len(language.layers))
-    ranks = tuple(sorted(set(int(x) for x in ranks if 0 < int(x) <= language.config.hidden_size)))
-    max_rank = max(r for r in ranks if r < language.config.hidden_size)
-
-    with torch.inference_mode():
-        embedding = model.get_input_embeddings().weight[:q].float()
-        covariance = embedding.T @ embedding
-        _, eigenvectors = torch.linalg.eigh(covariance)
-        vr = eigenvectors[:, -max_rank:].contiguous()
-        token_factor = (embedding @ vr).to(torch.bfloat16)
-        del covariance, embedding
-
-    captures = {}
-    handles = []
-    for layer_number in layers:
-        def save_last(_module, _inputs, output, number=layer_number):
-            value = output[0] if isinstance(output, tuple) else output
-            captures[number] = value[:, -1].detach()
-        handles.append(language.layers[layer_number - 1].register_forward_hook(save_last))
-
-    agree = {(layer, rank): 0 for layer in layers for rank in ranks}
-    total = 0
-    try:
-        with torch.inference_mode():
-            for lo in range(0, len(contexts), batch):
-                c = contexts[lo:lo + batch].to("cuda").long()
-                teacher_top = labels[lo:lo + batch].to("cuda").argmax(1)
-                captures.clear()
-                model.model(input_ids=c, use_cache=False, return_dict=True)
-                for layer_number in layers:
-                    hidden = language.norm(captures[layer_number]).float()
-                    projected = hidden @ vr
-                    for rank in ranks:
-                        if rank == language.config.hidden_size:
-                            logits = model.lm_head(hidden.to(model.lm_head.weight.dtype))[..., :q]
-                        else:
-                            logits = (projected[:, -rank:].to(torch.bfloat16)
-                                      @ token_factor[:, -rank:].T)
-                        agree[(layer_number, rank)] += int((logits.argmax(1) == teacher_top).sum())
-                total += len(c)
-                if lo == 0 or total % 128 == 0:
-                    print(f"[capacity] {total}/{len(contexts)}", flush=True)
-    finally:
-        for handle in handles:
-            handle.remove()
-
-    layer_params = []
-    running = 0
-    for layer in language.layers:
-        running += sum(p.numel() for p in layer.parameters())
-        layer_params.append(running)
-    norm_params = sum(p.numel() for p in language.norm.parameters())
-    rows = []
-    for layer_number in layers:
-        for rank in ranks:
-            # Tied low-rank token factor plus its hidden projection, selected
-            # teacher blocks, and final norm.  Vision parameters are excluded.
-            params = q * rank + language.config.hidden_size * rank + layer_params[layer_number - 1] + norm_params
-            rows.append({
-                "layers": layer_number,
-                "rank": rank,
-                "top1": agree[(layer_number, rank)] / total,
-                "active_text_params": int(params),
-            })
-    return {"n": total, "q": q, "rows": rows,
-            "teacher_layers": len(language.layers),
-            "teacher_hidden_size": int(language.config.hidden_size)}
-
-
-def teacher_layer_drop_profile(model, test_path, q, n=512, calibration_n=128,
-                               batch=8, drop_counts=(0, 1, 2, 4, 6, 8)):
-    """Rank blocks by ShortGPT-style influence and evaluate nonconsecutive drops.
-
-    Influence is one minus cosine similarity between each block's input and
-    output, averaged over every token in a calibration batch.  This is a
-    selection diagnostic, not a certificate; final architecture choices must
-    be made on validation data and assessed on a fresh lockbox.
-    """
-    import torch
-    import torch.nn.functional as torch_f
-
-    data = torch.load(test_path, map_location="cpu", weights_only=True, mmap=True)
-    contexts = data["contexts"][:n]
-    labels = data["teacher_logits"][:n]
-    language = model.model.language_model
-    original_layers = list(language.layers)
-    influence_sum = torch.zeros(len(original_layers), dtype=torch.float64)
-    influence_count = torch.zeros(len(original_layers), dtype=torch.long)
-    handles = []
-
-    for layer_number, layer in enumerate(original_layers):
-        def measure(_module, inputs, output, number=layer_number):
-            before = inputs[0].detach().float()
-            after = (output[0] if isinstance(output, tuple) else output).detach().float()
-            cosine = torch_f.cosine_similarity(before, after, dim=-1)
-            influence_sum[number] += (1.0 - cosine).double().sum().cpu()
-            influence_count[number] += cosine.numel()
-        handles.append(layer.register_forward_hook(measure))
-
-    try:
-        with torch.inference_mode():
-            for lo in range(0, min(calibration_n, len(contexts)), batch):
-                c = contexts[lo:lo + batch].to("cuda").long()
-                model.model(input_ids=c, use_cache=False, return_dict=True)
-    finally:
-        for handle in handles:
-            handle.remove()
-
-    influence = influence_sum / influence_count.clamp_min(1)
-    least_first = torch.argsort(influence).tolist()
-
-    def active_text_params():
-        seen = set()
-        total = 0
-        for parameter in list(language.parameters()) + list(model.lm_head.parameters()):
-            if id(parameter) not in seen:
-                seen.add(id(parameter))
-                total += parameter.numel()
-        return int(total)
-
-    rows = []
-    try:
-        for drop_count in sorted(set(int(x) for x in drop_counts if 0 <= int(x) < len(original_layers))):
-            dropped = set(least_first[:drop_count])
-            language.layers = torch.nn.ModuleList(
-                [layer for number, layer in enumerate(original_layers) if number not in dropped]
-            )
-            agree = total = 0
-            with torch.inference_mode():
-                for lo in range(0, len(contexts), batch):
-                    c = contexts[lo:lo + batch].to("cuda").long()
-                    teacher_top = labels[lo:lo + batch].to("cuda").argmax(1)
-                    logits = model(input_ids=c, use_cache=False, return_dict=True).logits[:, -1, :q]
-                    agree += int((logits.argmax(1) == teacher_top).sum())
-                    total += len(c)
-            rows.append({
-                "dropped": drop_count,
-                "kept": len(original_layers) - drop_count,
-                "dropped_layer_indices": sorted(dropped),
-                "top1": agree / total,
-                "active_text_params": active_text_params(),
-            })
-            print(f"[layer-drop] drop={drop_count} top1={agree / total:.4f}", flush=True)
-    finally:
-        language.layers = torch.nn.ModuleList(original_layers)
-
-    return {
-        "n": len(contexts),
-        "calibration_n": min(calibration_n, len(contexts)),
-        "q": q,
-        "influence": [float(x) for x in influence],
-        "least_influential_first": least_first,
-        "rows": rows,
-        "selection_note": "block influence is a validation diagnostic, not a Dataset-GL certificate",
-    }
 
 
 def build_student(q, frequencies, layers=8, d_model=384, rank=64, heads=6, ff=1536,
