@@ -25,13 +25,18 @@ high-support moments.  Constant-output and continuation-residual controls, super
 held-out document evaluation therefore separate the theorem from the empirical compression claim.
 
 The cyclic token-id geometry remains a modeling choice, not a linguistic fact.
-For that reason the empirical study must include the centered one-hot simplex control and fixed random
-vocabulary permutations.
-Stable support-level and predictive results across those controls are the evidence that a recovered
-interaction belongs to the model and rollout distribution rather than to token numbering.
+The experiment therefore included an exactly parameter-matched centered one-hot simplex control.  Fourier
+won this test comparison, $18.22%$ to $16.38%$ top-one agreement, but fixed random vocabulary permutations
+remain necessary before attributing that gap to meaningful token-id geometry.
 
-Immediate next steps are to measure the live-width profile at lens $128$, validate the all-child estimator
-against exhaustive small-$q$ models, and compare $ZZ_q$ recovery with simplex refits on fresh rollouts.
+Most importantly, the predeclared $90%$ target was not met: the best $27.10 times$ smaller student reached
+only $18.22%$ top-token agreement.  The result supports a modest predictive benefit from the recovered
+features over the matched $16.86%$ no-feature control, while empirically demonstrating that Dataset GL's
+heavy-correlation guarantee alone is far from a high-agreement compression theorem.
+
+Immediate next steps are to extend the measured three-level live-width profile toward lens $128$, run the
+fixed token-id permutations, and test variance-sensitive simultaneous bounds before spending samples on a
+frontier that Hoeffding leaves unresolved.
 
 #h1([Acknowledgments])
 

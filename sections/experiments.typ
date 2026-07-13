@@ -110,16 +110,34 @@ controls, categorical degrees, supports, token-id permutations, and simplex supp
 
 == Results
 
-#let results-ready = false
-#if results-ready [
-  #include "../experiments/results/qwen35_argl/paper_macros.typ"
-  #include "../experiments/results/qwen35_argl/paper_tables.typ"
-] else [
-  #block(stroke: 0.6pt + gray, inset: 8pt)[
-    *Not yet run.*  This box is replaced only by result fragments generated from the Modal
-    `summary.json` artifact.
-  ]
-]
+#let results-ready = true
+#include "../experiments/results/qwen35_argl/paper_macros.typ"
+#include "../experiments/results/qwen35_argl/paper_tables.typ"
 
-If the spectral frontier blows up or the budget expires before $90%$ agreement, that outcome and the best
-valid checkpoint are reported without weakening the metric or presenting the heuristic beam as certified.
+All three data shards passed a memory-mapped integrity and shape check: $20000$ train, $2000$ validation,
+and $5000$ test examples, each with a $256$-token input and all $248077$ terminal teacher logits.  The
+$4096$-pair search retained $3072$ heuristic candidates and $1437$ distinct nonconstant characters after
+conjugate deduplication: $689$ of degree one, $566$ of degree two, and $182$ of degree three.
+
+At level one the residual maximum was $0.19121$ and the simultaneous Hoeffding radius over all $248077$
+children was $0.09302$.  Hence the lower confidence endpoint, $0.09819$, narrowly misses the strict $0.10$
+energy gate but clears the predeclared $0.05$ gate.  This certifies the top first-order bucket at the latter
+threshold; it does *not* certify the complete adaptive frontier.  In particular, the degree-two and
+degree-three bank remains a labeled heuristic.  The constant control reached essentially $1$, confirming
+that rollout-density correlations are substantial, while residualization removes the prefix-only output
+component rather than the rollout density itself.
+
+Table @tab:qwen-final reports the untouched test split.  Fourier attained $18.22%$ strict top-token
+agreement with Wilson $95%$ interval $[17.17%,19.31%]$, top-five agreement $39.14%$, and full-tokenizer KL
+$3.4659$.  Against the exactly parameter-matched no-feature adapter, this is a $1.36$ percentage-point
+top-one gain and a $0.0897$ KL reduction.  The centered-simplex control reached $16.38%$ and KL $3.5445$;
+therefore the cyclic characters helped in this run, but the comparison does not establish that tokenizer-id
+geometry is intrinsically meaningful.  The intervals overlap and no unregistered significance claim is
+made.
+
+Each student has $31472320$ parameters versus the teacher's measured $852985920$, a $27.10 times$
+same-precision parameter reduction.  The twelve-layer escalation did not beat the eight-layer Fourier
+checkpoint on validation KL.  The primary $90%$ target is therefore decisively *not met*; Dataset GL's
+correlation-recovery theorem is not a compression or argmax-agreement theorem.  Reconciled A10 time,
+including conservative full-duration charges for interrupted jobs, cost at most $4.59$, well below the
+$23$ GPU and $25$ overall caps.

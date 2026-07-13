@@ -1,0 +1,70 @@
+{
+  "experiment": "tokenizer-native random-context vector Dataset GL",
+  "teacher": {
+    "model_id": "Qwen/Qwen3.5-0.8B-Base",
+    "parameters": 852985920,
+    "bf16_bytes": 1705971840,
+    "tokenizer_q": 248077,
+    "raw_logit_width": 248320
+  },
+  "data": {
+    "source": "HuggingFaceFW/fineweb:CC-MAIN-2024-10",
+    "real_prefix_tokens": 128,
+    "generated_tokens": 128,
+    "search_pairs": 4096,
+    "train": 20000,
+    "validation": 2000,
+    "test": 5000,
+    "target": "complete tokenizer-valid terminal teacher distribution"
+  },
+  "spectral": {
+    "theorem_status_at_energy_0.10": "uncertified",
+    "heuristic_bank_before_deduplication": 3072,
+    "distinct_characters": 1437,
+    "degree_histogram": {"1": 689, "2": 566, "3": 182},
+    "simultaneous_level_one_radius": 0.09301748152275426,
+    "level_one_residual_max": 0.1912122666835785,
+    "level_one_residual_lower_bound": 0.09819478516082424,
+    "level_one_raw_max": 0.10600771009922028,
+    "level_one_constant_max": 0.9999998807907104,
+    "level_best": [0.1912122666835785, 0.1679244339466095, 0.15656864643096924],
+    "note": "The level-one top residual bucket is certified at the preregistered 0.05 energy gate, but the complete frontier remains unresolved; deeper beam terms are empirical features."
+  },
+  "students": {
+    "parameters_each": 31472320,
+    "parameter_compression_ratio": 27.102734085062682,
+    "fourier": {
+      "terms": 1437,
+      "top1": 0.1822,
+      "top1_wilson95": [0.17174586650487023, 0.19314208485140816],
+      "top5": 0.3914,
+      "kl_mean": 3.465891410833597,
+      "kl_median": 2.865608334541321
+    },
+    "simplex": {
+      "landmark_coordinates": 2874,
+      "top1": 0.1638,
+      "top1_wilson95": [0.153800498654732, 0.17431570413312447],
+      "top5": 0.3784,
+      "kl_mean": 3.5445465478122236,
+      "kl_median": 2.9528255462646484
+    },
+    "no_feature": {
+      "top1": 0.1686,
+      "top1_wilson95": [0.15847768231064177, 0.17923115053854213],
+      "top5": 0.3852,
+      "kl_mean": 3.55559209202528,
+      "kl_median": 2.913954019546509
+    }
+  },
+  "teacher_margin_mean": 0.2511693551416509,
+  "success_at_top1_0.90": false,
+  "compile_mode": "max-autotune-no-cudagraphs",
+  "cost": {
+    "reconciled_gpu_seconds_upper_bound": 14968.088276147842,
+    "reconciled_gpu_dollars_upper_bound": 4.58023501250124,
+    "gpu_cap_dollars": 23,
+    "overall_cap_dollars": 25,
+    "note": "The upper bound includes full wall time for manually interrupted A10 apps whose concurrent legacy-ledger writes were overwritten."
+  }
+}

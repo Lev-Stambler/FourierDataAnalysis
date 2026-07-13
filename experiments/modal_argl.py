@@ -109,6 +109,20 @@ def validate_data(path: str, n: int, q: int = 248077):
     return result
 
 
+@app.function(image=image, volumes={"/cache": vol}, timeout=1800, memory=8192)
+def teacher_stats():
+    """Measure exact teacher parameter and BF16 byte counts on Modal."""
+    import json
+    from fda_exp.qwen_argl import load_teacher
+    vol.reload()
+    model, _, q, raw = load_teacher(device="cpu")
+    params = sum(p.numel() for p in model.parameters())
+    bytes_ = sum(p.numel() * p.element_size() for p in model.parameters())
+    result = {"params": params, "bf16_bytes": bytes_, "q": q, "raw_logit_width": raw}
+    print(json.dumps(result), flush=True)
+    return result
+
+
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=3600, memory=16384)
 def smoke(prefix_path):
     import json, time, numpy as np, torch
