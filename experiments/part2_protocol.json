@@ -1,0 +1,64 @@
+{
+  "protocol": "part2-large-q-affine-sft-v1",
+  "part": 2,
+  "date_iso": "2026-07-13",
+  "date_display": "July 13, 2026",
+  "model_id": "Qwen/Qwen3.5-0.8B-Base",
+  "model_revision": "5c8a1b97ddef11f79b47ab9d07bf82b9117413f6",
+  "dataset_id": "HuggingFaceFW/fineweb",
+  "dataset_config": "CC-MAIN-2024-10",
+  "dataset_revision": "9bb295ddab0e05d785b879661af7260fed5140fc",
+  "q": 248077,
+  "n": 128,
+  "energy_threshold": 0.001,
+  "rms_cutoff": 0.03162277660168379,
+  "threshold_semantics": "absolute random-context Dataset-GL bucket energy T; rms_cutoff=sqrt(T); not the relative AGS significance parameter",
+  "sampling": {
+    "law": "natural autoregressive continuation conditioned on a real FineWeb context",
+    "temperature": 1.0,
+    "top_k": null,
+    "top_p": null,
+    "truncate_on_eos": false,
+    "target_primary": "one_hot(argmax(P_theta^tok(.|X))) after an X-only length-128 forward",
+    "target_secondary": "P_theta^tok(.|X) after an X-only length-128 forward"
+  },
+  "affine": {
+    "field": "prime",
+    "matrix_law": "iid uniform entries conditioned on full column rank",
+    "random_offset_law": "iid uniform over Z_q^n",
+    "anchored_offset_law": "one natural rollout X per real context",
+    "direction_law": "iid uniform nonzero vector over Z_q^n",
+    "expected_theorem_status": "oracle_mismatch"
+  },
+  "toy": {
+    "q": 17,
+    "n": 4,
+    "b": 2,
+    "sparsity": 32,
+    "output_dimension": 8,
+    "seed": 20260713,
+    "algorithm": "noiseless q-SFT affine bins, singleton detection, and peeling",
+    "groups": 4,
+    "offsets": "zero delay plus the n standard-basis delays",
+    "support_law": "uniform size-S subset of Z_q^n without replacement",
+    "coefficient_law": "independent equal-magnitude complex q-th roots of unity",
+    "trials": 8,
+    "success": "exact support, no false positives, and max coefficient error below 1e-6 in every trial"
+  },
+  "qwen_audit": {
+    "contexts": 256,
+    "affine_contexts": 64,
+    "points_per_context": 16,
+    "seed": 20260713,
+    "gpu_budget_usd": 2.0,
+    "lockbox_allowed": false
+  },
+  "complexity_scenario": {
+    "sparsity": 100000,
+    "log_base": 2,
+    "subsampling_dimension": 1,
+    "nonzero_offsets": 128,
+    "fixed_zero_delay": true,
+    "groups_for_cost_projection": 4
+  }
+}

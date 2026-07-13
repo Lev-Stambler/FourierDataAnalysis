@@ -36,6 +36,7 @@
 #include "sections/prelims.typ"
 #include "sections/gl.typ"
 #include "sections/experiments.typ"
+#include "sections/part2_large_q_sft.typ"
 #include "sections/related.typ"
 #include "sections/conc.typ"
 
