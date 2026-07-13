@@ -314,11 +314,12 @@ def fit_tensor_simplex(train_path: str, val_path: str, test_path: str, spectral_
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
-def fit_fourier_vector(train_path: str, val_path: str, spectral_path: str,
+def fit_fourier_vector(train_path: str, val_path: str, test_path: str, spectral_path: str,
                        output_rank: int = 64):
     """Fit the pure vector-valued Fourier compression model."""
     import json, time, os
-    from fda_exp.qwen_argl import load_frequency_file, train_fourier_vector_student
+    from fda_exp.qwen_argl import (evaluate_fourier_vector_student, load_frequency_file,
+                                   train_fourier_vector_student)
 
     vol.reload(); _check_budget("fit-fourier-vector", 6.0); started = time.time()
     frequencies = load_frequency_file(spectral_path)
@@ -331,6 +332,7 @@ def fit_fourier_vector(train_path: str, val_path: str, spectral_path: str,
         output_rank=output_rank, epochs=3, max_train=4096,
         batch_size=8, sampled_windows=3,
     )
+    result["test"] = evaluate_fourier_vector_student(out, test_path)
     result["spectral_path"] = spectral_path
     result["teacher_role"] = "fixed label oracle and conditional sampler only"
     _write_json(summary_path, result)
@@ -372,5 +374,6 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
     if stage == "fourier-vector":
         train_path = f"{ROOT}/train_n{train_n}.pt"
         val_path = f"{ROOT}/val_n{val_n}.pt"
+        test_path = f"{ROOT}/test_n{test_n}.pt"
         eb_path = f"{ROOT}/spectral_eb_energy_p{pairs}_l{levels}_b{beam}.json"
-        fit_fourier_vector.remote(train_path, val_path, eb_path, 64)
+        fit_fourier_vector.remote(train_path, val_path, test_path, eb_path, 64)

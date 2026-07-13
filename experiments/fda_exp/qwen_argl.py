@@ -772,6 +772,82 @@ def train_fourier_vector_student(train_path, val_path, frequencies, out_path,
     }
 
 
+def evaluate_fourier_vector_student(checkpoint, data_path, batch_size=32,
+                                    confidence_alpha=0.01, device="cuda"):
+    """Evaluate direct agreement and deterministic KL/argmax certificates."""
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+    from .argl import clopper_pearson_lower
+
+    saved = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    data = torch.load(data_path, map_location="cpu", weights_only=True, mmap=True)
+    base_model = build_fourier_vector_student(
+        int(saved["q"]), saved["frequencies"], int(saved["output_rank"])
+    ).to(device)
+    base_model.load_state_dict(saved["state_dict"])
+    base_model.eval()
+    model = torch.compile(
+        base_model, mode="max-autotune-no-cudagraphs", fullgraph=False, dynamic=False
+    )
+    loader = DataLoader(
+        TensorDataset(data["contexts"], data["teacher_logits"]),
+        batch_size=batch_size, shuffle=False,
+    )
+    agree = top5 = kl_certified = total = 0
+    kl_sum = hard_ce_sum = brier_sum = 0.0
+    with torch.inference_mode():
+        for context, teacher_logits in loader:
+            context = context.to(device).long()
+            teacher_logits = teacher_logits.to(device).float()
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                window = _pad_context_batch(context[:, -ROLLOUT_LEN:], batch_size)
+                student_logits = model(window)[:len(context)]
+            teacher_probability = torch.softmax(teacher_logits, 1)
+            student_log_probability = torch.log_softmax(student_logits.float(), 1)
+            student_probability = torch.exp(student_log_probability)
+            teacher_log_probability = torch.log_softmax(teacher_logits, 1)
+            kl = (teacher_probability * (teacher_log_probability
+                                          - student_log_probability)).sum(1)
+            teacher_top = teacher_logits.argmax(1)
+            student_top = student_logits.argmax(1)
+            teacher_top_two = teacher_probability.topk(2, 1).values
+            p1, p2 = teacher_top_two[:, 0], teacher_top_two[:, 1]
+            kappa = (p1 * torch.log(2 * p1 / (p1 + p2))
+                     + p2 * torch.log(2 * p2 / (p1 + p2)))
+            agree += int((student_top == teacher_top).sum())
+            top5 += int((student_logits.topk(5, 1).indices
+                         == teacher_top[:, None]).any(1).sum())
+            kl_certified += int((kl < kappa).sum())
+            kl_sum += float(kl.sum())
+            hard_ce_sum += float((-student_log_probability[
+                torch.arange(len(context), device=device), teacher_top
+            ]).sum())
+            brier = (student_probability.square().sum(1) + 1
+                     - 2 * student_probability[
+                         torch.arange(len(context), device=device), teacher_top
+                     ])
+            brier_sum += float(brier.sum())
+            total += len(context)
+    return {
+        "n": total,
+        "top1": agree / total,
+        "top1_successes": agree,
+        "top1_clopper_pearson_lower": clopper_pearson_lower(
+            agree, total, confidence_alpha
+        ),
+        "confidence": 1 - confidence_alpha,
+        "top5": top5 / total,
+        "kl_mean": kl_sum / total,
+        "hard_ce_mean": hard_ce_sum / total,
+        "brier_mean": brier_sum / total,
+        "kl_argmax_certified_fraction": kl_certified / total,
+        "kl_argmax_certified_count": kl_certified,
+        "params": int(saved["params"]),
+        "terms": int(len(saved["frequencies"])),
+        "output_rank": int(saved["output_rank"]),
+    }
+
+
 def _simplex_features(tokens, landmarks, q):
     """Additive centered one-hot coordinates for legacy one-position landmarks.
 
