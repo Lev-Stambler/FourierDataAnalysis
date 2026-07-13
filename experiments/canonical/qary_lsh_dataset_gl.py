@@ -1133,7 +1133,8 @@ def fit_sparse2(m_fibers: int = M_FIBERS, r: int = R_FILLS,
             norms_i = ((F * F[:, [i]]).T @ A_c / M).double().pow(2).sum(1) \
                 .sqrt().cpu().numpy()
             norms_i[i] = 0.0
-            for j in np.argsort(-norms_i)[:20]:
+            per_anchor = max(20, (2 * top_pairs) // max(len(anchors), 1) + 1)
+            for j in np.argsort(-norms_i)[:per_anchor]:
                 if norms_i[j] >= anchor_bar:
                     key = (min(int(i), int(j)), max(int(i), int(j)))
                     pairs[key] = max(pairs.get(key, 0.0), float(norms_i[j]))
@@ -1343,7 +1344,7 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          encoding: str = "all", span: str = "filled", patience: int = 3,
          steps: int = 600,
          train_path: str = "/cache/qwen35_argl/train_n20000.pt",
-         interactions: int = 0):
+         interactions: int = 0, top_pairs: int = 1000):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -1359,7 +1360,7 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "spectrum-deg2":
         spectrum_deg2.remote(m_fibers, r, fill_len)
     if stage == "fit-sparse2":
-        fit_sparse2.remote(m_fibers, r, fill_len)
+        fit_sparse2.remote(m_fibers, r, fill_len, 0.15, 0.01, top_pairs)
     if stage == "fit-sparse3":
         fit_sparse3.remote(m_fibers, r, fill_len)
     if stage == "fit-staged-real":
