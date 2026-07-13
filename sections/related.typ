@@ -18,7 +18,8 @@ prefix-conditional samples from that law.
 *Conditional access.*
 Conditional sampling is known to be strictly stronger than ordinary samples in distribution testing and
 learning @canonne2015testing @chakraborty2013power @chen2021junta.
-In our application it is not an abstract data-service assumption: after a realized left prefix, the same
+In our application it is not an abstract data-service assumption: after a random real corpus context and a
+realized generated left prefix, the same
 autoregressive model that defines the distribution generates an exact conditional suffix.
 KV caching changes only the cost of this operation, not its law.
 

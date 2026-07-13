@@ -7,7 +7,8 @@
 = Conclusion and Future Directions
 
 An autoregressive model gives Dataset GL exactly the access it needs.
-Its sampling probabilities define a non-uniform distribution on fixed-prefix continuations, its raw
+Real corpus contexts define the outer distribution; the model sampling probabilities define a non-uniform
+conditional continuation law, and its tokenizer-level
 probabilities label those continuations, and a cached realized prefix can be forked to draw independent
 conditional suffixes.
 Processing coordinates newest-first aligns this oracle with native categorical Goldreich--Levin over
@@ -15,8 +16,13 @@ $ZZ_q^n$.
 
 The resulting guarantee has no low-degree assumption: it recovers every heavy coefficient through token
 degree $n=128$, with complexity governed by the live spectral width.
-One categorical DFT estimates all $q$ children of a live bucket from the same suffix pairs, so large $q$
+One categorical inverse DFT per live parent estimates all $q$ children from the same suffix pairs, so large $q$
 increases computation but not conditional-sample count by a multiplicative $q$.
+
+The recovered quantities are prefix-conditional RMS character correlations of a distribution-weighted
+target.  They are not non-uniform Fourier reconstruction weights, and rollout density alone may create
+high-support moments.  Constant-output and continuation-residual controls, supervised refitting, and
+held-out document evaluation therefore separate the theorem from the empirical compression claim.
 
 The cyclic token-id geometry remains a modeling choice, not a linguistic fact.
 For that reason the empirical study must include the centered one-hot simplex control and fixed random

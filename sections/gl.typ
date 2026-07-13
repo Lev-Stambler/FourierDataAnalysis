@@ -7,22 +7,23 @@
 = Dataset Goldreich--Levin with a Generative Oracle
 
 We study the setting needed for model compression.
-Fix a real prefix $pi$ and an autoregressive model $f_theta$.
+Draw a real context $Z$ from a corpus distribution and use an autoregressive model $f_theta$ to generate
+a continuation $X$.
 The model plays two roles:
 
 + its sampling probabilities generate continuations $X$;
 + its raw next-token probabilities label those same continuations.
 
 This defines the dataset distribution rather than merely approximating one.
-If the sampling kernel is $Q_theta$, then
+Conditioned on $Z=z$, if the sampling kernel is $Q_theta$, then
 $
-calD_(pi,theta)^n(x)
-= product_(j=1)^n Q_theta(x_j | pi,x_(<j)).
+calD_z^n(x)
+= product_(j=1)^n Q_theta(x_j | z,x_(<j)).
 $
-Every generated continuation is therefore in-distribution for $calD_(pi,theta)^n$.
+Every generated continuation is therefore in-distribution for $calD_z^n$.
 We do not need a flat corpus to contain two strings with the same prefix, and we do not retrieve or search
 for such strings.
-Given a realized prefix $z$, we compute its KV cache once and generate as many independent suffixes as the
+Given a realized real-and-generated left context, we compute its KV cache once and generate independent suffixes as the
 conditional estimator needs.
 Autoregressive factorization makes these exact draws from
 $calD_(pi,theta)^n | X_(1:|z|)=z$.
@@ -50,8 +51,8 @@ Generation solves conditional access, not spectral density: if exponentially man
 heavy, every correct all-heavy-coefficient algorithm must pay for them.
 The theorem therefore reports its complexity in $N$ and makes no low-degree assumption.
 
-For the experiment, $F(x)=P_theta(dot|pi,x)$ is a probability vector and
-@cor:ar-qary-vector performs one shared search over the whole next-token distribution.
+For the experiment, $F(z,x)=P_theta(dot|z,x)$ is a probability vector and
+@thm:random-context-vector-gl performs one shared search over the whole next-token distribution.
 Generation may use a restricted or temperature-scaled $Q_theta$ while the label retains the raw projected
 probabilities.
 This separation changes the rollout measure but never evaluates the label off that measure.
