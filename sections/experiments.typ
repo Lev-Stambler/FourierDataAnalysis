@@ -482,7 +482,23 @@ Two results, measured on identical fibers, targets, and fits:
   arbitrarily and a heavy single-bit leaf -- created exactly once, at its own level -- survives to
   the exact leaf test only by luck.  This is the earlier campaign's documented degree-one
   under-allocation failure; the complete degree-one basis must be evaluated exactly (it is one
-  GEMM) rather than entrusted to the frontier, which is needed only for degree $>= 2$.  Done this
+  GEMM) rather than entrusted to the frontier, which is needed only for degree $>= 2$.
+
+  The mechanism deserves stating, because it delimits where ANY adaptive bucket tree can work on a
+  dataset.  Every one of the $2^n$ empirical coefficients carries sampling noise $tilde 1\/sqrt(m)$;
+  a bucket at level $k$ sums the squares of $2^(n-k)$ of them, so each bucket carries a common
+  noise mass $tilde 2^(n-k) EE[f^2]\/m$ that dwarfs the entire true mass until $2^(n-k) lt.tilde m$.
+  Parseval still holds -- on the wrong (empirical) function -- so the threshold cannot prune and
+  the ordering cannot rank: the tree is provably blind until the last $tilde log_2 m$ levels, and
+  every width-bounded decision before that discards leaves irrecoverably.  Debiasing the buckets by
+  the computable noise floor buys discrimination once the noise-mass *fluctuation*
+  $tilde sqrt(2^(n-k))\/m$ drops below the signal -- roughly ten further levels at our sizes -- but
+  the exponential wins regardless.  Individual low-degree coefficients, by contrast, are single
+  averages over all $m$ rows with error $1\/sqrt(m)$ and no extension-noise aggregation at all:
+  the tree aggregates noise, enumeration does not.  Dataset GL's adaptive tree is therefore the
+  correct tool exactly when the extension space is within reach of the sample size (small domains,
+  or heavy conditional multiplicity, as in the earlier slot-alphabet campaign); outside that
+  regime, exact per-degree enumeration is not a fallback but the algorithm.  Done this
   way, the recovery-then-build program works end to end, verified on a strictly untouched test
   split: a model of the $approx 220$ exactly certified LSH characters plus the $1000$ heaviest
   exactly certified pairs reaches test KL $1.103$ against the unigram floor $1.630$ -- surpassing
