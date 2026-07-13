@@ -19,7 +19,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
         "numpy>=1.26", "torch>=2.5", "transformers>=5.13.1", "accelerate>=1.2",
-        "datasets>=4.0", "safetensors", "sentencepiece",
+        "datasets>=4.0", "safetensors", "sentencepiece", "scipy>=1.12",
     )
     .env({"HF_HOME": "/cache/hf", "HF_XET_HIGH_PERFORMANCE": "1",
           "TORCHINDUCTOR_CACHE_DIR": "/cache/torchinductor"})
@@ -171,6 +171,33 @@ def spectral(prefix_path: str, pairs: int = 256, levels: int = 3, beam: int = 10
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
+def spectral_eb(prefix_path: str, pairs: int = 4096, levels: int = 1, beam: int = 8192):
+    """Variance-adaptive spectral gate with a separately named artifact."""
+    import json, time, numpy as np
+    from fda_exp.qwen_argl import load_teacher, run_spectral_gate
+
+    vol.reload(); _check_budget("spectral-eb", 3.0); started = time.time()
+    out = f"{ROOT}/spectral_eb_energy_p{pairs}_l{levels}_b{beam}.json"
+    import os
+    if os.path.exists(out):
+        return out
+    model, _, q, _ = load_teacher()
+    prefixes = np.load(prefix_path)["search"][:pairs]
+    report = run_spectral_gate(model, prefixes, q, levels=levels, pairs=pairs, beam=beam)
+    report["prefix_path"] = prefix_path
+    report["theorem_status"] = "uncertified"
+    report["theorem_status_reason"] = (
+        "root empirical-Bernstein gate is certified; any capped deeper beam remains heuristic"
+    )
+    _write_json(out, report)
+    _record_gpu("spectral-eb", started, {"pairs": pairs, "levels": levels, "beam": beam})
+    vol.commit()
+    print(json.dumps({k: report.get(k) for k in
+                      ("q", "pairs", "theorem_frontier", "targets_level1")}, indent=2), flush=True)
+    return out
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
 def make_data(prefix_path: str, split: str, n: int, seed: int = 0):
     import time, numpy as np
     from fda_exp.qwen_argl import generate_labeled_split, labeled_split_is_valid, load_teacher
@@ -286,6 +313,46 @@ def fit_tensor_simplex(train_path: str, val_path: str, test_path: str, spectral_
     return result
 
 
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
+def capacity_profile(test_path: str, n: int = 512):
+    """Measure the layer/rank ceiling before spending on another student fit."""
+    import json, time
+    from fda_exp.qwen_argl import load_teacher, teacher_capacity_profile
+
+    vol.reload(); _check_budget("capacity-profile", 2.0); started = time.time()
+    out = f"{ROOT}/capacity_profile_n{n}.json"
+    import os
+    if os.path.exists(out):
+        return out
+    model, _, q, _ = load_teacher()
+    result = teacher_capacity_profile(model, test_path, q, n=n)
+    _write_json(out, result)
+    _record_gpu("capacity-profile", started, {"n": n})
+    vol.commit()
+    print(json.dumps(result, indent=2), flush=True)
+    return out
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
+def layer_drop_profile(test_path: str, n: int = 512):
+    """Evaluate nonconsecutive influence-ranked Qwen block removal."""
+    import json, time
+    from fda_exp.qwen_argl import load_teacher, teacher_layer_drop_profile
+
+    vol.reload(); _check_budget("layer-drop-profile", 3.0); started = time.time()
+    out = f"{ROOT}/layer_drop_profile_n{n}.json"
+    import os
+    if os.path.exists(out):
+        return out
+    model, _, q, _ = load_teacher()
+    result = teacher_layer_drop_profile(model, test_path, q, n=n)
+    _write_json(out, result)
+    _record_gpu("layer-drop-profile", started, {"n": n})
+    vol.commit()
+    print(json.dumps(result, indent=2), flush=True)
+    return out
+
+
 @app.local_entrypoint()
 def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
          val_n: int = 512, test_n: int = 1000, pairs: int = 256, levels: int = 3,
@@ -298,6 +365,8 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
     spectral_path = f"{ROOT}/spectral_p{pairs}_l{levels}_b{beam}.json"
     if stage in ("spectral", "all"):
         spectral_path = spectral.remote(prefix_path, pairs, levels, beam)
+    if stage == "spectral-eb":
+        spectral_path = spectral_eb.remote(prefix_path, pairs, levels, beam)
     if stage in ("data", "all"):
         train_path = make_data.remote(prefix_path, "train", train_n, 1)
         val_path = make_data.remote(prefix_path, "val", val_n, 2)
@@ -313,3 +382,9 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
         val_path = f"{ROOT}/val_n{val_n}.pt"
         test_path = f"{ROOT}/test_n{test_n}.pt"
         fit_tensor_simplex.remote(train_path, val_path, test_path, spectral_path)
+    if stage == "capacity":
+        test_path = f"{ROOT}/test_n{test_n}.pt"
+        capacity_profile.remote(test_path, min(test_n, 512))
+    if stage == "layer-drop":
+        test_path = f"{ROOT}/test_n{test_n}.pt"
+        layer_drop_profile.remote(test_path, min(test_n, 512))

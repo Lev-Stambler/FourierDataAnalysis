@@ -7,6 +7,11 @@ import numpy as np
 from fda_exp.argl import (
     child_scores_from_histogram,
     direct_child_scores,
+    empirical_bernstein_radius,
+    exponential_top_energy_fraction,
+    argmax_kl_threshold,
+    clopper_pearson_lower,
+    hoeffding_radius,
     phase_from_difference,
     simplex_kernel,
     tokenizer_alphabet,
@@ -114,6 +119,48 @@ def test_hermitian_histogram_is_real_after_ifft():
     assert np.max(np.abs(got.real - direct_child_scores(d, w, q).real)) < 1e-12
 
 
+def test_two_dfts_recover_all_child_sample_variances():
+    q = 17
+    rng = np.random.default_rng(17)
+    d = rng.integers(0, q, 200)
+    w = rng.normal(size=200) + 1j * rng.normal(size=200)
+    c = np.arange(q)[:, None]
+    samples = np.real(w[None] * np.exp(2j * np.pi * c * d[None] / q))
+    direct_mean = samples.mean(1)
+    direct_variance = samples.var(1, ddof=1)
+
+    mean = direct_child_scores(d, w, q).real
+    square_transform = direct_child_scores(d, w ** 2, q)
+    second = 0.5 * (np.mean(np.abs(w) ** 2)
+                    + square_transform[(2 * np.arange(q)) % q].real)
+    variance = (second - mean ** 2).clip(min=0) * len(d) / (len(d) - 1)
+    assert np.allclose(mean, direct_mean, atol=1e-12)
+    assert np.allclose(variance, direct_variance, atol=1e-12)
+
+
+def test_empirical_bernstein_exploits_low_variance_without_gaussian_assumption():
+    eb = empirical_bernstein_radius(np.array([0.001, 0.01]), 4096, 248077, 0.01)
+    h = hoeffding_radius(4096, 248077, 0.01)
+    assert np.all(eb > 0)
+    assert np.all(eb < h)
+    assert eb[0] < eb[1]
+
+
+def test_exponential_energy_curve_matches_endpoints_and_qwen_scale():
+    assert exponential_top_energy_fraction(0, 10) == 0.0
+    assert exponential_top_energy_fraction(10, 10) == 1.0
+    assert 0.76 < exponential_top_energy_fraction(100_000, 248_077) < 0.78
+    assert 0.79 < exponential_top_energy_fraction(109_000, 248_077) < 0.81
+
+
+def test_exact_agreement_certificates():
+    threshold = argmax_kl_threshold(np.array([0.6, 0.5]), np.array([0.3, 0.5]))
+    assert threshold[0] > 0
+    assert threshold[1] == 0
+    assert clopper_pearson_lower(4065, 5000, 0.01) < 0.8
+    assert clopper_pearson_lower(4066, 5000, 0.01) >= 0.8
+
+
 def test_phase_uses_native_categorical_coordinates():
     q = 17
     alpha = np.array([1, 7, 16])
@@ -122,6 +169,41 @@ def test_phase_uses_native_categorical_coordinates():
     got = phase_from_difference(alpha, y, yp, q)
     want = np.exp(2j * np.pi * (((yp-y) * alpha).sum(1) % q) / q)
     assert np.allclose(got, want)
+
+
+def test_chunked_packed_fourier_projection_matches_dense_features():
+    import torch
+    from fda_exp.qwen_argl import (_fourier_features, chunked_fourier_low_rank,
+                                   pack_frequency_support)
+
+    torch.manual_seed(7)
+    q = 17
+    tokens = torch.randint(0, q, (5, 8))
+    frequencies = torch.randint(0, q, (13, 8))
+    frequencies[0].zero_()
+    positions, alphas = pack_frequency_support(frequencies)
+    cosine_weight = torch.randn(13, 4)
+    sine_weight = torch.randn(13, 4)
+    dense = _fourier_features(tokens, frequencies, q)
+    expected = dense[:, :13] @ cosine_weight + dense[:, 13:] @ sine_weight
+    actual = chunked_fourier_low_rank(
+        tokens, positions, alphas, q, cosine_weight, sine_weight, chunk_size=3
+    )
+    assert torch.allclose(actual, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_scalable_fourier_correction_starts_as_exact_zero_residual():
+    import torch
+    from fda_exp.qwen_argl import build_scalable_fourier_correction
+
+    frequencies = torch.tensor([[1, 0, 0], [0, 3, 4], [2, 0, 5]])
+    correction = build_scalable_fourier_correction(
+        frequencies, q=7, hidden_size=11, adapter_rank=3, chunk_size=2
+    )
+    out = correction(torch.randint(0, 7, (4, 3)))
+    assert out.shape == (4, 11)
+    assert torch.count_nonzero(out) == 0
+    assert sum(p.numel() for p in correction.parameters()) == 2 * 3 * 3 + 3 * 11
 
 
 def test_simplex_kernel_is_permutation_invariant():

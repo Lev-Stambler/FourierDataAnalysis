@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .argl import hoeffding_radius, tokenizer_alphabet
+from .argl import exponential_top_energy_fraction, hoeffding_radius, tokenizer_alphabet
 
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B-Base"
@@ -151,6 +151,102 @@ def _gpu_child_scores_batched(d, weights, q):
     return (q * torch.fft.ifft(h, dim=1)).real
 
 
+def _gpu_child_stats_batched(d, weights, q):
+    """All-child sample means and unbiased variances using two categorical DFTs.
+
+    For ``Z_c = Re(B exp(2 pi i c D/q))``, the first DFT gives ``mean(Z_c)``.
+    The identity ``Re(z)^2 = (|z|^2 + Re(z^2))/2`` lets a second DFT give all
+    second moments without materializing a parent-by-pair-by-child tensor.
+    """
+    import torch
+
+    d = torch.as_tensor(d, dtype=torch.long, device="cuda") % q
+    w = torch.as_tensor(weights, dtype=torch.complex64, device="cuda")
+    if w.ndim == 1:
+        w = w[None]
+    if w.ndim != 2 or w.shape[1] != len(d):
+        raise ValueError("weights must have shape (parents, pairs)")
+    m = len(d)
+    if m < 2:
+        raise ValueError("empirical variance needs at least two pairs")
+    pos = d[None].expand(len(w), -1)
+    neg = ((-d) % q)[None].expand(len(w), -1)
+
+    h = torch.zeros((len(w), q), dtype=torch.complex64, device="cuda")
+    h.scatter_add_(1, pos, 0.5 * w / m)
+    h.scatter_add_(1, neg, 0.5 * torch.conj(w) / m)
+    mean = (q * torch.fft.ifft(h, dim=1)).real
+    del h
+
+    h2 = torch.zeros((len(w), q), dtype=torch.complex64, device="cuda")
+    h2.scatter_add_(1, pos, w.square() / m)
+    transform2 = q * torch.fft.ifft(h2, dim=1)
+    twice = (2 * torch.arange(q, device="cuda")) % q
+    mean_square = 0.5 * (w.abs().square().mean(1, keepdim=True)
+                         + transform2[:, twice].real)
+    variance = ((mean_square - mean.square()).clamp_min_(0.0) * (m / (m - 1.0)))
+    return mean, variance
+
+
+def _crossfit_root_energy_profile(d, weights, q):
+    """Rank on one half and estimate cumulative spectral energy on the other.
+
+    Selection and confirmation use disjoint independent outer-context pairs,
+    so each reported selected-set sum is unbiased conditional on the discovery
+    half.  Ratios and Gaussian comparisons remain descriptive: the sums over
+    characters are correlated, and this routine is not a replacement for the
+    simultaneous per-character Dataset-GL confidence event.
+    """
+    import torch
+
+    d = torch.as_tensor(d, dtype=torch.long, device="cuda") % q
+    w = torch.as_tensor(weights, dtype=torch.complex64, device="cuda")
+    half = len(d) // 2
+    if half < 2 or len(d) - half < 2:
+        raise ValueError("cross-fit energy profile needs at least four pairs")
+    discovery, _ = _gpu_child_stats_batched(d[:half], w[:half], q)
+    confirmation, _ = _gpu_child_stats_batched(d[half:], w[half:], q)
+    discovery = discovery[0]
+    confirmation = confirmation[0]
+    order = torch.argsort(discovery, descending=True)
+    cumulative = torch.cumsum(confirmation[order].double(), 0)
+    total = float(confirmation.double().sum().item())
+
+    requested = (1, 1024, 8192, 32768, 65536, 100000, 109000, 131072, q)
+    ks = sorted(set(min(q, int(k)) for k in requested if k > 0))
+    rows = []
+    dc = d[half:]
+    wc = w[half:]
+    m = len(dc)
+    for k in ks:
+        selected = order[:k]
+        # This inverse DFT evaluates sum_{c in S} exp(2 pi i c d/q) for
+        # every observed difference d, retaining covariance between scores.
+        indicator = torch.zeros(q, dtype=torch.complex64, device="cuda")
+        indicator[selected] = 1.0
+        kernel = q * torch.fft.ifft(indicator)
+        samples = (wc * kernel[dc]).real
+        estimate = float(cumulative[k - 1].item())
+        standard_error = float(samples.double().std(unbiased=True).item() / math.sqrt(m))
+        rows.append({
+            "k": k,
+            "rho": k / q,
+            "confirmed_energy_sum": estimate,
+            "confirmed_standard_error": standard_error,
+            "confirmed_fraction_point": (estimate / total if total > 0 else None),
+            "iid_complex_gaussian_fraction": exponential_top_energy_fraction(k, q),
+        })
+    return {
+        "method": "rank on first half; unbiased selected-set energy sum on second half",
+        "discovery_pairs": half,
+        "confirmation_pairs": len(d) - half,
+        "confirmed_total_energy": total,
+        "zero_difference_confirmation_pairs": int((dc == 0).sum().item()),
+        "rows": rows,
+        "warning": "point ratios and Gaussian curve are descriptive, not finite-sample certificates",
+    }
+
+
 def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
     """Fresh independent (Z,L^-) contexts and paired (U,Y),(U',Y')."""
     import torch
@@ -161,13 +257,14 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
         raise ValueError("k must be in 0..n-1")
     rng = torch.Generator(device="cuda").manual_seed(seed)
     all_d, all_y, all_yp = [], [], []
-    raw_w, res_w = [], []
+    raw_w, res_w, argmax_raw_w, argmax_res_w = [], [], [], []
     t0 = time.time()
     for lo in range(0, len(prefixes), batch):
         z = torch.as_tensor(prefixes[lo:lo + batch], dtype=torch.long, device="cuda")
         with torch.inference_mode():
             base_out = model(input_ids=z, use_cache=False, return_dict=True)
             pz = tokenizer_softmax(base_out.logits[:, -1], q)
+            yz = pz.argmax(1)
         left, _ = autoregressive_rollout(model, z, left_len, q, rng)
         ctx = torch.cat([z, left], dim=1)
         paired_ctx = ctx.repeat_interleave(2, dim=0)
@@ -177,18 +274,32 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
         r0 = (p[:, 0] - pz) / math.sqrt(2.0)
         r1 = (p[:, 1] - pz) / math.sqrt(2.0)
         res = (r0 * r1).sum(1)
+        y0 = p[:, 0].argmax(1)
+        y1 = p[:, 1].argmax(1)
+        argmax_raw = (y0 == y1).float()
+        # <(e_y0-e_yz)/sqrt(2),(e_y1-e_yz)/sqrt(2)> exactly,
+        # without materializing either q-dimensional one-hot vector.
+        argmax_res = 0.5 * ((y0 == y1).float() - (y0 == yz).float()
+                            - (y1 == yz).float() + 1.0)
         suffix = suffix.reshape(len(z), 2, k + 1)
         all_d.append((suffix[:, 1, 0] - suffix[:, 0, 0]).detach().cpu().numpy() % q)
         all_y.append(suffix[:, 0, 1:].detach().cpu().numpy())
         all_yp.append(suffix[:, 1, 1:].detach().cpu().numpy())
         raw_w.append(raw.detach().cpu().numpy())
         res_w.append(res.detach().cpu().numpy())
+        # Keep the hard-label vector target distinct from the probability
+        # target; it is primary when strict teacher argmax agreement is the
+        # requested metric.
+        argmax_raw_w.append(argmax_raw.detach().cpu().numpy())
+        argmax_res_w.append(argmax_res.detach().cpu().numpy())
     return dict(
         difference=np.concatenate(all_d),
         y=np.concatenate(all_y),
         yp=np.concatenate(all_yp),
         raw=np.concatenate(raw_w),
         residual=np.concatenate(res_w),
+        argmax_raw=np.concatenate(argmax_raw_w),
+        argmax_residual=np.concatenate(argmax_res_w),
         constant=np.ones(len(prefixes), dtype=np.float32),
         generated_tokens=int(len(prefixes) * (left_len + 2 * (k + 1))),
         seconds=time.time() - t0,
@@ -196,7 +307,8 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
 
 
 def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
-                      parent_block=16, seed=0):
+                      parent_block=16, seed=0,
+                      search_target="argmax_residual"):
     """Run the conservative gate plus a block-batched residual feature beam.
 
     The certified frontier and heuristic bank remain separate.  The latter
@@ -209,11 +321,15 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
     live = np.zeros((1, 0), dtype=np.int32)
     banks = []
     report = {"q": q, "levels": [], "targets_level1": {}, "beam": beam,
+              "search_target": search_target,
               "parent_block": parent_block, "pairs": len(prefixes), "frontier_cap": 64}
     radius = hoeffding_radius(len(prefixes), q)
+    eb_log = math.log(4.0 * q / 0.01)
     for k in range(levels):
         pair = collect_level_pairs(model, prefixes, k, q, seed=seed + 1009 * k)
-        targets = ("raw", "residual", "constant") if k == 0 else ("residual",)
+        targets = ((search_target, "residual", "constant") if k == 0
+                   else (search_target,))
+        targets = tuple(dict.fromkeys(targets))
         all_candidates = []
         parent_summaries = []
         delta = torch.as_tensor((pair["yp"] - pair["y"]) % q,
@@ -230,27 +346,48 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
                 else:
                     phase = torch.ones((len(parents), len(prefixes)),
                                        dtype=torch.complex64, device="cuda")
-                scores = _gpu_child_scores_batched(
+                scores, variances = _gpu_child_stats_batched(
                     pair["difference"], phase * target_weight[None], q
                 )
+                radii = (torch.sqrt(2.0 * variances * eb_log / len(prefixes))
+                         + 14.0 * eb_log / (3.0 * (len(prefixes) - 1)))
                 take = min(beam, q)
                 topv, topids = torch.topk(scores, take, dim=1)
-                heavy = (scores - radius >= 0.10).sum(1).cpu().numpy()
-                unresolved = ((scores - radius < 0.10) &
-                              (scores + radius >= 0.10)).sum(1).cpu().numpy()
+                heavy = (scores - radii >= 0.10).sum(1).cpu().numpy()
+                unresolved = ((scores - radii < 0.10) &
+                              (scores + radii >= 0.10)).sum(1).cpu().numpy()
+                light = (scores + radii < 0.10).sum(1).cpu().numpy()
                 topv_cpu = topv.cpu().numpy()
                 topids_cpu = topids.cpu().numpy()
+                top_radius_cpu = torch.gather(radii, 1, topids[:, :1]).cpu().numpy()
                 for bi, parent in enumerate(live[lo:lo + parent_block]):
                     summary = dict(parent=parent.tolist(), target=target,
                                    max=float(topv_cpu[bi, 0]),
                                    argmax_child=int(topids_cpu[bi, 0]),
-                                   min_top=float(topv_cpu[bi, -1]), radius=float(radius),
+                                   min_top=float(topv_cpu[bi, -1]),
+                                   argmax_radius=float(top_radius_cpu[bi, 0]),
+                                   hoeffding_radius=float(radius),
                                    certified_heavy=int(heavy[bi]),
-                                   unresolved=int(unresolved[bi]))
+                                   unresolved=int(unresolved[bi]), light=int(light[bi]),
+                                   confidence="99% q-simultaneous empirical Bernstein")
+                    if k == 0:
+                        probs = torch.tensor([0.0, 0.01, 0.5, 0.99, 1.0], device="cuda")
+                        summary["score_quantiles"] = [float(x) for x in
+                                                      torch.quantile(scores[bi], probs).cpu()]
+                        summary["radius_quantiles"] = [float(x) for x in
+                                                       torch.quantile(radii[bi], probs).cpu()]
+                        nonzero = topids[bi] != 0
+                        nz_values = topv[bi][nonzero][:16].cpu().tolist()
+                        nz_ids = topids[bi][nonzero][:16].cpu().tolist()
+                        summary["top_nonzero"] = [
+                            {"frequency": int(c), "score": float(v),
+                             "radius": float(radii[bi, int(c)].item())}
+                            for c, v in zip(nz_ids, nz_values)
+                        ]
                     parent_summaries.append(summary)
                     if k == 0:
                         report["targets_level1"][target] = summary
-                        if target == "residual":
+                        if target == search_target:
                             theorem_width = int(heavy[bi] + unresolved[bi])
                             report["theorem_frontier"] = {
                                 "status": ("spectral_blowup" if theorem_width > report["frontier_cap"]
@@ -261,7 +398,7 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
                                 "cap": report["frontier_cap"],
                                 "note": "the heuristic beam below is separate from this feasibility gate",
                             }
-                if target == "residual":
+                if target == search_target:
                     # The global top beam can contain at most `beam` children
                     # from a parent, so merging per-parent top beams is exact.
                     flatv = topv.reshape(-1)
@@ -275,7 +412,11 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
                     )
                     all_candidates.extend((float(v), a) for v, a in
                                           zip(vals.cpu().numpy(), alphas))
-                del scores, topv, topids, phase
+                    if k == 0 and lo == 0:
+                        report["root_energy_profile"] = _crossfit_root_energy_profile(
+                            pair["difference"], target_weight, q
+                        )
+                del scores, variances, radii, topv, topids, phase
         # For real/vector-probability targets, a and -a have identical bucket
         # energy and one cosine/sine pair spans both characters.  Canonicalize
         # before truncation so conjugates do not consume half the GPU beam.
@@ -381,6 +522,85 @@ def _fourier_features(tokens, frequencies, q):
     dot = ((tokens[:, None, :].long() * frequencies[None]) % q).sum(-1) % q
     angle = (2.0 * math.pi / q) * dot.float()
     return torch.cat([torch.cos(angle), torch.sin(angle)], dim=1)
+
+
+def pack_frequency_support(frequencies):
+    """Pack native q-ary characters by nonzero token positions."""
+    import torch
+
+    freq = torch.as_tensor(frequencies, dtype=torch.long)
+    if freq.ndim != 2:
+        raise ValueError("frequencies must have shape (terms, token_positions)")
+    degrees = (freq != 0).sum(1)
+    max_degree = int(degrees.max().item()) if len(freq) else 0
+    positions = torch.zeros((len(freq), max_degree), dtype=torch.int16)
+    alphas = torch.zeros((len(freq), max_degree), dtype=torch.int32)
+    for row in range(len(freq)):
+        active = torch.nonzero(freq[row] != 0, as_tuple=False).flatten()
+        if len(active):
+            positions[row, :len(active)] = active.to(torch.int16)
+            alphas[row, :len(active)] = freq[row, active].to(torch.int32)
+    return positions, alphas
+
+
+def chunked_fourier_low_rank(tokens, positions, alphas, q, cosine_weight,
+                             sine_weight, chunk_size=8192):
+    """Project many characters without materializing a dense B-by-K-by-N tensor."""
+    import torch
+
+    if positions.shape != alphas.shape or positions.ndim != 2:
+        raise ValueError("packed positions and alphas must have the same 2-D shape")
+    if cosine_weight.shape != sine_weight.shape or len(cosine_weight) != len(positions):
+        raise ValueError("Fourier weights must both have shape (terms, rank)")
+    result = torch.zeros((len(tokens), cosine_weight.shape[1]),
+                         dtype=cosine_weight.dtype, device=tokens.device)
+    scale = 2.0 * math.pi / q
+    for lo in range(0, len(positions), chunk_size):
+        hi = min(lo + chunk_size, len(positions))
+        pos = positions[lo:hi].long()
+        alpha = alphas[lo:hi].long()
+        selected = tokens[:, pos].long()
+        dot = (selected * alpha[None]).sum(-1).remainder(q)
+        angle = scale * dot.float()
+        cosine = torch.cos(angle).to(cosine_weight.dtype)
+        sine = torch.sin(angle).to(sine_weight.dtype)
+        result = (result + cosine @ cosine_weight[lo:hi]
+                  + sine @ sine_weight[lo:hi])
+    return result
+
+
+def build_scalable_fourier_correction(frequencies, q, hidden_size=1024,
+                                      adapter_rank=32, chunk_size=8192):
+    """Low-rank Fourier residual head for a frozen language-model backbone."""
+    import torch
+
+    freq = torch.as_tensor(frequencies, dtype=torch.long)
+    positions, alphas = pack_frequency_support(freq)
+
+    class FourierCorrection(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q = int(q)
+            self.chunk_size = int(chunk_size)
+            self.register_buffer("positions", positions, persistent=True)
+            self.register_buffer("alphas", alphas, persistent=True)
+            self.cosine_weight = torch.nn.Parameter(torch.empty(len(freq), adapter_rank))
+            self.sine_weight = torch.nn.Parameter(torch.empty(len(freq), adapter_rank))
+            self.output = torch.nn.Linear(adapter_rank, hidden_size, bias=False)
+            torch.nn.init.normal_(self.cosine_weight, std=1.0 / math.sqrt(max(len(freq), 1)))
+            torch.nn.init.normal_(self.sine_weight, std=1.0 / math.sqrt(max(len(freq), 1)))
+            # Zero initialization preserves the frozen backbone exactly before
+            # fitting while allowing output gradients on the first step.
+            torch.nn.init.zeros_(self.output.weight)
+
+        def forward(self, rollout_tokens):
+            latent = chunked_fourier_low_rank(
+                rollout_tokens, self.positions, self.alphas, self.q,
+                self.cosine_weight, self.sine_weight, self.chunk_size,
+            )
+            return self.output(latent)
+
+    return FourierCorrection()
 
 
 def _simplex_features(tokens, landmarks, q):
@@ -526,6 +746,180 @@ def teacher_vocab_factor(model, q, rank=64):
         # student's compressed input and output maps.
         u, s, _ = torch.pca_lowrank(e, q=rank, center=False, niter=2)
         return (u * s[None]).cpu()
+
+
+def teacher_capacity_profile(model, test_path, q, n=512, batch=8,
+                             layers=(8, 12, 16, 20, 22, 24),
+                             ranks=(64, 128, 256, 512, 1024)):
+    """Profile layer truncation and exact embedding-PCA rank on cached contexts.
+
+    This is a diagnostic upper-bound path: it keeps actual teacher block
+    activations and asks how much agreement survives layer truncation and a
+    rank-r tied vocabulary projection.  It does not count as a trained Dataset
+    GL student, but identifies whether output rank or context modeling is the
+    binding bottleneck before another distillation run.
+    """
+    import torch
+
+    data = torch.load(test_path, map_location="cpu", weights_only=True, mmap=True)
+    contexts = data["contexts"][:n]
+    labels = data["teacher_logits"][:n]
+    language = model.model.language_model
+    layers = tuple(int(x) for x in layers if 0 < int(x) <= len(language.layers))
+    ranks = tuple(sorted(set(int(x) for x in ranks if 0 < int(x) <= language.config.hidden_size)))
+    max_rank = max(r for r in ranks if r < language.config.hidden_size)
+
+    with torch.inference_mode():
+        embedding = model.get_input_embeddings().weight[:q].float()
+        covariance = embedding.T @ embedding
+        _, eigenvectors = torch.linalg.eigh(covariance)
+        vr = eigenvectors[:, -max_rank:].contiguous()
+        token_factor = (embedding @ vr).to(torch.bfloat16)
+        del covariance, embedding
+
+    captures = {}
+    handles = []
+    for layer_number in layers:
+        def save_last(_module, _inputs, output, number=layer_number):
+            value = output[0] if isinstance(output, tuple) else output
+            captures[number] = value[:, -1].detach()
+        handles.append(language.layers[layer_number - 1].register_forward_hook(save_last))
+
+    agree = {(layer, rank): 0 for layer in layers for rank in ranks}
+    total = 0
+    try:
+        with torch.inference_mode():
+            for lo in range(0, len(contexts), batch):
+                c = contexts[lo:lo + batch].to("cuda").long()
+                teacher_top = labels[lo:lo + batch].to("cuda").argmax(1)
+                captures.clear()
+                model.model(input_ids=c, use_cache=False, return_dict=True)
+                for layer_number in layers:
+                    hidden = language.norm(captures[layer_number]).float()
+                    projected = hidden @ vr
+                    for rank in ranks:
+                        if rank == language.config.hidden_size:
+                            logits = model.lm_head(hidden.to(model.lm_head.weight.dtype))[..., :q]
+                        else:
+                            logits = (projected[:, -rank:].to(torch.bfloat16)
+                                      @ token_factor[:, -rank:].T)
+                        agree[(layer_number, rank)] += int((logits.argmax(1) == teacher_top).sum())
+                total += len(c)
+                if lo == 0 or total % 128 == 0:
+                    print(f"[capacity] {total}/{len(contexts)}", flush=True)
+    finally:
+        for handle in handles:
+            handle.remove()
+
+    layer_params = []
+    running = 0
+    for layer in language.layers:
+        running += sum(p.numel() for p in layer.parameters())
+        layer_params.append(running)
+    norm_params = sum(p.numel() for p in language.norm.parameters())
+    rows = []
+    for layer_number in layers:
+        for rank in ranks:
+            # Tied low-rank token factor plus its hidden projection, selected
+            # teacher blocks, and final norm.  Vision parameters are excluded.
+            params = q * rank + language.config.hidden_size * rank + layer_params[layer_number - 1] + norm_params
+            rows.append({
+                "layers": layer_number,
+                "rank": rank,
+                "top1": agree[(layer_number, rank)] / total,
+                "active_text_params": int(params),
+            })
+    return {"n": total, "q": q, "rows": rows,
+            "teacher_layers": len(language.layers),
+            "teacher_hidden_size": int(language.config.hidden_size)}
+
+
+def teacher_layer_drop_profile(model, test_path, q, n=512, calibration_n=128,
+                               batch=8, drop_counts=(0, 1, 2, 4, 6, 8)):
+    """Rank blocks by ShortGPT-style influence and evaluate nonconsecutive drops.
+
+    Influence is one minus cosine similarity between each block's input and
+    output, averaged over every token in a calibration batch.  This is a
+    selection diagnostic, not a certificate; final architecture choices must
+    be made on validation data and assessed on a fresh lockbox.
+    """
+    import torch
+    import torch.nn.functional as torch_f
+
+    data = torch.load(test_path, map_location="cpu", weights_only=True, mmap=True)
+    contexts = data["contexts"][:n]
+    labels = data["teacher_logits"][:n]
+    language = model.model.language_model
+    original_layers = list(language.layers)
+    influence_sum = torch.zeros(len(original_layers), dtype=torch.float64)
+    influence_count = torch.zeros(len(original_layers), dtype=torch.long)
+    handles = []
+
+    for layer_number, layer in enumerate(original_layers):
+        def measure(_module, inputs, output, number=layer_number):
+            before = inputs[0].detach().float()
+            after = (output[0] if isinstance(output, tuple) else output).detach().float()
+            cosine = torch_f.cosine_similarity(before, after, dim=-1)
+            influence_sum[number] += (1.0 - cosine).double().sum().cpu()
+            influence_count[number] += cosine.numel()
+        handles.append(layer.register_forward_hook(measure))
+
+    try:
+        with torch.inference_mode():
+            for lo in range(0, min(calibration_n, len(contexts)), batch):
+                c = contexts[lo:lo + batch].to("cuda").long()
+                model.model(input_ids=c, use_cache=False, return_dict=True)
+    finally:
+        for handle in handles:
+            handle.remove()
+
+    influence = influence_sum / influence_count.clamp_min(1)
+    least_first = torch.argsort(influence).tolist()
+
+    def active_text_params():
+        seen = set()
+        total = 0
+        for parameter in list(language.parameters()) + list(model.lm_head.parameters()):
+            if id(parameter) not in seen:
+                seen.add(id(parameter))
+                total += parameter.numel()
+        return int(total)
+
+    rows = []
+    try:
+        for drop_count in sorted(set(int(x) for x in drop_counts if 0 <= int(x) < len(original_layers))):
+            dropped = set(least_first[:drop_count])
+            language.layers = torch.nn.ModuleList(
+                [layer for number, layer in enumerate(original_layers) if number not in dropped]
+            )
+            agree = total = 0
+            with torch.inference_mode():
+                for lo in range(0, len(contexts), batch):
+                    c = contexts[lo:lo + batch].to("cuda").long()
+                    teacher_top = labels[lo:lo + batch].to("cuda").argmax(1)
+                    logits = model(input_ids=c, use_cache=False, return_dict=True).logits[:, -1, :q]
+                    agree += int((logits.argmax(1) == teacher_top).sum())
+                    total += len(c)
+            rows.append({
+                "dropped": drop_count,
+                "kept": len(original_layers) - drop_count,
+                "dropped_layer_indices": sorted(dropped),
+                "top1": agree / total,
+                "active_text_params": active_text_params(),
+            })
+            print(f"[layer-drop] drop={drop_count} top1={agree / total:.4f}", flush=True)
+    finally:
+        language.layers = torch.nn.ModuleList(original_layers)
+
+    return {
+        "n": len(contexts),
+        "calibration_n": min(calibration_n, len(contexts)),
+        "q": q,
+        "influence": [float(x) for x in influence],
+        "least_influential_first": least_first,
+        "rows": rows,
+        "selection_note": "block influence is a validation diagnostic, not a Dataset-GL certificate",
+    }
 
 
 def build_student(q, frequencies, layers=8, d_model=384, rank=64, heads=6, ff=1536,
