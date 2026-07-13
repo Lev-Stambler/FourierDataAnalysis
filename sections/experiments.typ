@@ -281,7 +281,7 @@ semantics as evaluation.  The final fit accepts only the complete certified char
 coordinates.  If that list does not fit the declared resource and parameter ceilings, the strict experiment
 reports infeasibility rather than pruning it.
 
-=== What would constitute a provable $80%$ agreement result
+=== What would constitute a provable $90%$ agreement result
 
 There are two useful sufficient loss bounds for the hard target.  If $Q(dot|X)$ is the student's probability
 vector and $g=g(X)$ the teacher argmax, then a top-token disagreement forces $Q_g <= 1/2$ and hence
@@ -293,8 +293,8 @@ It also forces the multiclass Brier loss to be at least $1/2$, so
 $
 ind[arg max Q != g] <= 2 norm(Q-e_g)_2^2.
 $
-Thus population hard-label cross-entropy below $0.2 log 2$ or population Brier loss below $0.1$ is
-sufficient for at least $80%$ agreement.  These are conservative sufficient conditions, not claims about
+Thus population hard-label cross-entropy below $0.1 log 2$ or population Brier loss below $0.05$ is
+sufficient for at least $90%$ agreement.  These are conservative sufficient conditions, not claims about
 the current model, and empirical training loss alone does not prove either population inequality.
 
 For the secondary soft target there is also an exact per-example margin certificate.  Let $p_1 >= p_2$ be
@@ -314,8 +314,8 @@ lockbox documents, the one-sided exact binomial lower confidence bound is
 $
 L_"CP"="Beta"^(-1)(delta_"eval";s,n-s+1).
 $
-Success requires $L_"CP" >= 0.80$, not merely an $80%$ point estimate.  For the predeclared
-$n=5000$ and $delta_"eval"=0.025$, this requires at least $4056$ agreements ($81.12%$ observed).  The final
+Success requires $L_"CP" >= 0.90$, not merely a $90%$ point estimate.  For the predeclared
+$n=5000$ and $delta_"eval"=0.025$, this requires at least $4542$ agreements ($90.84%$ observed).  The final
 failure statement is union-bounded with the separate Dataset-GL transcript budget, for example
 $delta_"GL"+delta_"eval"=0.05$.  Dataset-GL completeness certifies recovery of heavy correlations; the
 untouched exact-binomial lockbox certifies agreement of the resulting frozen predictor.  Neither is

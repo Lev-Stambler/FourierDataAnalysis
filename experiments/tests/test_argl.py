@@ -158,6 +158,8 @@ def test_exact_agreement_certificates():
     assert threshold[1] == 0
     assert clopper_pearson_lower(4065, 5000, 0.01) < 0.8
     assert clopper_pearson_lower(4066, 5000, 0.01) >= 0.8
+    assert clopper_pearson_lower(4541, 5000, 0.025) < 0.9
+    assert clopper_pearson_lower(4542, 5000, 0.025) >= 0.9
 
 
 def test_phase_uses_native_categorical_coordinates():
