@@ -653,6 +653,8 @@ def argmax_mean_from_labeled_split(path, q, rows=None, chunk=128):
 
 def load_frequency_file(path):
     data = json.loads(Path(path).read_text())
+    if data.get("theorem_status") == "oracle_mismatch":
+        raise ValueError("Part 2 affine oracle-audit artifacts are not frequency banks")
     q = int(data["q"])
     out, seen = [], set()
     for row in np.asarray(data.get("frequencies", []), dtype=np.int64):

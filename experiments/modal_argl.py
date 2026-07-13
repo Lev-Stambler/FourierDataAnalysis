@@ -23,6 +23,7 @@ image = (
     .env({"HF_HOME": "/cache/hf", "HF_XET_HIGH_PERFORMANCE": "1",
           "TORCHINDUCTOR_CACHE_DIR": "/cache/torchinductor"})
     .add_local_python_source("fda_exp")
+    .add_local_file("part2_protocol.json", remote_path="/root/part2_protocol.json")
 )
 
 ROOT = "/cache/qwen35_argl"
@@ -127,6 +128,22 @@ def prepare_calibration_prefixes(calibration_n=4096):
     )
 
 
+@app.function(image=image, volumes={"/cache": vol}, timeout=7200, memory=8192)
+def prepare_part2_prefixes(contexts=256):
+    """Development-only FineWeb contexts for the dated Part 2 oracle audit."""
+    from transformers import AutoTokenizer
+    from fda_exp.affine_sft import load_protocol
+    from fda_exp.qwen_argl import MODEL_ID, MODEL_REVISION, prepare_fineweb_prefixes
+
+    vol.reload()
+    protocol, protocol_hash = load_protocol("/root/part2_protocol.json")
+    if contexts != int(protocol["qwen_audit"]["contexts"]):
+        raise ValueError("Part 2 context count must match the registered protocol")
+    tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=MODEL_REVISION)
+    path = f"{ROOT}/part2/prefixes_{protocol_hash[:12]}_s{contexts}.npz"
+    return prepare_fineweb_prefixes(tok, {"search": contexts}, path)
+
+
 @app.function(image=image, volumes={"/cache": vol}, timeout=300)
 def charge_interrupted_gpu(stage, seconds):
     """Account for a manually interrupted A10 call that could not self-record."""
@@ -176,6 +193,64 @@ def teacher_stats():
     result = {"params": params, "bf16_bytes": bytes_, "q": q, "raw_logit_width": raw}
     print(json.dumps(result), flush=True)
     return result
+
+
+@app.function(image=image, volumes={"/cache": vol}, timeout=1800, memory=8192)
+def part2_affine_toy():
+    """Exact chosen-point q-SFT oracle control from the dated Part 2 protocol."""
+    import json, os
+    from fda_exp.affine_sft import load_protocol, run_toy_audit
+
+    vol.reload()
+    _, protocol_hash = load_protocol("/root/part2_protocol.json")
+    out = f"{ROOT}/part2/toy_{protocol_hash[:12]}.json"
+    if os.path.exists(out):
+        return out
+    report = run_toy_audit("/root/part2_protocol.json")
+    if not report["q_sft"]["all_trials_recovered"]:
+        raise RuntimeError(f"registered q-SFT toy control failed: {report['q_sft']}")
+    _write_json(out, report)
+    vol.commit()
+    print(json.dumps(report, indent=2), flush=True)
+    return out
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol},
+              timeout=21600, memory=24576)
+def part2_affine_qwen(prefix_path: str):
+    """Natural-generator experiment plus a separate chosen-affine oracle audit."""
+    import json, os, time, numpy as np
+    from fda_exp.affine_sft import load_protocol, run_qwen_affine_audit
+    from fda_exp.qwen_argl import load_teacher
+
+    vol.reload()
+    protocol, protocol_hash = load_protocol("/root/part2_protocol.json")
+    allocation = float(protocol["qwen_audit"]["gpu_budget_usd"])
+    _check_budget("part2-affine-qwen", allocation)
+    out = f"{ROOT}/part2/qwen_{protocol_hash[:12]}.json"
+    if os.path.exists(out):
+        return out
+    started = time.time()
+    model, _, q, _ = load_teacher()
+    prefixes = np.load(prefix_path)["search"]
+    report = run_qwen_affine_audit(
+        model, prefixes, q, protocol_file="/root/part2_protocol.json"
+    )
+    if report["theorem_status"] != "oracle_mismatch" or report["frequencies"]:
+        raise RuntimeError("Part 2 audit must remain an empty oracle-mismatch frequency artifact")
+    report["prefix_path"] = prefix_path
+    _write_json(out, report)
+    _record_gpu("part2-affine-qwen", started, {
+        "contexts": int(protocol["qwen_audit"]["contexts"]),
+        "affine_points": (
+            int(protocol["qwen_audit"]["affine_contexts"])
+            * int(protocol["qwen_audit"]["points_per_context"])
+        ),
+        "protocol_sha256": protocol_hash,
+    })
+    vol.commit()
+    print(json.dumps(report, indent=2), flush=True)
+    return out
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=3600, memory=16384)
@@ -391,6 +466,14 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
     # The executable defaults are the predeclared minimum viable run.  Larger
     # target sizes reuse the same cached prefix/data artifacts.
     prefix_path = None
+    if stage == "part2-affine-toy":
+        print({"part2_toy": part2_affine_toy.remote()})
+    if stage == "part2-affine-qwen":
+        part2_prefix_path = prepare_part2_prefixes.remote(256)
+        print({
+            "part2_qwen": part2_affine_qwen.remote(part2_prefix_path),
+            "prefixes": part2_prefix_path,
+        })
     if stage in {"smoke", "spectral", "spectral-eb", "spectral-centered", "data"}:
         prefix_path = prepare_prefixes.remote(search_n, train_n, val_n)
     if stage == "charge-interrupted":
