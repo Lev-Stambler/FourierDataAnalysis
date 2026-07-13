@@ -242,6 +242,37 @@ def test_tokenizer_alphabet_excludes_padded_rows():
         raise AssertionError("non-contiguous tokenizer must be rejected")
 
 
+def test_teacher_label_forward_is_terminal_only_and_exactly_128_tokens():
+    import types
+    import torch
+    from fda_exp.qwen_argl import x_only_teacher_logits
+
+    class FakeTeacher:
+        def __init__(self):
+            self.call = None
+
+        def __call__(self, **kwargs):
+            self.call = kwargs
+            batch = len(kwargs["input_ids"])
+            return types.SimpleNamespace(logits=torch.arange(
+                batch * 11, dtype=torch.float32
+            ).reshape(batch, 1, 11))
+
+    teacher = FakeTeacher()
+    tokens = torch.zeros((3, 128), dtype=torch.long)
+    logits = x_only_teacher_logits(teacher, tokens, q=7)
+    assert logits.shape == (3, 7)
+    assert teacher.call["input_ids"] is tokens
+    assert teacher.call["use_cache"] is False
+    assert teacher.call["logits_to_keep"] == 1
+    try:
+        x_only_teacher_logits(teacher, tokens[:, :-1], q=7)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("non-128-token teacher input must be rejected")
+
+
 def test_frequency_loader_drops_constant_and_conjugate_duplicates(tmp_path):
     import json
     from fda_exp.qwen_argl import load_frequency_file

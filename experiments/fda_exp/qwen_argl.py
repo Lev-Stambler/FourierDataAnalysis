@@ -47,6 +47,18 @@ def tokenizer_softmax(logits, q):
     return torch.softmax(logits[..., :q].float(), dim=-1)
 
 
+def x_only_teacher_logits(model, token_window, q):
+    """Evaluate the pinned teacher on exactly one 128-token function input."""
+    import torch
+
+    if token_window.ndim != 2 or token_window.shape[1] != ROLLOUT_LEN:
+        raise ValueError("f(X) requires a batch of exactly 128-token inputs")
+    with torch.inference_mode():
+        out = model(input_ids=token_window, use_cache=False, return_dict=True,
+                    logits_to_keep=1)
+    return out.logits[:, -1, :q]
+
+
 def autoregressive_rollout(model, input_ids, new_tokens: int, q: int, generator=None):
     """Sample exactly new_tokens and return tokens plus logits *after* the last token.
 
@@ -291,10 +303,8 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
         complete = torch.cat([
             left[:, None].expand(-1, 2, -1), suffix
         ], dim=2).reshape(2 * len(z), n)
-        with torch.inference_mode():
-            label_out = model(input_ids=complete, use_cache=False, return_dict=True,
-                              logits_to_keep=1)
-            p = tokenizer_softmax(label_out.logits[:, -1], q).reshape(len(z), 2, q)
+        label_logits = x_only_teacher_logits(model, complete, q)
+        p = tokenizer_softmax(label_logits, q).reshape(len(z), 2, q)
         raw = (p[:, 0] * p[:, 1]).sum(1)
         y0 = p[:, 0].argmax(1)
         y1 = p[:, 1].argmax(1)
@@ -535,10 +545,7 @@ def generate_labeled_split(model, prefixes, q, out_path, batch=128, seed=0):
     for lo in range(0, len(prefixes), batch):
         z = torch.as_tensor(prefixes[lo:lo + batch], dtype=torch.long, device="cuda")
         x, _ = autoregressive_rollout(model, z, ROLLOUT_LEN, q, rng)
-        with torch.inference_mode():
-            label_out = model(input_ids=x, use_cache=False, return_dict=True,
-                              logits_to_keep=1)
-            logits = label_out.logits[:, -1]
+        logits = x_only_teacher_logits(model, x, q)
         hi = lo + len(z)
         contexts[lo:hi].copy_(x.cpu())
         labels[lo:hi].copy_(logits[:, :q].cpu())
