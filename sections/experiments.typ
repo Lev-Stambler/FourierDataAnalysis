@@ -41,7 +41,7 @@ g(Z,X)=arg max_t P_theta^"tok"(t|Z,X),
 quad g_0(Z)=arg max_t P_theta^"tok"(t|Z).
 $
 The primary vector target in the scaling experiment is the teacher's hard decision
-$Y(Z,X)=e_(g(Z,X))$ and its prefix residual
+$Y(Z,X)=e_(g(Z,X))$.  A separately labeled diagnostic is its prefix residual
 $
 F_"res"^"hard"(Z,X)=frac(e_(g(Z,X))-e_(g_0(Z)),sqrt(2)).
 $

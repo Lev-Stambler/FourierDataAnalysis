@@ -308,7 +308,7 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
 
 def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
                       parent_block=16, seed=0,
-                      search_target="argmax_residual"):
+                      search_target="argmax_raw"):
     """Run the conservative gate plus a block-batched residual feature beam.
 
     The certified frontier and heuristic bank remain separate.  The latter
@@ -327,7 +327,7 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
     eb_log = math.log(4.0 * q / 0.01)
     for k in range(levels):
         pair = collect_level_pairs(model, prefixes, k, q, seed=seed + 1009 * k)
-        targets = ((search_target, "residual", "constant") if k == 0
+        targets = ((search_target, "raw", "constant") if k == 0
                    else (search_target,))
         targets = tuple(dict.fromkeys(targets))
         all_candidates = []
