@@ -19,7 +19,8 @@ All of these _re-orthonormalize_ and thereby avoid any $C_calD$-type defect; we 
 
 *Heavy-coefficient recovery and access models.*
 We adapt the Goldreich--Levin algorithm @goldreich1989hardcore and its use in the Kushilevitz--Mansour learner @kushilevitz1993learning, extended to general finite abelian groups by @akavia2003proving; the agnostic-learning refinements of @gopalan2008agnostically use exactly the bounded spectral-norm ($norm(hat(f))_1 <= A$) geometry we assume.
-All of these operate under the _uniform_ measure with query access; our results are the empirical-measure incarnation, and the same $norm(hat(f))_1$ hypothesis is what routes the dataset shift through the bias spectrum.
+Modern $q$-SFT likewise searches sparse, potentially high-degree spectra directly on $ZZ_q^n$ without first encoding the alphabet as Boolean variables @erginbas2023efficiently.
+These methods operate under the _uniform_ group measure with chosen function evaluations; our fixed-prefix result instead uses the non-uniform autoregressive rollout law and prefix-conditional samples, while the finite-dataset results use the empirical measure.
 
 *Why samples alone are insufficient.*
 That sample-only access cannot isolate a heavy parity is the statistical-query / noisy-parity barrier @kearns1998sq @blum1994weakly @blum2003noise.

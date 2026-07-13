@@ -24,6 +24,7 @@
       Parseval fails over a dataset, off by exactly the density factor $C_cal(D) = |cal(T)|^n \/ |cal(D)|$; the replacements are a mass identity, a closeness identity, and a low-degree learning theorem whose normalization constants cancel through a scaled reconstruction.
       We then adapt the Goldreich-Levin algorithm to find every character heavily correlated with a function _over the dataset_.
       Sample access alone is blind: over a collision-free dataset, every bucket weight in the classical tree search is identical.
+      For autoregressive text, a reverse-time $ZZ_q^n$ search turns prefix-conditional sampling into exact KV-cached continuation, yielding a native categorical, arbitrary-degree Dataset-GL theorem for the non-uniform fixed-prefix rollout law without encoding tokens into bits.
       Query access to a model, together with the dataset's heavy bias spectrum, suffices — via a convolution identity writing the on-dataset spectrum as the global spectrum convolved with the dataset's own spectrum.
       Corollaries include a Kushilevitz-Mansour guarantee for decision trees over datasets.
     ]

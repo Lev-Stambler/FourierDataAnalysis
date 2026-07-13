@@ -38,7 +38,7 @@ The ambient framework is standard @o2021analysis.
   + *Orthonormality:* $iprod(basis_alpha, basis_beta)_mu = EE_(x ~ mu) [basis_alpha (x) basis_beta (x)] = delta_(alpha beta)$;
   + *Completeness:* every $f in L^2 (Omega, mu)$ can be written as $f = sum_(alpha in I) hat(f)(alpha) basis_alpha$.
   We always take $basis_0 = 1$.
-  For product spaces $Omega^n$ with product measure $mu^(times.o n)$, the products $basis_alpha = product_i basis_(alpha_i)$ (over multi-indices $alpha$) form an orthonormal basis for $L^2 (Omega^n, mu^(times.o n))$.
+  For product spaces $Omega^n$ with product measure $mu^(otimes n)$, the products $basis_alpha = product_i basis_(alpha_i)$ (over multi-indices $alpha$) form an orthonormal basis for $L^2 (Omega^n, mu^(otimes n))$.
 ]
 
 #definition[Fourier Coefficients][

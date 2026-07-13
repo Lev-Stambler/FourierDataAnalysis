@@ -457,7 +457,13 @@ This is the honest dataset analogue of "coefficient collection plus Parseval": t
   Bound the dataset spectral norm from the global one: $norm(hat(f)_calD)_1 <= norm(b)_1 dot norm(hat(f))_1$ by @lem:convolution, so a low-$L^1$ bias spectrum together with small $norm(hat(f))_1 <= s$ makes the reconstruction of @thm:context-gl efficient in the model-query setting — genuine on-dataset _learning_ of size-$s$ decision trees, not just coefficient listing.
 ]
 
-== Application: In-Context Next-Token Prediction
+#include "ar_categorical_gl.typ"
+
+== Previous Indexed-Corpus Instantiation
+
+This subsection records the earlier flat-corpus experiment for comparison.
+It is not the fixed-prefix autoregressive construction of @thm:ar-qary-gl and its packed implementation is
+not used by the new categorical experiment.
 
 The proof of @thm:context-gl uses only orthonormality of the characters, the reproducing kernel, and their unit modulus $|chi| = 1$, so — as the opening footnote of this section and the "general product alphabets" direction below both note — it holds verbatim over any product of finite abelian groups with its character basis.
 The token setting is the case $calT = ZZ_V$: a length-$w$ context of $V$-ary tokens, with $sans("CSAMP")$ realized _literally_ as $n$-gram retrieval — conditioning on a shared context suffix _is_ pulling the datapoints that share it.
