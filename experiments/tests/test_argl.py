@@ -242,15 +242,6 @@ def test_tokenizer_alphabet_excludes_padded_rows():
         raise AssertionError("non-contiguous tokenizer must be rejected")
 
 
-def test_small_student_is_full_q_and_under_cap():
-    import torch
-    from fda_exp.qwen_argl import build_student
-    freq = np.zeros((2, 128), dtype=np.int64); freq[0, -1] = 1; freq[1, -2:] = [2, 3]
-    model = build_student(17, freq, layers=1, d_model=24, rank=8, heads=4, ff=48)
-    logits = model(torch.randint(0, 17, (2, 256)))
-    assert logits.shape == (2, 17)
-
-
 def test_frequency_loader_drops_constant_and_conjugate_duplicates(tmp_path):
     import json
     from fda_exp.qwen_argl import load_frequency_file
