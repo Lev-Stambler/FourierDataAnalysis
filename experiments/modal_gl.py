@@ -192,10 +192,34 @@ def bpe_lm():
     sys.stdout.flush(); vol.commit()
 
 
+@app.function(image=image, gpu="H100", cpu=16.0, memory=131072, volumes={"/cache": vol}, timeout=14400)
+def bpe_lm_char():
+    """CHARACTER-level (V=256, raw bytes) next-char CSAMP LM, window 4->7: does injecting the FULL degree-1
+    per-position basis (bpe_lm._degree1_codes) + keeping all low-degree characters rescue the deg<=2 fit
+    (which was starved to ~unigram when the top-K was ranked purely by high-degree memorization energy)?
+    Reports held-out AND train CE/perplexity vs the n-gram ceiling to separate capacity from generalization."""
+    import sys
+
+    import torch
+
+    from fda_exp.bpe_lm import run_bpe_lm_eval
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    sys.stdout = _Tee("/cache/bpe_lm_char_results.txt")
+    print("device:", dev, torch.cuda.get_device_name(0) if dev == "cuda" else "", flush=True)
+    for w in (4, 5, 6, 7):
+        try:
+            run_bpe_lm_eval(vocab_size=256, window=w, split="train", shards=4, max_pairs=25_000_000,
+                            n_stories=4_000_000, top_ks=(1500, 4000), device=dev, max_ctx=400_000)
+        except Exception as e:
+            print(f"  w={w} FAILED: {repr(e)[:300]}", flush=True)
+        vol.commit()
+    sys.stdout.flush(); vol.commit()
+
+
 @app.function(image=image, volumes={"/cache": vol})
 def show():
     import os
-    for name in ("bpe_lm_results.txt", "qary_bpe_results.txt", "interactions_results.txt",
+    for name in ("bpe_lm_char_results.txt", "bpe_lm_results.txt", "qary_bpe_results.txt", "interactions_results.txt",
                  "qary_lang_results.txt", "phase1_results.txt", "phase3_results.txt"):
         p = f"/cache/{name}"
         print(f"\n================= {name} =================")

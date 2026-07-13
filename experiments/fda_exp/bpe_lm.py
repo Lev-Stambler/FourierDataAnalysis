@@ -72,16 +72,31 @@ def _char_np(Cd, codes, V, w):
     return _char_columns(Cd, codes, V, hadamard_basis(V), w)
 
 
-def _softmax_fit(X, counts, Xval, counts_val, base, device, W_init=None, steps=3000, lr=0.03,
-                 patience=10, check=25, warmup=800):
+def _degree1_codes(V, w):
+    """All degree-1 Walsh characters = every nonzero contrast confined to a SINGLE token block
+    (`a << p*k`, a in 1..V-1, p in 0..w-1).  These w*(V-1) codes span the full per-position categorical
+    basis (the bigram/trigram-generalizing 'linear' part).  The energy-ranked CSAMP top-K starves them on
+    dense char data -- where the Fourier energy piles up on high-degree memorization characters -- so we
+    inject the whole (enumerable, cheap) degree-1 set unconditionally as the low-degree base."""
+    k = int(V).bit_length() - 1
+    return np.array([a << (p * k) for p in range(w) for a in range(1, V)], dtype=np.int64)
+
+
+def _softmax_fit(X, counts, Xval, counts_val, base, device, W_init=None, steps=3000, lr=0.006,
+                 check=25, clip=5.0):
     """Softmax regression W (K+1, V) minimizing weighted cross-entropy on the train contexts.  The bias
     row (feature 0 = the constant) is initialized to log(unigram) so the model STARTS at the unigram and
-    characters only add corrections; regularization is purely EARLY STOPPING on the STORY-DISJOINT val --
+    characters only add corrections; regularization is purely model-selection on the STORY-DISJOINT val --
     NO L2 penalty (an L2 term shrinks the bias toward uniform, and heavier L2 at larger K made PPL rise).
-    Returns W (K+1, V)."""
-    Xt = torch.tensor(X, dtype=torch.float32, device=device)
+
+    The objective is CONVEX, so it must be optimized STABLY: a fixed lr=0.03 Adam diverges/oscillates at
+    char scale (deg<=2 PPL bounced 8->18 and warm-started deg<=3 blew up to PPL>1000, masking any degree-3
+    gain as a fake delta~0).  We use a cosine-decayed lr + gradient-norm clipping (clean monotone descent to
+    the convex minimum), track the best VAL iterate, and floor it at the init model so the fit can never end
+    up worse than its start.  Returns the best-val W (K+1, V)."""
+    Xt = torch.as_tensor(X, dtype=torch.float32, device=device)   # accepts numpy OR a prebuilt GPU tensor
     Ct = torch.tensor(counts, dtype=torch.float32, device=device)
-    Xv = torch.tensor(Xval, dtype=torch.float32, device=device)
+    Xv = torch.as_tensor(Xval, dtype=torch.float32, device=device)
     Cv = torch.tensor(counts_val, dtype=torch.float32, device=device)
     N, Nv = float(Ct.sum()), float(max(Cv.sum().item(), 1.0))
     if W_init is not None:                                        # warm-start (e.g. deg<=3 from deg<=2)
@@ -92,21 +107,20 @@ def _softmax_fit(X, counts, Xval, counts_val, base, device, W_init=None, steps=3
     W = torch.tensor(W0, device=device, requires_grad=True)
     with torch.no_grad():                                         # FLOOR: the init model (unigram, or the
         best = -(Cv * torch.log_softmax(Xv @ W, dim=1)).sum().item() / Nv   # warm-started deg<=2) is a candidate,
-    bW, bad = W0.copy(), 0                                        # so the fit can NEVER end up worse than it
+    bW = W0.copy()                                               # so the fit can NEVER end up worse than it
     opt = torch.optim.Adam([W], lr=lr)
+    sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)   # decay lr->0: stable convex descent
     for step in range(steps):
         opt.zero_grad()
         loss = -(Ct * torch.log_softmax(Xt @ W, dim=1)).sum() / N   # NO L2
-        loss.backward(); opt.step()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_([W], clip)                 # cap step size -> no divergence
+        opt.step(); sch.step()
         if step % check == 0:
             with torch.no_grad():
                 vce = -(Cv * torch.log_softmax(Xv @ W, dim=1)).sum().item() / Nv
-            if vce < best - 1e-4:
-                best, bW, bad = vce, W.detach().cpu().numpy(), 0
-            else:
-                bad += 1
-                if step >= warmup and bad > patience:       # only stop after warmup (large K trains slowly)
-                    break
+            if vce < best - 1e-5:
+                best, bW = vce, W.detach().cpu().numpy()
     return bW
 
 
@@ -130,22 +144,26 @@ def fit_bpe_lm(Ctr, ytr, Cval, yval, V, w, merges=None, max_width=4000, device=N
     topT = np.argsort(-counts.sum(0))[:top_classes]                # search over the most frequent tokens
     A = (2.0 * counts[:, topT] - n_ctx[:, None]).astype(np.float32)   # (D, T)
     codes, widths = multiclass_search(idx, A, n_bits, max_width=max_width, device=device)
-    if len(codes) > top_k:                                         # keep the top_k heaviest characters
-        coeffs, _ = coeffs_all(counts, n_ctx, Cd, codes, V, w, m)  # (V, K)
-        codes = codes[np.argsort(-(coeffs ** 2).sum(0))[:top_k]]
-    degs = degree_of_codes(codes, V, w) if len(codes) else np.zeros(0, int)
-
-    order = np.argsort(degs > 2, kind="stable")                   # deg<=2 characters first, deg>=3 after
-    codes, degs = codes[order], degs[order]
-    n2 = int((degs <= 2).sum())
+    codes = np.union1d(codes, _degree1_codes(V, w))               # inject the FULL per-position degree-1 base
+    codes = codes[codes != 0]                                     # (search starves it on dense char data)
+    degs = degree_of_codes(codes, V, w)
+    low, high = codes[degs <= 2], codes[degs > 2]                 # KEEP ALL low-degree (few, generalize);
+    if len(high) > top_k:                                         # spend the top_k budget on high-degree only
+        ch, _ = coeffs_all(counts, n_ctx, Cd, high, V, w, m)      # (V, |high|) exact coeffs
+        high = high[np.argsort(-(ch ** 2).sum(0))[:top_k]]
+    codes = np.concatenate([low, high])                           # deg<=2 first (low) then deg>=3 (high)
+    degs = degree_of_codes(codes, V, w)
+    n2 = int(len(low))
     base = np.bincount(ytr, minlength=V).astype(np.float64); base = (base + 1) / (base.sum() + V)
+    idxv = _encode_qary(Cdv, V)
 
-    def feat(Cx, ncodes):
-        return np.hstack([np.ones((len(Cx), 1)), _char_np(Cx, codes[:ncodes], V, w)]).astype(np.float32)
-    W2 = _softmax_fit(feat(Cd, n2), counts, feat(Cdv, n2), counts_v, base, device)          # deg<=2
+    def feat(idx_x, ncodes):                                       # (D, ncodes+1) GPU float32 [1 | chars]
+        ch = char_matrix(idx_x, codes[:ncodes], n_bits, device)   # GPU Walsh chars (no CPU numpy hot-spot)
+        return torch.cat([torch.ones((ch.shape[0], 1), device=ch.device), ch], dim=1)
+    W2 = _softmax_fit(feat(idx, n2), counts, feat(idxv, n2), counts_v, base, device)          # deg<=2
     if n2 < len(codes):                                           # deg<=3 WARM-STARTED from deg<=2 (so deg<=3 >= deg<=2)
         Winit = np.zeros((1 + len(codes), int(V)), np.float32); Winit[:W2.shape[0]] = W2
-        W3 = _softmax_fit(feat(Cd, len(codes)), counts, feat(Cdv, len(codes)), counts_v, base, device, W_init=Winit)
+        W3 = _softmax_fit(feat(idx, len(codes)), counts, feat(idxv, len(codes)), counts_v, base, device, W_init=Winit)
     else:
         W3 = W2
     dh = np.bincount(degs, minlength=w + 1).tolist() if len(codes) else [0] * (w + 1)
@@ -170,12 +188,28 @@ def _proba(model, C, deg3=True, mix=None):
     return P / P.sum(1, keepdims=True)
 
 
-def ce_perplexity(model, C, y, deg3=True):
-    """Held-out cross-entropy (nats/bits), perplexity, and top-1 for the CSAMP-reconstruction LM."""
-    P = _proba(model, C, deg3)
-    pt = np.clip(P[np.arange(len(y)), y], 1e-12, 1.0)
-    ce = float(-np.log(pt).mean())
-    return dict(ce_nats=ce, ce_bits=ce / np.log(2), ppl=float(np.exp(ce)), top1=float((P.argmax(1) == y).mean()))
+def ce_perplexity(model, C, y, deg3=True, chunk=200_000):
+    """Held-out cross-entropy (nats/bits), perplexity, and top-1 for the CSAMP-reconstruction LM.
+    GPU-chunked over rows (builds Walsh features via `fast_gl.char_matrix` per chunk, never materializing
+    the full (n,V) distribution) so it scales to multi-million-row test sets without OOM."""
+    V, n_bits, device = model["V"], model["n_bits"], model["device"]
+    codes, degs = model["codes"], model["degs"]
+    sel = np.ones(len(codes), bool) if deg3 else (degs <= 2)     # deg<=2 codes are the first n2 (low-first)
+    codes_sel = codes[sel]                                        # W2:(1+n2,V) / W3:(1+len(codes),V) already match
+    W = torch.as_tensor(model["W3"] if deg3 else model["W2"], dtype=torch.float32, device=device)
+    C = np.atleast_2d(np.asarray(C, dtype=np.int64)); y = np.asarray(y)
+    n = len(C); tot_ce, tot_top1 = 0.0, 0
+    for i in range(0, n, chunk):
+        idx_c = _encode_qary(C[i:i + chunk], V)
+        ch = char_matrix(idx_c, codes_sel, n_bits, device)       # (c, K) GPU Walsh chars
+        X = torch.cat([torch.ones((ch.shape[0], 1), device=device), ch], dim=1)
+        logits = X @ W                                            # (c, V)
+        logp = torch.log_softmax(logits, dim=1)
+        yi = torch.as_tensor(y[i:i + chunk], device=device, dtype=torch.long)
+        tot_ce += float(-logp[torch.arange(len(yi), device=device), yi].sum())
+        tot_top1 += int((logits.argmax(1) == yi).sum())
+    ce = tot_ce / n
+    return dict(ce_nats=ce, ce_bits=ce / np.log(2), ppl=float(np.exp(ce)), top1=tot_top1 / n)
 
 
 def unigram_perplexity(model, y):
@@ -274,8 +308,11 @@ def run_bpe_lm_eval(vocab_size=512, window=2, n_stories=3_000_000, max_pairs=2_0
                        device=device, max_ctx=max_ctx)
         v = min(ce_perplexity(m, Cval, yval, deg3=False)["ppl"], ce_perplexity(m, Cval, yval, deg3=True)["ppl"])
         te2, te3 = ce_perplexity(m, Cte, yte, deg3=False), ce_perplexity(m, Cte, yte, deg3=True)
+        tr2 = ce_perplexity(m, Ctr[:300_000], ytr[:300_000], deg3=False)   # train PPL (subsample):
+        tr3 = ce_perplexity(m, Ctr[:300_000], ytr[:300_000], deg3=True)    # capacity vs generalization
         print(f"  top_k={tk} (deg {m['dh']}): deg<=2 PPL={te2['ppl']:.1f} | deg<=3 PPL={te3['ppl']:.1f} "
-              f"(top1 {te3['top1']:.3f}) | deg-3 delta {te2['ppl'] - te3['ppl']:+.2f}  ({time.time() - t:.0f}s)", flush=True)
+              f"(top1 {te3['top1']:.3f}) | deg-3 delta {te2['ppl'] - te3['ppl']:+.2f} "
+              f"| TRAIN deg<=2 {tr2['ppl']:.1f} deg<=3 {tr3['ppl']:.1f}  ({time.time() - t:.0f}s)", flush=True)
         if v < best[0]:
             best = (v, tk, (te2["ppl"], te3["ppl"]))
     print(f"  >>> VAL-SELECTED top_k={best[1]}: deg<=2 {best[2][0]:.1f} | deg<=3 {best[2][1]:.1f}  "
