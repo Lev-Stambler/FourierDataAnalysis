@@ -26,11 +26,8 @@ KV caching changes only the cost of this operation, not its law.
 *Categorical bases.*
 The cyclic characters of $ZZ_q$ are orthonormal, multiplicative, and unit modulus, which is what makes the
 Dataset-GL completeness proof and the simultaneous all-child DFT work.
-Their weakness is basis dependence: arbitrary token ids acquire an artificial cyclic geometry.
-We therefore pair them with the centered one-hot regular-simplex representation, whose inner product is
-invariant under every vocabulary permutation.
-The simplex representation is a symmetric tight frame rather than a scalar character basis, so it is used
-as a control and refitting representation rather than as a substitute theorem.
+We use the tokenizer's native, contiguous ids directly as elements of $ZZ_q$: there is no binary expansion
+and no alternate categorical representation in the theorem or Fourier student.
 
 *Fourier auditing of models.*
 The Active Fourier Auditor estimates distributional properties of a queried model @ajarra2024active, and

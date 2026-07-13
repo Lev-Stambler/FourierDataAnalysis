@@ -2,10 +2,9 @@
 
 Examples:
   uv run modal run modal_argl.py --stage smoke
-  uv run modal run modal_argl.py --stage spectral
+  uv run modal run modal_argl.py --stage spectral-eb
   uv run modal run modal_argl.py --stage data --train-n 4096 --val-n 512 --test-n 1000
-  uv run modal run modal_argl.py --stage fit
-  uv run modal run modal_argl.py --stage all
+  uv run modal run modal_argl.py --stage fourier-vector-diagnostic
 """
 
 from __future__ import annotations
@@ -155,7 +154,11 @@ def spectral(prefix_path: str, pairs: int = 256, levels: int = 3, beam: int = 10
         return out
     model, _, q, _ = load_teacher()
     prefixes = np.load(prefix_path)["search"][:pairs]
-    report = run_spectral_gate(model, prefixes, q, levels=levels, pairs=pairs, beam=beam)
+    checkpoint = f"{ROOT}/checkpoints/spectral_p{pairs}_l{levels}_b{beam}.pt"
+    report = run_spectral_gate(
+        model, prefixes, q, levels=levels, pairs=pairs, beam=beam,
+        checkpoint_path=checkpoint, checkpoint_callback=vol.commit,
+    )
     report["prefix_path"] = prefix_path
     # This executable path is deliberately a capped top-beam feature search,
     # not the full heavy-plus-unresolved theorem frontier with adaptive failure
@@ -183,7 +186,11 @@ def spectral_eb(prefix_path: str, pairs: int = 4096, levels: int = 1, beam: int 
         return out
     model, _, q, _ = load_teacher()
     prefixes = np.load(prefix_path)["search"][:pairs]
-    report = run_spectral_gate(model, prefixes, q, levels=levels, pairs=pairs, beam=beam)
+    checkpoint = f"{ROOT}/checkpoints/spectral_eb_p{pairs}_l{levels}_b{beam}.pt"
+    report = run_spectral_gate(
+        model, prefixes, q, levels=levels, pairs=pairs, beam=beam,
+        checkpoint_path=checkpoint, checkpoint_callback=vol.commit,
+    )
     report["prefix_path"] = prefix_path
     report["theorem_status"] = "uncertified"
     report["theorem_status_reason"] = (
@@ -214,108 +221,9 @@ def make_data(prefix_path: str, split: str, n: int, seed: int = 0):
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
-def fit(train_path: str, val_path: str, test_path: str, spectral_path: str):
-    import json, time, os, numpy as np, torch
-    from fda_exp.qwen_argl import (evaluate_student, load_frequency_file, load_teacher,
-                                   select_simplex_landmarks, teacher_vocab_factor, train_student)
-    vol.reload(); _check_budget("fit", 6.0); started = time.time()
-    freq = load_frequency_file(spectral_path)
-    factor_path = f"{ROOT}/teacher_vocab_rank64.pt"
-    if os.path.exists(factor_path):
-        initial_vocab = torch.load(factor_path, map_location="cpu", weights_only=True)
-    else:
-        teacher, _, q, _ = load_teacher()
-        initial_vocab = teacher_vocab_factor(teacher, q, 64)
-        torch.save(initial_vocab, factor_path)
-        del teacher
-        torch.cuda.empty_cache()
-    fourier_ckpt = f"{ROOT}/student_fourier.pt"
-    simplex_ckpt = f"{ROOT}/student_simplex.pt"
-    base_ckpt = f"{ROOT}/student_baseline.pt"
-    fourier = train_student(train_path, val_path, freq, fourier_ckpt, initial_vocab=initial_vocab)
-    feature_width = 2 * len(freq)
-    landmarks = select_simplex_landmarks(train_path, freq, 248077, feature_width)
-    simplex = train_student(
-        train_path, val_path, np.zeros((0, 128), np.int64), simplex_ckpt,
-        initial_vocab=initial_vocab, feature_kind="simplex", landmarks=landmarks,
-    )
-    baseline = train_student(
-        train_path, val_path, np.zeros((0, 128), np.int64), base_ckpt,
-        initial_vocab=initial_vocab, feature_kind="none",
-        matched_feature_width=feature_width,
-    )
-    chosen = fourier_ckpt
-    if fourier["val_top1"] < 0.90:
-        twelve = train_student(train_path, val_path, freq, f"{ROOT}/student_fourier_12l.pt", layers=12,
-                               initial_vocab=initial_vocab)
-        if twelve["val_kl"] < fourier["val_kl"]:
-            fourier, chosen = twelve, twelve["path"]
-    result = dict(fourier=fourier, baseline=baseline,
-                  simplex=simplex,
-                  test_fourier=evaluate_student(chosen, test_path),
-                  test_simplex=evaluate_student(simplex_ckpt, test_path),
-                  test_baseline=evaluate_student(base_ckpt, test_path),
-                  spectral_path=spectral_path, tokenizer_q=248077, raw_logit_width=248320)
-    result["success"] = result["test_fourier"]["top1"] >= 0.90
-    result["theorem_status"] = _read_json(spectral_path, {}).get("theorem_status", "unknown")
-    result["cost_before_fit_record"] = _read_json(f"{ROOT}/cost.json", {})
-    _write_json(f"{ROOT}/summary.json", result)
-    os.makedirs(f"{ROOT}/paper", exist_ok=True)
-    with open(f"{ROOT}/paper/paper_macros.typ", "w") as f:
-        f.write(f'#let qwen-top-one = {result["test_fourier"]["top1"]:.6f}\n')
-        f.write(f'#let qwen-kl = {result["test_fourier"]["kl_mean"]:.6f}\n')
-        f.write(f'#let qwen-params = {result["test_fourier"]["params"]}\n')
-    with open(f"{ROOT}/paper/paper_tables.typ", "w") as f:
-        f.write('#table(columns: 3, [Model], [Top-1 agreement], [KL],')
-        f.write(f'[Fourier], [{result["test_fourier"]["top1"]:.4f}], [{result["test_fourier"]["kl_mean"]:.4f}],')
-        f.write(f'[Simplex], [{result["test_simplex"]["top1"]:.4f}], [{result["test_simplex"]["kl_mean"]:.4f}],')
-        f.write(f'[No Fourier], [{result["test_baseline"]["top1"]:.4f}], [{result["test_baseline"]["kl_mean"]:.4f}])\n')
-    _record_gpu("fit", started, {"success": result["success"]})
-    vol.commit()
-    print(json.dumps(result, indent=2), flush=True)
-    return result
-
-
-@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
-def fit_tensor_simplex(train_path: str, val_path: str, test_path: str, spectral_path: str):
-    """Fit the support-matched tensor-simplex control without rerunning labels."""
-    import json, time, os, numpy as np, torch
-    from fda_exp.qwen_argl import (evaluate_student, load_frequency_file,
-                                   select_tensor_simplex_landmarks, train_student)
-
-    vol.reload(); _check_budget("fit-tensor-simplex", 2.0); started = time.time()
-    freq = load_frequency_file(spectral_path)
-    factor_path = f"{ROOT}/teacher_vocab_rank64.pt"
-    if not os.path.exists(factor_path):
-        raise RuntimeError("teacher vocabulary factor is missing; run the main fit first")
-    initial_vocab = torch.load(factor_path, map_location="cpu", weights_only=True)
-    feature_width = 2 * len(freq)
-    landmarks = select_tensor_simplex_landmarks(
-        train_path, freq, 248077, feature_width
-    )
-    checkpoint = f"{ROOT}/student_tensor_simplex.pt"
-    fit_result = train_student(
-        train_path, val_path, np.zeros((0, 128), dtype=np.int64), checkpoint,
-        initial_vocab=initial_vocab, feature_kind="tensor_simplex", landmarks=landmarks,
-    )
-    result = {
-        "fit": fit_result,
-        "test": evaluate_student(checkpoint, test_path),
-        "spectral_path": spectral_path,
-        "landmarks": int(len(landmarks)),
-        "support_matched": True,
-        "tokenizer_q": 248077,
-    }
-    _write_json(f"{ROOT}/tensor_simplex_summary.json", result)
-    _record_gpu("fit-tensor-simplex", started, {"landmarks": int(len(landmarks))})
-    vol.commit()
-    print(json.dumps(result, indent=2), flush=True)
-    return result
-
-
-@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
 def fit_fourier_vector(train_path: str, val_path: str, test_path: str, spectral_path: str,
-                       output_rank: int = 64, extra_spectral_path: str = ""):
+                       output_rank: int = 64, extra_spectral_path: str = "",
+                       diagnostic: bool = False):
     """Fit the pure vector-valued Fourier compression model."""
     import json, time, os
     from fda_exp.qwen_argl import (evaluate_fourier_vector_student, load_frequency_file,
@@ -329,6 +237,16 @@ def fit_fourier_vector(train_path: str, val_path: str, test_path: str, spectral_
             frequencies, load_frequency_file(extra_spectral_path), q=248077
         )
         spectral_paths.append(extra_spectral_path)
+    search_statuses = [
+        _read_json(path, {}).get("theorem_status", "unknown")
+        for path in spectral_paths
+    ]
+    strict_dataset_gl = all(status == "certified" for status in search_statuses)
+    if not strict_dataset_gl and not diagnostic:
+        raise RuntimeError(
+            "strict Fourier fitting requires a complete certified Dataset-GL list; "
+            f"got search statuses {search_statuses}"
+        )
     out = f"{ROOT}/fourier_vector_k{len(frequencies)}_r{output_rank}.pt"
     summary_path = f"{ROOT}/fourier_vector_k{len(frequencies)}_r{output_rank}.json"
     if os.path.exists(out) and os.path.exists(summary_path):
@@ -340,6 +258,9 @@ def fit_fourier_vector(train_path: str, val_path: str, test_path: str, spectral_
     )
     result["test"] = evaluate_fourier_vector_student(out, test_path)
     result["spectral_paths"] = spectral_paths
+    result["search_statuses"] = search_statuses
+    result["strict_dataset_gl"] = strict_dataset_gl
+    result["diagnostic_only"] = bool(diagnostic and not strict_dataset_gl)
     result["teacher_role"] = "fixed label oracle and conditional sampler only"
     _write_json(summary_path, result)
     _record_gpu("fit-fourier-vector", started, result)
@@ -355,29 +276,19 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
     # The executable defaults are the predeclared minimum viable run.  Larger
     # target sizes reuse the same cached prefix/data artifacts.
     prefix_path = prepare_prefixes.remote(search_n, train_n, val_n, test_n)
-    if stage in ("smoke", "all"):
+    if stage == "smoke":
         smoke.remote(prefix_path)
     spectral_path = f"{ROOT}/spectral_p{pairs}_l{levels}_b{beam}.json"
-    if stage in ("spectral", "all"):
+    if stage == "spectral":
         spectral_path = spectral.remote(prefix_path, pairs, levels, beam)
     if stage == "spectral-eb":
         spectral_path = spectral_eb.remote(prefix_path, pairs, levels, beam)
-    if stage in ("data", "all"):
+    if stage == "data":
         train_path = make_data.remote(prefix_path, "train", train_n, 1)
         val_path = make_data.remote(prefix_path, "val", val_n, 2)
         test_path = make_data.remote(prefix_path, "test", test_n, 3)
         print({"train": train_path, "val": val_path, "test": test_path})
-    if stage in ("fit", "all"):
-        train_path = f"{ROOT}/train_n{train_n}.pt"
-        val_path = f"{ROOT}/val_n{val_n}.pt"
-        test_path = f"{ROOT}/test_n{test_n}.pt"
-        fit.remote(train_path, val_path, test_path, spectral_path)
-    if stage == "tensor-simplex":
-        train_path = f"{ROOT}/train_n{train_n}.pt"
-        val_path = f"{ROOT}/val_n{val_n}.pt"
-        test_path = f"{ROOT}/test_n{test_n}.pt"
-        fit_tensor_simplex.remote(train_path, val_path, test_path, spectral_path)
-    if stage == "fourier-vector":
+    if stage in ("fourier-vector", "fourier-vector-diagnostic"):
         train_path = f"{ROOT}/train_n{train_n}.pt"
         val_path = f"{ROOT}/val_n{val_n}.pt"
         test_path = f"{ROOT}/test_n{test_n}.pt"
@@ -385,13 +296,16 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
         # One real sine/cosine pair spans two conjugate complex characters.
         # The 109k-character root bank is therefore about 54.5k stored rows;
         # rank 128 remains below the declared 50M-parameter ceiling.
-        fit_fourier_vector.remote(train_path, val_path, test_path, eb_path, 128, "")
-    if stage == "fourier-vector-merged":
+        fit_fourier_vector.remote(
+            train_path, val_path, test_path, eb_path, 128, "",
+            stage.endswith("-diagnostic"),
+        )
+    if stage == "fourier-vector-merged-diagnostic":
         train_path = f"{ROOT}/train_n{train_n}.pt"
         val_path = f"{ROOT}/val_n{val_n}.pt"
         test_path = f"{ROOT}/test_n{test_n}.pt"
         root_path = f"{ROOT}/spectral_eb_energy_p4096_l1_b109000.json"
         high_path = f"{ROOT}/spectral_eb_energy_p256_l128_b858.json"
         fit_fourier_vector.remote(
-            train_path, val_path, test_path, root_path, 64, high_path
+            train_path, val_path, test_path, root_path, 64, high_path, True
         )

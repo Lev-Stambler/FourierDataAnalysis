@@ -308,7 +308,8 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
 
 def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
                       parent_block=16, seed=0,
-                      search_target="argmax_raw"):
+                      search_target="argmax_raw", checkpoint_path=None,
+                      checkpoint_callback=None):
     """Run the conservative gate plus a block-batched residual feature beam.
 
     The certified frontier and heuristic bank remain separate.  The latter
@@ -323,9 +324,22 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
     report = {"q": q, "levels": [], "targets_level1": {}, "beam": beam,
               "search_target": search_target,
               "parent_block": parent_block, "pairs": len(prefixes), "frontier_cap": 64}
+    start_level = 0
+    if checkpoint_path and Path(checkpoint_path).exists():
+        import torch
+        state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        if (int(state["q"]), int(state["levels"]), int(state["beam"]),
+                int(state["pairs"]), state["search_target"]) != (
+                q, levels, beam, len(prefixes), search_target):
+            raise RuntimeError("spectral checkpoint does not match requested run")
+        start_level = int(state["next_level"])
+        live = np.asarray(state["live"], dtype=np.int32)
+        banks = [np.asarray(x, dtype=np.int32) for x in state["banks"]]
+        report = state["report"]
+        print(f"[spectral] resuming from level {start_level}/{levels}", flush=True)
     radius = hoeffding_radius(len(prefixes), q)
     eb_log = math.log(4.0 * q / 0.01)
-    for k in range(levels):
+    for k in range(start_level, levels):
         pair = collect_level_pairs(model, prefixes, k, q, seed=seed + 1009 * k)
         targets = ((search_target, "raw", "constant") if k == 0
                    else (search_target,))
@@ -444,6 +458,21 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
         print(f"[spectral] level {k + 1}/{levels}: live={len(live)} "
               f"best={kept[0][0] if kept else None} rollout_seconds={pair['seconds']:.2f}",
               flush=True)
+        if checkpoint_path:
+            import os, torch, uuid
+            checkpoint = Path(checkpoint_path)
+            checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            temporary = checkpoint.with_name(
+                f".{checkpoint.name}.{uuid.uuid4().hex}.tmp"
+            )
+            torch.save({
+                "q": q, "levels": levels, "beam": beam, "pairs": len(prefixes),
+                "search_target": search_target, "next_level": k + 1,
+                "live": live, "banks": banks, "report": report,
+            }, temporary)
+            os.replace(temporary, checkpoint)
+            if checkpoint_callback is not None:
+                checkpoint_callback()
         if len(live) == 0:
             break
         torch.cuda.empty_cache()
@@ -881,140 +910,6 @@ def evaluate_fourier_vector_student(checkpoint, data_path, batch_size=32,
     }
 
 
-def _simplex_features(tokens, landmarks, q):
-    """Additive centered one-hot coordinates for legacy one-position landmarks.
-
-    Summing over all q landmarks at one position gives exactly
-    ``(q * 1[x=x'] - 1) / (q - 1)``.  We retain a data-chosen subset.
-    """
-    import torch
-    if landmarks.numel() == 0:
-        return tokens.new_zeros((len(tokens), 0), dtype=torch.float32)
-    pos, value = landmarks[:, 0].long(), landmarks[:, 1].long()
-    equal = tokens[:, pos] == value[None]
-    return (q * equal.float() - 1.0) / math.sqrt(q * (q - 1.0))
-
-
-def _tensor_simplex_features(tokens, landmarks, q):
-    """Nyström columns of the exact centered-simplex tensor support kernel.
-
-    Each landmark is a length-N row with ``-1`` outside its support and a
-    tokenizer id on its support.  The resulting feature is
-
-        prod_{j in S} (q 1[x_j=a_j] - 1) / (q - 1) = K_S(x, a).
-
-    It is categorical and support-matched; no bit representation is used.
-    """
-    import torch
-
-    if landmarks.numel() == 0:
-        return tokens.new_zeros((len(tokens), 0), dtype=torch.float32)
-    if landmarks.ndim != 2 or landmarks.shape[1] != tokens.shape[1]:
-        raise ValueError("tensor-simplex landmarks must have shape (width, token_positions)")
-    active = landmarks >= 0
-    if not torch.all(active.any(dim=1)):
-        raise ValueError("every tensor-simplex landmark needs a nonempty support")
-    degree = active.sum(1)
-    max_degree = int(degree.max().item())
-    positions = torch.zeros((len(landmarks), max_degree), dtype=torch.long, device=landmarks.device)
-    values = torch.zeros_like(positions)
-    mask = torch.arange(max_degree, device=landmarks.device)[None] < degree[:, None]
-    for row in range(len(landmarks)):
-        pos = torch.nonzero(active[row], as_tuple=False).flatten()
-        positions[row, :len(pos)] = pos
-        values[row, :len(pos)] = landmarks[row, pos]
-    return _packed_tensor_simplex_features(tokens, positions, values, mask, q)
-
-
-def _packed_tensor_simplex_features(tokens, positions, values, mask, q):
-    """GPU-friendly sparse evaluation of tensor-simplex kernel columns."""
-    import torch
-
-    if positions.numel() == 0:
-        return tokens.new_zeros((len(tokens), 0), dtype=torch.float32)
-    equal = tokens[:, positions] == values[None]
-    factors = torch.where(
-        mask[None],
-        (q * equal.float() - 1.0) / (q - 1.0),
-        torch.ones((), dtype=torch.float32, device=tokens.device),
-    )
-    return factors.prod(dim=-1)
-
-
-def select_simplex_landmarks(train_path, frequencies, q, width=None):
-    """Choose additive one-position landmarks for the legacy ablation."""
-    import torch
-
-    frequencies = np.asarray(frequencies, dtype=np.int64).reshape(-1, ROLLOUT_LEN)
-    width = int(2 * len(frequencies) if width is None else width)
-    if width == 0:
-        return np.zeros((0, 2), dtype=np.int64)
-    support = np.flatnonzero(np.any(frequencies != 0, axis=0))
-    if not len(support):
-        raise ValueError("simplex landmarks need a nonempty searched support")
-    data = torch.load(train_path, map_location="cpu", weights_only=True, mmap=True)
-    rollout = data["contexts"][:, -ROLLOUT_LEN:].long()
-    ranked = []
-    for pos in support:
-        count = torch.bincount(rollout[:, int(pos)], minlength=q)
-        ids = torch.topk(count, min(width, q), sorted=True).indices.cpu().numpy()
-        ranked.append(ids)
-    rows = []
-    for rank in range(width):
-        pos_i = rank % len(support)
-        token_i = rank // len(support)
-        rows.append((int(support[pos_i]), int(ranked[pos_i][token_i])))
-    return np.asarray(rows, dtype=np.int64)
-
-
-def select_tensor_simplex_landmarks(train_path, frequencies, q, width=None):
-    """Choose a parameter-matched tensor landmark bank on recovered supports.
-
-    The default contributes two real kernel columns for every retained complex
-    Fourier character.  Repeated supports receive different marginal-frequency
-    ranks so they do not collapse to duplicate columns.
-    """
-    import collections
-    import torch
-
-    frequencies = np.asarray(frequencies, dtype=np.int64).reshape(-1, ROLLOUT_LEN)
-    width = int(2 * len(frequencies) if width is None else width)
-    if width == 0:
-        return np.zeros((0, ROLLOUT_LEN), dtype=np.int64)
-    if not len(frequencies):
-        raise ValueError("tensor-simplex landmarks need recovered frequencies")
-    if width > 2 * len(frequencies):
-        raise ValueError("at most two tensor landmarks per Fourier character are supported")
-
-    specs = []
-    next_rank = collections.defaultdict(int)
-    for row in frequencies:
-        support = tuple(int(j) for j in np.flatnonzero(row))
-        if not support:
-            raise ValueError("tensor-simplex landmarks require nonconstant supports")
-        for _ in range(2):
-            specs.append((support, next_rank[support]))
-            next_rank[support] += 1
-    specs = specs[:width]
-
-    needed = collections.defaultdict(int)
-    for support, rank in specs:
-        for pos in support:
-            needed[pos] = max(needed[pos], rank + 1)
-    data = torch.load(train_path, map_location="cpu", weights_only=True, mmap=True)
-    rollout = data["contexts"][:, -ROLLOUT_LEN:].long()
-    ranked = {}
-    for pos, count_needed in needed.items():
-        counts = torch.bincount(rollout[:, pos], minlength=q)
-        ranked[pos] = torch.topk(counts, min(count_needed, q), sorted=True).indices.cpu().numpy()
-
-    landmarks = np.full((len(specs), ROLLOUT_LEN), -1, dtype=np.int64)
-    for i, (support, rank) in enumerate(specs):
-        for pos in support:
-            landmarks[i, pos] = int(ranked[pos][rank])
-    return landmarks
-
-
 def teacher_vocab_factor(model, q, rank=64):
     """Best rank-r vocabulary factor from the teacher's tied tokenizer embeddings."""
     import torch
@@ -1027,8 +922,7 @@ def teacher_vocab_factor(model, q, rank=64):
 
 
 def build_student(q, frequencies, layers=8, d_model=384, rank=64, heads=6, ff=1536,
-                  initial_vocab=None, feature_kind="fourier", landmarks=None,
-                  matched_feature_width=0):
+                  initial_vocab=None, feature_kind="fourier", matched_feature_width=0):
     import torch
 
     class Student(torch.nn.Module):
@@ -1050,29 +944,10 @@ def build_student(q, frequencies, layers=8, d_model=384, rank=64, heads=6, ff=15
             self.encoder = torch.nn.TransformerEncoder(layer, layers, norm=torch.nn.LayerNorm(d_model))
             freq = torch.as_tensor(frequencies, dtype=torch.long)
             self.register_buffer("frequencies", freq, persistent=True)
-            marks = torch.as_tensor(np.zeros((0, 2), np.int64) if landmarks is None else landmarks,
-                                    dtype=torch.long)
-            self.register_buffer("landmarks", marks, persistent=True)
+            if feature_kind not in {"fourier", "none"}:
+                raise ValueError(f"unknown feature kind {feature_kind}")
             self.feature_kind = feature_kind
-            if feature_kind == "tensor_simplex" and len(marks):
-                active = marks >= 0
-                degree = active.sum(1)
-                max_degree = int(degree.max().item())
-                positions = torch.zeros((len(marks), max_degree), dtype=torch.long)
-                values = torch.zeros_like(positions)
-                mask = torch.arange(max_degree)[None] < degree[:, None]
-                for row in range(len(marks)):
-                    pos = torch.nonzero(active[row], as_tuple=False).flatten()
-                    positions[row, :len(pos)] = pos
-                    values[row, :len(pos)] = marks[row, pos]
-            else:
-                positions = torch.zeros((0, 0), dtype=torch.long)
-                values = torch.zeros((0, 0), dtype=torch.long)
-                mask = torch.zeros((0, 0), dtype=torch.bool)
-            self.register_buffer("tensor_positions", positions, persistent=False)
-            self.register_buffer("tensor_values", values, persistent=False)
-            self.register_buffer("tensor_mask", mask, persistent=False)
-            feature_width = 2 * len(freq) if feature_kind == "fourier" else len(marks)
+            feature_width = 2 * len(freq) if feature_kind == "fourier" else 0
             self.feature_proj = (torch.nn.Linear(feature_width, d_model, bias=False)
                                  if feature_width else None)
             # A no-feature baseline gets the same number of trainable weights
@@ -1090,16 +965,7 @@ def build_student(q, frequencies, layers=8, d_model=384, rank=64, heads=6, ff=15
             h = self.encoder(h)[:, -1]
             if self.feature_proj is not None:
                 tokens = context[:, -ROLLOUT_LEN:]
-                if self.feature_kind == "fourier":
-                    phi = _fourier_features(tokens, self.frequencies, self.q)
-                elif self.feature_kind == "simplex":
-                    phi = _simplex_features(tokens, self.landmarks, self.q)
-                elif self.feature_kind == "tensor_simplex":
-                    phi = _packed_tensor_simplex_features(
-                        tokens, self.tensor_positions, self.tensor_values, self.tensor_mask, self.q
-                    )
-                else:
-                    raise ValueError(f"unknown feature kind {self.feature_kind}")
+                phi = _fourier_features(tokens, self.frequencies, self.q)
                 h = h + torch.sigmoid(self.gate(h)) * self.feature_proj(phi)
             elif self.matched_adapter is not None:
                 h = h + self.matched_adapter(h)
@@ -1135,7 +1001,7 @@ def _pad_context_batch(context, size):
 
 def train_student(train_path, val_path, frequencies, out_path, layers=8, epochs=10,
                   batch_size=64, grad_accum=1, lr=3e-4, device="cuda", initial_vocab=None,
-                  feature_kind="fourier", landmarks=None, matched_feature_width=0):
+                  feature_kind="fourier", matched_feature_width=0):
     import torch
     from torch.utils.data import DataLoader, TensorDataset
 
@@ -1143,19 +1009,13 @@ def train_student(train_path, val_path, frequencies, out_path, layers=8, epochs=
     va = torch.load(val_path, map_location="cpu", weights_only=True)
     q = int(tr["q"])
     frequencies = np.asarray(frequencies, dtype=np.int64).reshape(-1, ROLLOUT_LEN)
-    landmark_width = ROLLOUT_LEN if feature_kind == "tensor_simplex" else 2
-    landmarks = np.asarray(
-        np.zeros((0, landmark_width), np.int64) if landmarks is None else landmarks,
-        dtype=np.int64,
-    ).reshape(-1, landmark_width)
     degrees, degree_counts = np.unique((frequencies != 0).sum(1), return_counts=True)
     degree_histogram = ({str(int(d)): int(c) for d, c in zip(degrees, degree_counts)}
                         if feature_kind == "fourier" else {})
-    feature_terms = len(frequencies) if feature_kind == "fourier" else len(landmarks)
+    feature_terms = len(frequencies) if feature_kind == "fourier" else 0
     base_model = build_student(
         q, frequencies, layers=layers, initial_vocab=initial_vocab,
-        feature_kind=feature_kind, landmarks=landmarks,
-        matched_feature_width=matched_feature_width,
+        feature_kind=feature_kind, matched_feature_width=matched_feature_width,
     ).to(device)
     n_params = sum(p.numel() for p in base_model.parameters())
     if n_params > 50_000_000:
@@ -1209,7 +1069,7 @@ def train_student(train_path, val_path, frequencies, out_path, layers=8, epochs=
                 break
     base_model.load_state_dict(best_state)
     out_path = Path(out_path); out_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"state_dict": best_state, "frequencies": frequencies, "landmarks": landmarks,
+    torch.save({"state_dict": best_state, "frequencies": frequencies,
                 "feature_kind": feature_kind, "matched_feature_width": matched_feature_width, "q": q,
                 "layers": layers, "params": n_params, "val_kl": best,
                 "val_top1": evaluate(vl)[1], "terms": feature_terms,
@@ -1230,7 +1090,6 @@ def evaluate_student(checkpoint, test_path, device="cuda"):
     base_model = build_student(
         int(ck["q"]), ck["frequencies"], layers=int(ck["layers"]),
         feature_kind=ck.get("feature_kind", "fourier"),
-        landmarks=ck.get("landmarks"),
         matched_feature_width=int(ck.get("matched_feature_width", 0)),
     ).to(device)
     base_model.load_state_dict(ck["state_dict"]); base_model.eval()

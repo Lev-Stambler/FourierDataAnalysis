@@ -21,26 +21,18 @@ increases computation but not conditional-sample count by a multiplicative $q$.
 
 The recovered quantities are prefix-conditional RMS character correlations of a distribution-weighted
 target.  They are not non-uniform Fourier reconstruction weights, and rollout density alone may create
-high-support moments.  Constant-output and continuation-residual controls, supervised refitting, and
-held-out document evaluation therefore separate the theorem from the empirical compression claim.
-
-The cyclic token-id geometry remains a modeling choice, not a linguistic fact.
-The first experiment included an exactly parameter-matched *additive* centered one-hot landmark ablation,
-which Fourier beat $18.22%$ to $16.38%$ on top-one agreement.  The corrected support-matched tensor-simplex
-control reached $18.70%$: slightly higher top-one but worse KL ($3.5546$ versus $3.4659$).  Thus the completed
-controls provide no top-one advantage for the cyclic labeling, and fixed random vocabulary permutations
-remain necessary before making a stronger geometry claim.
+high-support moments.  The constant-output density diagnostic, continuation residual, supervised Fourier
+refitting, and held-out document evaluation therefore separate the theorem from the empirical compression
+claim.  The theorem and student use only tokenizer-native $ZZ_q$ characters, represented for the real-valued
+student by their cosine and sine coordinates.
 
 Most importantly, the predeclared $90%$ target was not met: the primary Fourier student reached $18.22%$
-and the best parameter-matched student, tensor simplex, reached only $18.70%$ top-token agreement at a
-$27.10 times$ full-checkpoint parameter ratio.  Fourier still improves KL and top-one over the matched
-$16.86%$ no-feature control, while the experiment demonstrates that Dataset GL's heavy-correlation
-guarantee alone is far from a high-agreement compression theorem.
+top-token agreement at a $27.10 times$ full-checkpoint parameter ratio.  The experiment demonstrates that
+Dataset GL's heavy-correlation guarantee alone is far from a high-agreement compression theorem.
 
 Immediate next steps are to extend the measured three-depth profile toward all $128$ generated coordinates,
-run the fixed token-id permutations, and test
-variance-sensitive simultaneous bounds before spending samples on a frontier that Hoeffding leaves
-unresolved.
+confirm every retained Fourier leaf on independent conditional samples, and test variance-sensitive
+simultaneous bounds before spending samples on a frontier that Hoeffding leaves unresolved.
 
 #h1([Acknowledgments])
 

@@ -94,89 +94,13 @@ The support $"supp"(alpha) = {j : alpha_j != 0}$ and its token-degree never refe
 For real-valued targets, $hat(f)(-alpha) = overline(hat(f)(alpha))$; an implementation may store the
 conjugate pair or its equivalent real sine/cosine pair without changing the categorical variables.
 
-=== Basis dependence and the one-hot control
+=== Tokenizer-native character convention
 
-The $ZZ_q$ basis is native categorical but not permutation-invariant.
-It assigns the vocabulary a cyclic group law: the phase relation between token ids $1$ and $2$ differs from
-the relation between ids $1$ and $33$.
-This structure is algorithmically valuable — it gives unit-modulus multiplicative characters and the
-all-children transform of @lem:qary-all-children — but it is not semantic structure supplied by a tokenizer.
-
-The permutation-symmetric control is the centered one-hot, or regular-simplex, representation.
-For token $v$, let
-$
-s(v)
-= sqrt(q/(q-1)) (e_v - frac(1,q) bold(1)) in RR^q.
-$
-
-#lemma[Permutation-symmetric simplex][
-  For every $u,v in ZZ_q$,
-  $
-  chevron.l s(u),s(v) chevron.r
-  = cases(
-    1 &"if" u=v,
-    -1/(q-1) &"if" u != v,
-  )
-  quad "and" quad
-  sum_(v in ZZ_q) s(v)=0.
-  $
-  Hence the vectors span the $(q-1)$-dimensional categorical contrast space as a symmetric tight frame,
-  and every unequal token pair has the same relation.
-]<lem:simplex-control>
-#proof[
-  The centered coordinate vectors satisfy
-  $chevron.l e_u-bold(1)/q,e_v-bold(1)/q chevron.r = ind[u=v]-1/q$.
-  Multiplication by $q/(q-1)$ gives the displayed Gram matrix, and summing the centered vectors gives zero.
-]
-
-For a position set $S$, their tensor kernel is
-$
-K_S(x,x')
-= product_(j in S) chevron.l s(x_j),s(x'_j) chevron.r,
-$
-which depends only on the equality pattern of the tokens on $S$, not on their numerical ids.
-
-A full scaled one-hot function basis $eta_a(v)=sqrt(q) ind[v=a]$ is orthonormal under the uniform law, but
-its tensor coefficients are merely a
-rescaled lookup table for complete strings and it has no distinguished constant-versus-interaction degree.
-The centered simplex restores that distinction but is a redundant frame, not a multiplicative
-unit-modulus character basis.
-Consequently @thm:ar-qary-gl is stated for $ZZ_q$ characters, while the experiment uses the simplex
-representation as a mandatory control:
-
-+ run theorem-backed Dataset GL in the $ZZ_q$ basis;
-+ group recovered characters by their token-position support and refit those supports with simplex features;
-+ repeat the $ZZ_q$ search under fixed random vocabulary permutations;
-+ on small enumerable problems, compute both full representations and compare support-level energy and
-  held-out prediction.
-
-A result that appears only for one token-id permutation and disappears in the simplex control is an
-encoding artifact, not evidence of a linguistic interaction.
-
-#lemma[Exact character--simplex support identity][
-  For $S subset.eq [n]$, define
-  $
-  K_S(x,x')
-  = product_(j in S) frac(q ind[x_j=x'_j]-1,q-1).
-  $
-  For any random $X$ on $G^n$ and vector target $F(X) in CC^m$,
-  $
-  sum_("supp"(alpha)=S)
-    norm(EE[F(X) overline(chi_alpha(X))])_2^2
-  = (q-1)^|S| EE_(X,X' "i.i.d.")
-    [chevron.l F(X),F(X') chevron.r K_S(X,X')].
-  $
-  Thus complete support-level energy is invariant under a simultaneous relabeling of the categories and
-  pushforward of the data law, although sparse selection of individual cyclic characters is not.
-]<lem:character-simplex-support>
-#proof[
-  In one coordinate,
-  $sum_(a != 0) overline(psi_a(u)) psi_a(v)=q ind[u=v]-1$.
-  Tensoring over $S$ gives
-  $sum_("supp"(alpha)=S) overline(chi_alpha(x)) chi_alpha(x')=(q-1)^|S|K_S(x,x')$.
-  Expand each squared vector norm with an independent copy $X'$ and interchange the finite sum and
-  expectation.
-]
+Both the theorem and experiment use only the multiplicative characters of $ZZ_q^n$ defined above, with
+the tokenizer's contiguous ids as the elements of $ZZ_q$.  The input representation is never expanded into
+binary variables or replaced by another categorical feature system.  For the vector-valued teacher target,
+one Dataset-GL search uses the Hermitian inner product of the output vectors, while the Fourier student
+receives the real and imaginary parts of the recovered $ZZ_q$ characters.
 
 === The fixed-prefix rollout distribution
 
@@ -594,7 +518,7 @@ alone guarantees top-token agreement without a teacher-margin condition.
 + *Not proved:* truncating a standard model's KV cache to a sliding window unless the model's attention rule
   itself makes the next-token label a function only of that window.
 + *Not proved:* that a recovered non-uniform character moment is a functional interaction, a KL-optimal
-  feature, or a Fourier reconstruction weight; the density controls and supervised ablations test those
+  feature, or a Fourier reconstruction weight; the density target and supervised Fourier fit test those
   empirical claims.
 + *Not proved:* compression, generalization to unseen real contexts, or $90%$ top-token agreement.
 + *Not required:* exact repeated $128$-grams in a pre-existing corpus.  The generative conditional oracle

@@ -89,17 +89,6 @@ def vector_pair_weights(p, pp):
     return (p * np.conjugate(pp)).sum(axis=-1)
 
 
-def simplex_kernel(x, xp, support, q: int):
-    """Exact centered-simplex tensor kernel for one position support."""
-    x = np.asarray(x)
-    xp = np.asarray(xp)
-    support = np.asarray(support, dtype=np.int64)
-    if len(support) == 0:
-        return np.ones(np.broadcast_shapes(x.shape[:-1], xp.shape[:-1]))
-    eq = x[..., support] == xp[..., support]
-    return np.prod((q * eq.astype(np.float64) - 1.0) / (q - 1.0), axis=-1)
-
-
 def hoeffding_radius(m: int, comparisons: int, delta: float = 0.01) -> float:
     """Two-sided radius for real bounded samples in [-1,1], union bounded."""
     return math.sqrt(2.0 * math.log(2.0 * max(comparisons, 1) / delta) / max(m, 1))

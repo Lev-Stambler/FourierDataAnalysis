@@ -67,24 +67,24 @@ literal cache-object cloning.
 == Search and feasibility gate
 
 Each parent uses probability-weighted, Hermitian-symmetrized difference bins followed by
-$248077 dot "ifft"$.  The implementation is native PyTorch: it constructs Hermitian histograms with
-`scatter_add_`, evaluates parent blocks with batched `torch.fft.ifft`, and keeps only a block's top
-children rather than materializing the full parent-by-alphabet frontier.  The active escalation also
-computes all child variances with one additional length-$q$ inverse DFT, as specified below.  Each depth resamples new
-continuations from the same fixed outer contexts; the executed run has no separate confirmation set.
-The $0.10$ bucket-energy diagnostic uses $4096$ context pairs and reports a simultaneous interval over the
-$248077$ children of each parent.  The executable path is a capped top-$1024$ beam and is never labeled as
-the theorem-backed heavy-plus-unresolved frontier.  It retains candidates separately at suffix depths one,
-two, and three, hence at most $3072$ characters before constant and conjugate deduplication.  These depths
-permit categorical degrees at most three and do not constitute a degree-$128$ search.
+$248077 dot "ifft"$.  The strict implementation is native PyTorch: it constructs the two histograms below
+with `scatter_add_` and evaluates all $q$ children with batched `torch.fft.ifft`.  Parent batching and fixed
+tensor chunks limit GPU memory only; chunk boundaries never rank, cap, or discard a child.  A child survives
+exactly when it passes the threshold rule in @thm:ar-qary-gl under the scheduled simultaneous confidence
+event.  Every surviving child is expanded at the next newest coordinate, through all $128$ coordinates.
+If the complete theorem-live list exceeds the declared memory, time, or parameter ceiling, the run stops
+and reports that certified width as an infeasibility result.  It does not substitute a beam, a top-$K$
+list, or any other block-pruned search.
 
-At level one the completed run measured raw, residual, and constant targets and benchmarked the
-prime-length GPU inverse FFT; deeper heuristic levels used the residual target.  The active method remains
-strictly in the tokenizer-native $ZZ_q^128$ character basis.
+The completed root diagnostics measure hard argmax-one-hot, probability, residual, and constant targets
+and benchmark the tokenizer-length GPU transform.  Fresh rollout pairs are split before ranking and
+confirmation.  These diagnostics may plot top-$K$ energy curves, but the curves never determine which
+children the strict Dataset-GL search expands.  The input basis throughout is exactly the tokenizer-native
+$ZZ_q^128$ character basis.
 
-== Student and loss
+== Discarded preliminary student and loss
 
-The terminal student consumes all $256$ tokens in the concatenation $(Z,X)$.  It uses a shared
+The discarded preliminary student consumes all $256$ tokens in the concatenation $(Z,X)$.  It uses a shared
 $248077 times 64$ factorized input/output vocabulary matrix, width $384$, six heads, feed-forward width
 $1536$, and initially eight encoder layers.  Real and imaginary parts of at most $4096$ selected characters
 are gated into the terminal representation.  A predeclared twelve-layer variant is trained only if the
@@ -94,7 +94,7 @@ static-shape `torch.compile` graph in `max-autotune-no-cudagraphs` mode.  The la
 autotuning while avoiding CUDA-graph capture, which is incompatible with the flash-attention path on the
 tested PyTorch 2.13/A10 stack.
 
-The completed first-run student minimizes the full-tokenizer teacher-to-student KL.  Cached BF16 teacher
+That first-run student minimizes the full-tokenizer teacher-to-student KL.  Cached BF16 teacher
 logits are converted to float32 and normalized there during training and evaluation; there is no fresh
 float32 teacher forward.  KL is a supervised loss, not a Fourier target or theorem consequence.  The active
 scaling experiment instead makes the hard teacher decision the primary spectral and agreement target while
@@ -122,56 +122,52 @@ rather than being silently treated as successful controls.
 
 == Results
 
-#let results-ready = true
-#include "../experiments/results/qwen35_argl/paper_macros.typ"
-#include "../experiments/results/qwen35_argl/paper_tables.typ"
+#figure(
+  table(
+    columns: 5,
+    align: (left, right, right, right, right),
+    [*Preliminary model*], [*Parameters*], [*Top-1*], [*Top-5*], [*KL*],
+    [Fourier, 8 layers], [31,472,320], [18.22%], [39.14%], [3.4659],
+  ),
+  caption: [Discarded preliminary Fourier fit on held-out FineWeb after generated token 128; argmax and KL
+  use all 248,077 valid tokenizer ids.],
+)<tab:qwen-final>
 
 All three data shards passed a memory-mapped integrity and shape check: $20000$ train, $2000$ validation,
-and $5000$ test examples, each with a $256$-token input and all $248077$ terminal teacher logits.  The
-$4096$-pair search retained $3072$ heuristic candidates and $1437$ distinct nonconstant characters after
-conjugate deduplication: $689$ of degree one, $566$ of degree two, and $182$ of degree three.
+and $5000$ test examples, each with a $256$-token input and all $248077$ terminal teacher logits.
 
-At level one the residual maximum was $0.19121$ and the simultaneous Hoeffding radius over all $248077$
+In a discarded preliminary screen, the level-one residual maximum was $0.19121$ and the simultaneous
+Hoeffding radius over all $248077$
 children was $0.09302$.  Its $0.09819$ lower endpoint misses the $0.10$ energy gate and clears $0.05$, but
 the maximizing child is the zero-frequency/DC bucket $Psi_1(0)$, which the student later drops.  It is *not*
 a certificate for a nonconstant first-order feature.  All residual children were unresolved at $0.10$, and
-the saved summary does not identify a certified nonconstant child at $0.05$.  Every reported best value at
-depths one through three is likewise on the all-zero path and is excluded before fitting; the remaining
-degree-one through degree-three bank is entirely heuristic.  For the constant target the DC value $1$ is
+the saved summary does not identify a certified nonconstant child at $0.05$.  For the constant target the DC value $1$ is
 tautological, but $239496$ non-DC children also had lower endpoints at least $0.10$, directly demonstrating
 a broad rollout-density spectrum.  These 99% simultaneous intervals cover conditional-rollout randomness
-for the fixed $4096$ search contexts, not population FineWeb sampling by themselves.
-Consequently the actual theorem frontier at energy $0.10$ has all $248077$ children in its
-heavy-plus-unresolved set, exceeds the width-$64$ cap at level one, and terminates as `spectral_blowup`.
-Only the separately labeled heuristic beam descends to depths two and three.
+for the fixed $4096$ search contexts, not population FineWeb sampling by themselves.  Because the screen did
+not attain the theorem accuracy or traverse all $128$ coordinates, its feature list is discarded and no
+character from it is carried into the strict experiment.
 
 Table @tab:qwen-final reports the untouched test split.  Fourier attained $18.22%$ strict top-token
 agreement with Wilson $95%$ interval $[17.17%,19.31%]$, top-five agreement $39.14%$, and full-tokenizer KL
-$3.4659$.  Against the exactly parameter-matched no-feature adapter, this is a $1.36$ percentage-point
-top-one gain and a $0.0897$ KL reduction.
-
-For historical context only, the old supervised additive- and tensor-simplex controls reached respectively
-$16.38%$ and $18.70%$ top-one, while the tensor control reached $37.84%$ top-five and KL $3.5546$.  Their
-intervals overlapped the Fourier result.  These finite controls never ran Dataset GL and are neither an
-alternative basis nor a forward step in the active experiment.
+$3.4659$.  This discarded fit is reported to establish the starting point; it is not the strict
+$128$-level experiment specified below.
 
 Each student has $31472320$ parameters versus all $852985920$ parameters loaded from the multimodal teacher
 checkpoint, a $27.10 times$ same-precision full-checkpoint parameter reduction.  This denominator includes
 the vision tower unused by the text-only task and is not an active-text-parameter ratio.  The twelve-layer escalation did not beat the eight-layer Fourier
 checkpoint on validation KL.  The primary $90%$ target is therefore decisively *not met*; Dataset GL's
 correlation-recovery theorem is not a compression or argmax-agreement theorem.  Reconciled A10 time,
-including conservative full-duration charges for interrupted jobs and the tensor-control rerun, cost at
+including conservative full-duration charges for interrupted jobs, cost at
 most $4.81$, well below the $23$ GPU cap.  CPU, storage, and memory charges were not independently
 reconciled in the committed artifacts, so the $25$ overall cap is not claimed as an audited total.
 
 == Active scaling escalation <sec:qwen-scaling>
 
-#block(stroke: 0.6pt + gray, inset: 8pt)[
-  *Status.*  Everything in this subsection is an active, predeclared diagnostic or escalation.  It is not
-  a result.  Modal measurements replace these statements only through checked-in artifacts.  The method is
-  exclusively the tokenizer-native $ZZ_q^128$ Fourier search; there is no binary compression and no simplex
-  Dataset-GL variant.
-]
+*Status.*  Everything explicitly described as planned below is an active, predeclared diagnostic or
+escalation rather than a result.  Modal measurements replace planned statements only through checked-in
+artifacts.  The method is exclusively the tokenizer-native $ZZ_q^128$ Fourier search: it uses no binary
+encoding, alternate categorical basis, beam, or block-pruning rule.
 
 === Two-DFT empirical-Bernstein gate
 
@@ -265,8 +261,8 @@ and $44.18%$, respectively; the latter numerator has standard error $982.12$.  T
 predictions are $76.93%$ and $80.07%$.  This is consistent with the warning above: a vector norm aggregates
 many coordinate energies and can be gamma-like and nearly flat even when scalar coordinate coefficients
 are approximately Gaussian.  The $54501$ stored real sine/cosine pairs span $109002$ conjugate complex
-characters, so they remain a meaningful engineering bank, but the measured curve does not certify an
-$80%$ vector-energy truncation.
+characters.  They define a useful capacity diagnostic, but not a Dataset-GL list or a permitted truncation
+of the strict search, and the measured curve does not certify an $80%$ vector-energy truncation.
 
 === The old gate was not the theorem search
 
@@ -275,23 +271,23 @@ Writing $T=tau^2$ for the theorem's target energy, @thm:ar-qary-gl requires ever
 to have additive error at most
 $T/8$, and retains at the theorem cutoff $3T/8$.  The old screen used $T=0.10$ but had common Hoeffding
 radius $0.09302$, rather than the required $0.0125$.  Its statement that all $248077$ residual children
-were unresolved says that this sample size could not classify the frontier.  The subsequent top-$1024$ cap
-then says only that the heuristic bank was narrow; neither observation proves a dense residual spectrum.
+were unresolved says only that this sample size could not classify the frontier.  Any feature list emitted
+after that failed gate was outside the theorem and is discarded; the observation does not prove a dense
+residual spectrum.
 
 By contrast, the constant-target observation is informative within its stated scope: $239496$ non-DC
 children had simultaneous lower endpoints at least $0.10$ on the fixed search contexts.  That is real
 breadth of the rollout-density spectrum, although it is not by itself a population-FineWeb statement.
 
-The escalation records two different outputs.  The *Dataset-GL transcript* expands every theorem-live child
+The strict escalation records one search output.  Its *Dataset-GL transcript* expands every theorem-live child
 under a scheduled failure budget and never applies a top-$K$ cap; if its certified live width exceeds the
-resource ceiling, it terminates with that width as an honest infeasibility result.  Separately, the
-*engineering bank* may retain the best $K$ discovery-ranked, confirmation-measured characters for fitting.
-Only the first output receives the completeness guarantee; the second is always labeled a capped heuristic.
+resource ceiling, it terminates with that width as an honest infeasibility result.  Descriptive top-$K$
+energy curves are diagnostics only and can never be promoted into the search output or final fit.
 
 === The compressed model is the Fourier representation
 
 Qwen is kept fixed and is used only as the teacher, label oracle, and conditional sampler.  No teacher
-block is deleted, copied into the student, or used as a residual backbone.  For a recovered character bank
+layer is deleted, copied into the student, or used as a residual backbone.  For the complete certified character list
 $S subset.eq ZZ_q^128$ of size $K$, the student logits are
 $
 ell_S(x)
@@ -329,18 +325,18 @@ secondary objective.  Each teacher rollout also supplies up to $128$ ordinary ne
 last $128$ tokens before a sampled token form an additional tokenizer-native input window, and the sampled
 token is an unbiased hard-label draw from the teacher distribution at that window.  These extra causal
 rows increase fitting data but do not count as independent GL pairs or alter the terminal evaluation law.
-The first-level $109000$ run characterizes the energy scale only; a final high-order bank must retain and
-confirm complete $128$-coordinate character indices, and its capped engineering status remains distinct
-from the uncapped Dataset-GL transcript above.
+The first-level $109000$ run characterizes the energy and parameter scale only.  The final fit accepts only
+the complete certified character list after all $128$ coordinates.  If that list does not fit the declared
+resource and parameter ceilings, the strict experiment reports infeasibility rather than pruning it.
 
-As a capacity control, the first completed pure-Fourier fit used only the $54500$ nonconstant stored pairs
-from that first-level bank, rank $128$, and $45953933$ parameters.  It reached $13.20%$ validation and
+As a capacity diagnostic, the first completed pure-Fourier fit used only the $54500$ nonconstant stored pairs
+from that first-level diagnostic set, rank $128$, and $45953933$ parameters.  It reached $13.20%$ validation and
 $13.66%$ test top-one agreement ($683/5000$), with one-sided $99%$ exact-binomial lower bound $12.55%$;
 top-five was $32.84%$ and full-tokenizer KL was $4.4530$.  Only $26/5000$ rows met the deterministic
 per-example KL/argmax certificate.  This is not the final context-lens result: every term in that control
 touches only the newest coordinate.  It shows that widening the last-token Fourier table alone does not
 substitute for recovered high-order context characters.  The active $128$-level run therefore builds the
-separate high-order bank before the merged fit.
+complete Dataset-GL list and fits it only if the entire certified representation satisfies the ceilings.
 
 === What would constitute a provable $80%$ agreement result
 

@@ -13,7 +13,6 @@ from fda_exp.argl import (
     clopper_pearson_lower,
     hoeffding_radius,
     phase_from_difference,
-    simplex_kernel,
     tokenizer_alphabet,
     weighted_histogram,
 )
@@ -234,16 +233,6 @@ def test_pure_fourier_vector_student_parameterization_and_causal_windows():
         assert targets[row] == windows[row, -1] + 1
 
 
-def test_simplex_kernel_is_permutation_invariant():
-    q = 7
-    x = np.array([[0, 1, 2], [4, 1, 6]])
-    xp = np.array([[0, 3, 2], [5, 1, 6]])
-    support = [0, 2]
-    base = simplex_kernel(x, xp, support, q)
-    perm = np.array([4, 6, 1, 0, 5, 2, 3])
-    assert np.allclose(base, simplex_kernel(perm[x], perm[xp], support, q))
-
-
 class _Tokenizer:
     def __init__(self, ids):
         self.ids = ids
@@ -309,69 +298,6 @@ def test_static_compile_batch_padding_only_duplicates_inputs():
     assert got.shape == (5, 4)
     assert torch.equal(got[:3], x)
     assert torch.equal(got[3:], x[:1].expand(2, -1))
-
-
-def test_simplex_features_reproduce_exact_one_position_kernel():
-    import torch
-    from fda_exp.qwen_argl import _simplex_features
-
-    q = 7
-    landmarks = torch.tensor([[0, a] for a in range(q)])
-    tokens = torch.tensor([[2], [5]])
-    phi = _simplex_features(tokens, landmarks, q)
-    got = phi @ phi.T
-    want = torch.tensor([[1.0, -1.0 / (q - 1)], [-1.0 / (q - 1), 1.0]])
-    assert torch.allclose(got, want, atol=1e-6)
-
-
-def test_tensor_simplex_features_are_exact_support_kernel_columns():
-    import torch
-    from fda_exp.qwen_argl import _tensor_simplex_features
-
-    q = 7
-    tokens = torch.tensor([[2, 1, 5], [2, 4, 6], [0, 1, 5]])
-    landmarks = torch.tensor([[2, -1, 5], [-1, 1, -1]])
-    got = _tensor_simplex_features(tokens, landmarks, q)
-    mismatch = -1.0 / (q - 1)
-    want = torch.tensor([
-        [1.0, 1.0],
-        [mismatch, mismatch],
-        [mismatch, 1.0],
-    ])
-    assert torch.allclose(got, want, atol=1e-6)
-
-
-def test_fourier_simplex_and_no_feature_controls_are_parameter_matched():
-    from fda_exp.qwen_argl import build_student
-
-    freq = np.zeros((2, 128), dtype=np.int64); freq[:, -1] = [1, 2]
-    marks = np.asarray([[127, 0], [127, 1], [127, 2], [127, 3]])
-    kw = dict(q=17, layers=1, d_model=24, rank=8, heads=4, ff=48)
-    fourier = build_student(frequencies=freq, **kw)
-    simplex = build_student(frequencies=np.zeros((0, 128), int), feature_kind="simplex",
-                            landmarks=marks, **kw)
-    baseline = build_student(frequencies=np.zeros((0, 128), int), feature_kind="none",
-                             matched_feature_width=4, **kw)
-    counts = [sum(p.numel() for p in m.parameters()) for m in (fourier, simplex, baseline)]
-    assert counts[0] == counts[1] == counts[2]
-
-
-def test_fourier_tensor_simplex_and_no_feature_controls_are_parameter_matched():
-    from fda_exp.qwen_argl import build_student
-
-    q, terms = 11, 3
-    freq = np.zeros((terms, 128), dtype=np.int64)
-    freq[:, -1] = np.arange(1, terms + 1)
-    marks = np.full((2 * terms, 128), -1, dtype=np.int64)
-    marks[:, -1] = np.arange(2 * terms) % q
-    kw = dict(q=q, layers=1, d_model=12, rank=4, heads=3, ff=24)
-    fourier = build_student(frequencies=freq, feature_kind="fourier", **kw)
-    tensor = build_student(frequencies=np.zeros((0, 128), int), feature_kind="tensor_simplex",
-                           landmarks=marks, **kw)
-    baseline = build_student(frequencies=np.zeros((0, 128), int), feature_kind="none",
-                             matched_feature_width=2 * terms, **kw)
-    counts = [sum(p.numel() for p in m.parameters()) for m in (fourier, tensor, baseline)]
-    assert counts[0] == counts[1] == counts[2]
 
 
 def test_label_shard_integrity_check_rejects_truncation(tmp_path):
