@@ -491,7 +491,11 @@ Two results, measured on identical fibers, targets, and fits:
   anchored pairs above $0.01$ ($27%$) where random codes hold $19.8"k"$ ($1.4%$), a $25times$
   low-degree-concentration gap; encodings converge as degree grows, so the LSH advantage is
   precisely that it needs less degree.  The recovered model is $625"k"$ parameters and runs as a
-  standalone demo.
+  standalone demo.  The ladder terminates at degree two by *redundancy rather than absence*: a
+  thousand exactly certified triples exist (top norm $0.060$, above every pair), yet fitted
+  incrementally on the frozen degree-one-plus-two residual they receive weight exactly zero under
+  the validation gate, for both encodings -- products of already-captured characters, spanned by
+  the lower degrees.  The window's recoverable information is exhausted, and the recovery knows it.
 
 + *The aggregate is decisively encoding-dependent.*  Fitting the complete degree-one basis of the
   filled span (held-out slot KL against the unigram floor $1.6303$, $M=8000$):
