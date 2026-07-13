@@ -44,6 +44,10 @@ uv run modal run --detach qary_lsh_dataset_gl.py --stage fit-deg1 --fill-len 61 
    per-degree anchored GEMMs (never the tree below deg ~3 — the tie region buries
    candidates; see finding 1). The recovered model is 2MB / 625k params
    (`model_sparse2_lsh.npz`); try it: `uv run python demo.py --prompt "..."`.
+0b. **Degree 3 exists but needs staged fitting** (`fit-sparse3`): 1,000 certified triples
+   (top norm 0.0604 > any pair), yet the flat deg-1+2+3 refit degrades clean test
+   (1.103 → 1.192) — heavy characters + flat refit = overfit. Next rung: fit triples
+   incrementally on the frozen deg-1+2 model's residual. Shipped model stays deg-1+2.
 1. **CORRECTED — the exact degree-1 spectrum has hundreds of heavy characters** (`spectrum-deg1`,
    one GEMM, no search): LSH top norm 0.048, 217 chars ≥ 0.01, mass 0.174 vs random codes
    0.044 / 171 / 0.124 — all on the last token, certifiable at τ ≤ 0.09. The tree's earlier

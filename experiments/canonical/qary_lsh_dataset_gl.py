@@ -1180,6 +1180,107 @@ def fit_sparse2(m_fibers: int = M_FIBERS, r: int = R_FILLS,
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
+def fit_sparse3(m_fibers: int = M_FIBERS, r: int = R_FILLS,
+                fill_len: int = W_WIN - K_FIXED, anchor_bar: float = 0.01,
+                top_pairs: int = 1000, pair_anchors: int = 200,
+                top_triples: int = 1000):
+    """Degree 3 of the recovery ladder: exactly enumerate triples anchored on
+    the heaviest certified pairs, fit deg-1+2+3 vs the deg-1+2 reference on
+    the strict 3-way split (test untouched)."""
+    import time
+    import torch
+    vol.reload()
+    _budget("fit-sparse3", 1.5)
+    started = time.time()
+    data = np.load(_table_path(fill_len, m_fibers, r))
+    P, fiber_id, q = data["P"], data["fiber_id"], int(data["q"])
+    fill_len = data["G"].shape[1]
+    contexts = np.concatenate([data["PRE"][fiber_id], data["G"]], axis=1)
+    z = dict(np.load(f"{ROOT}/codes.npz"))
+    tables = {"lsh": z["lsh"], "ctrl": z["ctrl"]}
+    rng = np.random.default_rng(0)
+    u = rng.random(fiber_id.max() + 1)[fiber_id]
+    te_rows, va_rows = u < 0.15, (u >= 0.15) & (u < 0.30)
+    tr_rows = ~(te_rows | va_rows)
+    ctx_tr, A_tr, n_tr, _ = soft_collapse(contexts[tr_rows], P[tr_rows])
+    ctx_va, A_va, n_va, _ = soft_collapse(contexts[va_rows], P[va_rows])
+    ctx_te, A_te, n_te, _ = soft_collapse(contexts[te_rows], P[te_rows])
+    M = int(tr_rows.sum())
+    mu = A_tr.sum(0) / n_tr.sum()
+    A_c = torch.tensor((A_tr - n_tr[:, None] * mu[None, :]).astype(np.float32),
+                       device="cuda")
+    summary = {"encodings": {}}
+    for name, codes in tables.items():
+        nb = fill_len * codes.shape[1]
+        bits_tr = context_bits(ctx_tr, codes)
+        F = torch.tensor(1.0 - 2.0 * bits_tr[:, :nb].astype(np.float32),
+                         device="cuda")
+        d1 = ((F.T @ A_c) / M).double().pow(2).sum(1).sqrt().cpu().numpy()
+        anchors = np.flatnonzero(d1 >= anchor_bar)
+        pairs = {}
+        for i in anchors:
+            ni = ((F * F[:, [i]]).T @ A_c / M).double().pow(2).sum(1) \
+                .sqrt().cpu().numpy()
+            ni[i] = 0.0
+            for j in np.argsort(-ni)[:20]:
+                if ni[j] >= anchor_bar:
+                    key = (min(int(i), int(j)), max(int(i), int(j)))
+                    pairs[key] = max(pairs.get(key, 0.0), float(ni[j]))
+        top_p = sorted(pairs.items(), key=lambda kv: -kv[1])[:top_pairs]
+        ii = np.array([k[0] for k, _ in top_p]); jj = np.array([k[1] for k, _ in top_p])
+        triples = {}
+        for (a, b), _norm in top_p[:pair_anchors]:
+            Fab = F[:, [a]] * F[:, [b]]
+            nt = ((F * Fab).T @ A_c / M).double().pow(2).sum(1).sqrt().cpu().numpy()
+            nt[[a, b]] = 0.0
+            for c in np.argsort(-nt)[:10]:
+                if nt[c] >= anchor_bar:
+                    key = tuple(sorted((a, b, int(c))))
+                    triples[key] = max(triples.get(key, 0.0), float(nt[c]))
+        top_t = sorted(triples.items(), key=lambda kv: -kv[1])[:top_triples]
+        tt = np.array([list(k) for k, _ in top_t]) if top_t else np.zeros((0, 3), int)
+        del F
+        torch.cuda.empty_cache()
+
+        def feats(ctx):
+            S = 1.0 - 2.0 * context_bits(ctx, codes)[:, :nb].astype(np.float32)
+            f12 = np.concatenate([S[:, anchors], S[:, ii] * S[:, jj]], axis=1)
+            if len(tt):
+                f123 = np.concatenate(
+                    [f12, S[:, tt[:, 0]] * S[:, tt[:, 1]] * S[:, tt[:, 2]]], axis=1)
+            else:
+                f123 = f12
+            return f12, f123
+        F12_tr, F123_tr = feats(ctx_tr)
+        F12_va, F123_va = feats(ctx_va)
+        F12_te, F123_te = feats(ctx_te)
+        fit12 = fit_softmax_slots(F12_tr, A_tr / n_tr[:, None], n_tr,
+                                  F12_va, A_va / n_va[:, None], n_va,
+                                  steps=3000, lr=0.01)
+        fit123 = fit_softmax_slots(F123_tr, A_tr / n_tr[:, None], n_tr,
+                                   F123_va, A_va / n_va[:, None], n_va,
+                                   steps=3000, lr=0.01)
+        te12 = eval_slots(fit12["W"], fit12["b"], F12_te, A_te / n_te[:, None], n_te)
+        te123 = eval_slots(fit123["W"], fit123["b"], F123_te,
+                           A_te / n_te[:, None], n_te)
+        summary["encodings"][name] = {
+            "n_triples": int(len(tt)),
+            "triple_top": float(top_t[0][1]) if top_t else 0.0,
+            "deg12_TEST_kl": te12["kl"], "deg123_TEST_kl": te123["kl"],
+            "deg123_TEST_top1": te123["top1"]}
+        np.savez_compressed(f"{ROOT}/model_sparse3_{name}.npz",
+                            anchors=anchors, pair_i=ii, pair_j=jj, triples=tt,
+                            W=fit123["W"], b=fit123["b"], mu=mu,
+                            slot_ids=data["slot_ids"], fill_len=fill_len,
+                            B=codes.shape[1])
+        vol.commit()
+        print(name, json.dumps(summary["encodings"][name]), flush=True)
+    _write_json(f"{ROOT}/summary_sparse3_f{fill_len}_M{m_fibers}.json", summary)
+    _record("fit-sparse3", started)
+    return summary
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
 def search_slots(tau: float = 0.02, m_fibers: int = M_FIBERS, r: int = R_FILLS,
                  fill_len: int = W_WIN - K_FIXED, top_slots: int = 5,
                  max_width: int = 64, val_frac: float = 0.15):
@@ -1250,6 +1351,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         spectrum_deg2.remote(m_fibers, r, fill_len)
     if stage == "fit-sparse2":
         fit_sparse2.remote(m_fibers, r, fill_len)
+    if stage == "fit-sparse3":
+        fit_sparse3.remote(m_fibers, r, fill_len)
     if stage == "fit-staged-real":
         fit_staged_real.remote(train_path, "/cache/qwen35_argl/val_n2000.pt",
                                "/cache/qwen35_argl/test_n5000.pt",
