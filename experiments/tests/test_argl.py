@@ -200,18 +200,18 @@ def test_chunked_packed_fourier_projection_matches_dense_features():
     assert torch.allclose(narrowed, expected, atol=1e-5, rtol=1e-5)
 
 
-def test_scalable_fourier_correction_starts_as_exact_zero_residual():
+def test_standalone_fourier_head_starts_as_exact_zero_map():
     import torch
-    from fda_exp.qwen_argl import build_scalable_fourier_correction
+    from fda_exp.qwen_argl import build_fourier_low_rank_head
 
     frequencies = torch.tensor([[1, 0, 0], [0, 3, 4], [2, 0, 5]])
-    correction = build_scalable_fourier_correction(
-        frequencies, q=7, hidden_size=11, adapter_rank=3, chunk_size=2
+    head = build_fourier_low_rank_head(
+        frequencies, q=7, output_width=11, output_rank=3, chunk_size=2
     )
-    out = correction(torch.randint(0, 7, (4, 3)))
+    out = head(torch.randint(0, 7, (4, 3)))
     assert out.shape == (4, 11)
     assert torch.count_nonzero(out) == 0
-    assert sum(p.numel() for p in correction.parameters()) == 2 * 3 * 3 + 3 * 11
+    assert sum(p.numel() for p in head.parameters()) == 2 * 3 * 3 + 3 * 11
 
 
 def test_pure_fourier_vector_student_parameterization_and_context_lens():
@@ -273,6 +273,62 @@ def test_teacher_label_forward_is_terminal_only_and_exactly_128_tokens():
         pass
     else:
         raise AssertionError("non-128-token teacher input must be rejected")
+
+
+def test_centered_hard_vector_pair_weight_matches_dense_vectors():
+    import torch
+    from fda_exp.qwen_argl import centered_argmax_pair_weight
+
+    mean = torch.tensor([0.50, 0.25, 0.125, 0.125])
+    y = torch.tensor([0, 1, 2, 3, 0])
+    yp = torch.tensor([0, 2, 3, 1, 3])
+    one_hot = torch.eye(4)
+    residual = (one_hot[y] - mean) / np.sqrt(2.0)
+    residual_prime = (one_hot[yp] - mean) / np.sqrt(2.0)
+    expected = (residual * residual_prime).sum(1)
+    got = centered_argmax_pair_weight(y, yp, mean)
+    assert torch.allclose(got, expected, atol=1e-7)
+    assert torch.all(residual.square().sum(1) <= 1.0 + 1e-7)
+    assert torch.all(got.abs() <= 1.0 + 1e-7)
+
+
+def test_centered_hard_vector_pair_weight_rejects_invalid_inputs():
+    import torch
+    from fda_exp.qwen_argl import centered_argmax_pair_weight
+
+    y = torch.tensor([0, 1])
+    invalid = (
+        (torch.tensor([0]), [0.5, 0.5]),
+        (torch.tensor([0, 1]), [0.6, 0.6]),
+        (torch.tensor([0, 1]), [1.1, -0.1]),
+        (torch.tensor([0.0, 1.0]), [0.5, 0.5]),
+    )
+    for yp, mean in invalid:
+        try:
+            centered_argmax_pair_weight(y, yp, mean)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid centered hard-vector inputs must be rejected")
+
+
+def test_argmax_mean_uses_only_pinned_labeled_shard(tmp_path):
+    import torch
+    from fda_exp.qwen_argl import (MODEL_REVISION, TARGET_LAW,
+                                   argmax_mean_from_labeled_split)
+
+    q = 5
+    logits = torch.full((4, q), -3.0, dtype=torch.bfloat16)
+    logits[torch.arange(4), torch.tensor([1, 1, 3, 4])] = 3.0
+    path = tmp_path / "calibration.pt"
+    torch.save({"q": q, "contexts": torch.zeros((4, 128), dtype=torch.int32),
+                "teacher_logits": logits, "target_law": TARGET_LAW,
+                "model_revision": MODEL_REVISION}, path)
+    mean, metadata = argmax_mean_from_labeled_split(path, q, chunk=2)
+    assert np.array_equal(mean, np.array([0.0, 0.5, 0.0, 0.25, 0.25]))
+    assert metadata["rows"] == 4
+    assert metadata["nonzero_classes"] == 3
+    assert abs(metadata["mean_norm_squared"] - 0.375) < 1e-12
 
 
 def test_frequency_loader_drops_constant_and_conjugate_duplicates(tmp_path):

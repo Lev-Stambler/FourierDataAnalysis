@@ -97,7 +97,7 @@ confirmation.  These diagnostics may plot top-$K$ energy curves, but the curves 
 children the strict Dataset-GL search expands.  The input basis throughout is exactly the tokenizer-native
 $ZZ_q^128$ character basis.
 
-== Corrected student and loss
+== Standalone Fourier student and loss
 
 The student receives only $X in ZZ_q^128$ and is the pure tokenizer-native Fourier representation specified
 in @sec:qwen-scaling.  Hard teacher decisions $g(X)$ are its primary labels.  Soft distillation, when used,
@@ -191,9 +191,10 @@ character-by-sequence tensor is allocated.  The all-$q$ gate, ranking, chunked f
 student forward are specified as GPU operations; CPU work is limited to artifact orchestration and
 integrity checks.
 
-=== Why $100000$ terms is plausible, and why it is not yet proved
+=== Gaussian top-$K$ hypothesis
 
-The proposed energy model is testable.  If scalar coefficients were i.i.d. circular complex Gaussians
+The following scalar *leaf-coefficient* model is a descriptive reference, not a model implied by Dataset
+GL.  If scalar leaf coefficients were i.i.d. circular complex Gaussians
 $A_c ~ calN_CC(0,sigma^2)$, then their energies satisfy
 $|A_c|^2/sigma^2 ~ "Exp"(1)$.  As $q$ grows, the largest fraction $rho=K/q$ would contain the fraction
 $
@@ -207,11 +208,19 @@ G(100000/q) approx 0.769,
 quad
 G(109000/q) approx 0.801.
 $
-This calculation supports the $100000$--$110000$ scale; it does *not* say that $100000$ terms capture all
-energy, and it is not a Dataset-GL certificate.  Moreover, if a coefficient has many independent Gaussian
-output coordinates, its squared vector norm is gamma rather than exponential and concentrates more tightly,
-making vector energies less sparse.  The teacher's argmax one-hot coefficients are also correlated across
-characters, so the empirical profile, rather than a Gaussian fit, decides the expansion.
+This calculation motivates diagnostic grid points near $100000$--$110000$; it does *not* say that those
+terms capture the corresponding share for the experiment and is not a Dataset-GL certificate.  In
+particular, a root child score is the vector conditional-bucket energy
+$
+Psi_1^Y(c)
+=EE_(Z,L_1)[norm(EE[Y(X) overline(psi_c(X_128))|Z,L_1])_2^2],
+$
+not one scalar leaf energy $|A_c|^2$.  It aggregates output coordinates and unresolved earlier-coordinate
+structure; only at depth $128$ does @thm:random-context-vector-gl identify a bucket with a vector
+coefficient-section energy.  Even for independent Gaussian output coordinates, a squared vector norm is
+gamma rather than exponential and concentrates more tightly, making vector energies less sparse.  The
+teacher's argmax one-hot coefficients are also correlated across characters, so the empirical profile,
+rather than a Gaussian fit, decides the diagnostic; the strict expansion remains threshold-only.
 
 The energy diagnostic therefore uses a fixed, hash-recorded split of fresh GL pairs.  The discovery half
 ranks all $q$ children.  Without reranking, the confirmation half measures their energies, rank stability,
@@ -222,9 +231,85 @@ This split prevents selection on the same noise used to claim a top-$K$ curve.  
 $G(K/q)$ are descriptive overlays only; the simultaneous bounds and the Dataset-GL transcript carry the
 statistical claim.
 
-No numerical curve currently in the repository was generated under this $X$-only target law.  The first
-corrected split-rank/confirmation run will therefore establish the energy profile from scratch; the scalar
-Gaussian overlay supplies no substitute values.
+=== Corrected pinned $X$-only root result
+
+The first valid artifact uses the pinned revisions above, target law $X mapsto Y(X)$, $q=248077$, and
+$4096$ independent outer pairs.  Its hard-target child-score quantiles
+$("min",25%,50%,75%,"max")$ are
+$
+(0.19534692, 0.20576279, 0.21590899, 0.23120807, 0.34545898),
+$
+and the corresponding empirical-Bernstein-radius quantiles are
+$
+(0.06524073, 0.06620854, 0.06684654, 0.06770138, 0.07223774).
+$
+Every one of the $248077$ root children has a simultaneous lower confidence bound above $T=0.10$.
+Consequently all $q$ children are certified heavy, the strict root frontier has width $248077$, and the
+uncapped Dataset-GL traversal is infeasible at this threshold.  The saved diagnostic bank has $54501$ real
+sine/cosine pairs, spanning $109002$ conjugate complex characters, but it is not the strict frontier and is
+not promoted to the final fit.
+
+The disjoint $2048$-pair discovery and $2048$-pair confirmation halves give confirmed total root energy
+$52328.73556$.  Discovery-ranked $K=100000$ has confirmed sum $21233.27152$, numerator standard error
+$900.96993$, and descriptive share $0.40576695$, versus scalar-i.i.d.-Gaussian prediction $0.76934540$.
+For $K=109000$ the corresponding values are $23128.67590$, $982.10458$, $0.44198805$, and $0.80072176$.
+At $K=131072$ the descriptive confirmed share is $0.53071741$.  These are cross-fit point ratios, not
+simultaneous confidence bounds or Dataset-GL certificates; in particular, they do not show that $109000$
+characters contain $80%$ of the vector energy.
+
+=== Planned independently centered hard target
+
+The next strict diagnostic calibrates once on a separate, hash-disjoint sample $calC$ and then freezes
+$
+tilde(m)=frac(1,|calC|) sum_(X in calC) Y(X) in Delta(ZZ_q),
+quad
+R_(tilde(m))(X)=frac(Y(X)-tilde(m),sqrt(2)).
+$
+It is a mathematically valid bounded vector target: for $g=g(X)$,
+$
+norm(R_(tilde(m))(X))_2^2
+=frac(1+norm(tilde(m))_2^2-2 tilde(m)_g,2) <= 1.
+$
+For a GL pair with $g'=g(X')$, its inner product remains cheap and exact,
+$
+chevron.l R_(tilde(m))(X),R_(tilde(m))(X') chevron.r
+=frac(ind[g=g']-tilde(m)_g-tilde(m)_(g')+norm(tilde(m))_2^2,2).
+$
+Conditional on the independent calibration sample, $tilde(m)$ and hence the target are fixed, so the same
+simultaneous empirical-Bernstein and Dataset-GL proof applies.  The output decomposition restores the
+calibrated global mean exactly as $Y(X)=tilde(m)+sqrt(2) R_(tilde(m))(X)$.  In a vector reconstruction,
+$tilde(m)$ is an explicit fixed output-space bias.  The softmax model instead fits its constant logit bias
+separately; no equality between a probability mean and a logit bias is assumed.
+
+This centering is a strict diagnostic, not a sparsity theorem.  Its surviving density term is clearest at
+the random-context coefficient-section level.  Let
+$
+m=EE_Z[p_Z],
+quad p_z=EE[Y(X)|Z=z],
+quad d_z(alpha)=EE[overline(chi_alpha(X))|Z=z],
+$
+and
+$
+c_z(alpha)=EE[(Y(X)-p_z) overline(chi_alpha(X))|Z=z].
+$
+Then the calibrated target satisfies the exact identity
+$
+hat(R_(tilde(m)))_z(alpha)
+=frac(c_z(alpha)+(p_z-tilde(m))d_z(alpha),sqrt(2)).
+$
+Thus global centering removes the density contribution of $tilde(m)$ but leaves within-context covariance
+$c_z(alpha)$ and the between-context drift $(p_z-tilde(m))d_z(alpha)$.  Even with the population value
+$tilde(m)=m$, its DC random-context energy is generally nonzero:
+$
+calE_(R_m)(0)=frac(1,2) EE_Z[norm(p_Z-m)_2^2].
+$
+Conditional on the independent calibration sample, Dataset GL certifies the fixed target
+$R_(tilde(m))$ exactly.  It does not thereby certify the population-centered target $R_m$.  If calibration
+establishes $norm(tilde(m)-m)_2 <= eps_m$, then at every character, and likewise at every conditional
+bucket, the two RMS magnitudes differ by at most $eps_m/sqrt(2)$; any claim about $R_m$ must include this
+threshold allowance.  The search therefore evaluates all $q$ children and uses the same uncapped threshold
+semantics.  If its complete live frontier remains too wide, it reports infeasibility; it never substitutes
+a beam or the $54501$-pair diagnostic bank.
 
 === Strict transcript semantics
 
@@ -238,10 +323,13 @@ under a scheduled failure budget and never applies a top-$K$ cap; if its certifi
 resource ceiling, it terminates with that width as an honest infeasibility result.  Descriptive top-$K$
 energy curves are diagnostics only and can never be promoted into the search output or final fit.
 
-=== The compressed model is the Fourier representation
+=== The standalone compressed model is the Fourier representation
 
-Qwen is kept fixed and is used only as the teacher, label oracle, and conditional sampler.  No teacher
-layer is deleted, copied into the student, or used as a residual backbone.  For the complete certified character list
+Frozen Qwen has exactly two offline roles: it samples $X$ from the real-context conditional law, and a
+separate $X$-only forward supplies labels.  Qwen is absent at student inference.  The compressed artifact
+contains only the certified character list, learned Fourier factors and output bias displayed below, plus
+tokenizer metadata; it contains no Qwen parameters, embeddings, hidden states, activations, or KV cache.
+For the complete certified character list
 $S subset.eq ZZ_q^128$ of size $K$, the student logits are
 $
 ell_S(x)
@@ -251,7 +339,9 @@ ell_S(x)
 quad
 Q_S(dot|x)="softmax"(ell_S(x)).
 $
-Here $c_alpha,d_alpha in RR^q$ are genuinely vector-valued Fourier output coefficients.  A dense
+Here $c_alpha,d_alpha in RR^q$ are genuinely vector-valued *logit weights* in a Fourier representation.
+Because they are refit through a softmax objective under a nonuniform law, they are not identified with the
+dataset Fourier coefficient vectors $hat(F)_calD(alpha)$ from @cor:ar-qary-vector.  A dense
 $2K times q$ coefficient table would not be a compression, so the implementation learns a joint rank-$r$
 factorization
 $
@@ -272,7 +362,9 @@ this uses $45953933$ parameters and remains below the same $50$ million ceiling.
 The packed GPU evaluator stores only each character's nonzero token positions and $ZZ_q$ frequencies.
 For fixed chunks of $8192$ terms it gathers the required tokenizer ids, performs one integer dot product
 modulo $q$, evaluates sine and cosine, and accumulates directly into the rank-$r$ state.  The compiled
-PyTorch path therefore never allocates a batch-by-$K$-by-$128$ tensor or a $2K times q$ table.
+PyTorch path therefore never allocates a batch-by-$K$-by-$128$ tensor or a $2K times q$ table.  Chunking is
+only an algebraically exact evaluation schedule for the displayed sum; the prediction contains no neural
+backbone, attention stack, or path back into Qwen.
 
 Training uses $g(X)$ from the fresh teacher forward on the complete $128$-token $X$ as the primary label and
 the corresponding full-distribution KL as a secondary objective.  There are no auxiliary sampled-token

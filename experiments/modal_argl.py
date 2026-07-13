@@ -100,6 +100,33 @@ def prepare_lockbox_prefixes(test_n=5000):
     )
 
 
+@app.function(image=image, volumes={"/cache": vol}, timeout=7200, memory=8192)
+def prepare_calibration_prefixes(calibration_n=4096):
+    """Reuse only old viewed-test document identities as development calibration.
+
+    Their old generations and labels are never reused.  The pinned teacher
+    generates and labels new X-only rows, while the fresh lockbox excludes all
+    of these document hashes.
+    """
+    import os, numpy as np
+    from transformers import AutoTokenizer
+    from fda_exp.qwen_argl import MODEL_ID, MODEL_REVISION, prepare_fineweb_prefixes
+
+    vol.reload()
+    prior = f"{ROOT}/prefixes_s4096_tr20000_v2000_te5000.npz"
+    if not os.path.exists(prior):
+        raise RuntimeError("prior test-hash manifest is required for calibration isolation")
+    included = np.load(prior)["test_hash"]
+    if calibration_n > len(included):
+        raise ValueError("calibration_n cannot exceed the isolated development-hash pool")
+    tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=MODEL_REVISION)
+    path = f"{ROOT}/prefixes_{TARGET_TAG}_cal{calibration_n}.npz"
+    return prepare_fineweb_prefixes(
+        tok, {"calibration": calibration_n}, path,
+        include_hashes=included, forced_split="calibration",
+    )
+
+
 @app.function(image=image, volumes={"/cache": vol}, timeout=300)
 def charge_interrupted_gpu(stage, seconds):
     """Account for a manually interrupted A10 call that could not self-record."""
@@ -234,6 +261,55 @@ def spectral_eb(prefix_path: str, pairs: int = 4096, levels: int = 1, beam: int 
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
+def spectral_centered(prefix_path: str, calibration_path: str, pairs: int = 4096,
+                      levels: int = 1, beam: int = 109000):
+    """Strict root feasibility gate for the independently centered hard vector."""
+    import json, time, numpy as np
+    from fda_exp.qwen_argl import (argmax_mean_from_labeled_split, load_teacher,
+                                   run_spectral_gate)
+
+    vol.reload(); _check_budget("spectral-centered", 3.0); started = time.time()
+    out = f"{ROOT}/spectral_eb_centered_{TARGET_TAG}_p{pairs}_l{levels}_b{beam}.json"
+    import os
+    if os.path.exists(out):
+        return out
+    mean, calibration = argmax_mean_from_labeled_split(calibration_path, 248077)
+    model, _, q, _ = load_teacher()
+    prefixes = np.load(prefix_path)["search"][:pairs]
+    checkpoint = (
+        f"{ROOT}/checkpoints/spectral_eb_centered_{TARGET_TAG}_"
+        f"p{pairs}_l{levels}_b{beam}.pt"
+    )
+    report = run_spectral_gate(
+        model, prefixes, q, levels=levels, pairs=pairs, beam=beam,
+        search_target="argmax_centered", argmax_mean=mean,
+        checkpoint_path=checkpoint, checkpoint_callback=vol.commit,
+    )
+    report["prefix_path"] = prefix_path
+    report["calibration_path"] = calibration_path
+    report["calibration"] = calibration
+    report["centering"] = {
+        "target": "(one_hot(argmax(f(X))) - frozen_global_mean) / sqrt(2)",
+        "document_disjoint_from_search": True,
+        "teacher_role": "fixed X-only label oracle and conditional sampler only",
+    }
+    report["theorem_status"] = "uncertified"
+    report["theorem_status_reason"] = (
+        "the root empirical-Bernstein gate is certified; a capped diagnostic "
+        "ranking is not a complete 128-level Dataset-GL list"
+    )
+    _write_json(out, report)
+    _record_gpu("spectral-centered", started,
+                {"pairs": pairs, "levels": levels, "beam": beam,
+                 "calibration_rows": calibration["rows"]})
+    vol.commit()
+    print(json.dumps({k: report.get(k) for k in
+                      ("q", "pairs", "theorem_frontier", "targets_level1", "calibration")},
+                     indent=2), flush=True)
+    return out
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
 def make_data(prefix_path: str, split: str, n: int, seed: int = 0):
     import time, numpy as np
     from fda_exp.qwen_argl import generate_labeled_split, labeled_split_is_valid, load_teacher
@@ -301,11 +377,12 @@ def fit_fourier_vector(train_path: str, val_path: str, test_path: str, spectral_
 @app.local_entrypoint()
 def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
          val_n: int = 512, test_n: int = 1000, pairs: int = 256, levels: int = 3,
-         beam: int = 1024, charge_seconds: float = 0.0):
+         beam: int = 1024, calibration_n: int = 4096,
+         charge_seconds: float = 0.0):
     # The executable defaults are the predeclared minimum viable run.  Larger
     # target sizes reuse the same cached prefix/data artifacts.
     prefix_path = None
-    if stage in {"smoke", "spectral", "spectral-eb", "data"}:
+    if stage in {"smoke", "spectral", "spectral-eb", "spectral-centered", "data"}:
         prefix_path = prepare_prefixes.remote(search_n, train_n, val_n)
     if stage == "charge-interrupted":
         if charge_seconds <= 0:
@@ -320,6 +397,17 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
         spectral_path = spectral.remote(prefix_path, pairs, levels, beam)
     if stage == "spectral-eb":
         spectral_path = spectral_eb.remote(prefix_path, pairs, levels, beam)
+    if stage == "calibration-data":
+        calibration_prefix_path = prepare_calibration_prefixes.remote(calibration_n)
+        calibration_path = make_data.remote(
+            calibration_prefix_path, "calibration", calibration_n, 17
+        )
+        print({"calibration": calibration_path, "prefixes": calibration_prefix_path})
+    if stage == "spectral-centered":
+        calibration_path = f"{ROOT}/calibration_{TARGET_TAG}_n{calibration_n}.pt"
+        spectral_path = spectral_centered.remote(
+            prefix_path, calibration_path, pairs, levels, beam
+        )
     if stage == "data":
         train_path = make_data.remote(prefix_path, "train", train_n, 1)
         val_path = make_data.remote(prefix_path, "val", val_n, 2)

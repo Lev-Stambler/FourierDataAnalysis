@@ -59,6 +59,39 @@ def x_only_teacher_logits(model, token_window, q):
     return out.logits[:, -1, :q]
 
 
+def centered_argmax_pair_weight(y, yp, mean):
+    """Exact inner product of (e_y-mean)/sqrt(2) vector labels."""
+    import torch
+
+    y = torch.as_tensor(y)
+    if isinstance(yp, torch.Tensor) and yp.device != y.device:
+        raise ValueError("paired argmax labels must be on the same device")
+    yp = torch.as_tensor(yp, device=y.device)
+    if y.shape != yp.shape:
+        raise ValueError("paired argmax labels must have matching shapes")
+    integer_dtypes = {torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64}
+    if y.dtype not in integer_dtypes or yp.dtype not in integer_dtypes:
+        raise ValueError("paired argmax labels must be integer token ids")
+    mean = torch.as_tensor(mean, dtype=torch.float64, device=y.device)
+    if (mean.ndim != 1 or not len(mean) or not bool(torch.isfinite(mean).all())
+            or bool((mean < 0).any())):
+        raise ValueError("argmax mean must be a finite nonnegative vector")
+    total = mean.sum()
+    if not bool(torch.isclose(total, total.new_tensor(1.0), atol=1e-5, rtol=1e-5)):
+        raise ValueError("argmax mean must sum to one")
+    # Remove serialization roundoff before applying the probability-vector
+    # norm bound used by the Dataset-GL concentration argument.
+    mean = mean / total
+    if y.numel() and (int(torch.minimum(y.min(), yp.min())) < 0
+                      or int(torch.maximum(y.max(), yp.max())) >= len(mean)):
+        raise ValueError("argmax label lies outside the mean vector")
+    weight = 0.5 * ((y == yp).double() - mean[y.long()] - mean[yp.long()]
+                    + mean.square().sum())
+    if bool((weight.abs() > 1.0 + 1e-9).any()):
+        raise RuntimeError("centered hard-vector pair weight exceeded its unit bound")
+    return weight.float()
+
+
 def autoregressive_rollout(model, input_ids, new_tokens: int, q: int, generator=None):
     """Sample exactly new_tokens and return tokens plus logits *after* the last token.
 
@@ -111,7 +144,7 @@ def deterministic_span(ids, text: str, length=REAL_LEN):
 
 
 def prepare_fineweb_prefixes(tokenizer, counts, out_path, max_documents=2_000_000,
-                             exclude_hashes=()):
+                             exclude_hashes=(), include_hashes=(), forced_split=None):
     """Stream document-disjoint real prefixes and save one npz."""
     from datasets import load_dataset
 
@@ -122,6 +155,7 @@ def prepare_fineweb_prefixes(tokenizer, counts, out_path, max_documents=2_000_00
     rows = {k: [] for k in need}
     hashes = {k: [] for k in need}
     excluded = frozenset(str(x) for x in exclude_hashes)
+    included = frozenset(str(x) for x in include_hashes)
     ds = load_dataset(
         FINEWEB_ID, name=FINEWEB_CONFIG, split="train", streaming=True,
         revision=FINEWEB_REVISION,
@@ -129,9 +163,9 @@ def prepare_fineweb_prefixes(tokenizer, counts, out_path, max_documents=2_000_00
     for i, row in enumerate(ds):
         text = row.get("text") or ""
         document_hash = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
-        if document_hash in excluded:
+        if document_hash in excluded or (included and document_hash not in included):
             continue
-        split = stable_split(text)
+        split = forced_split if forced_split is not None else stable_split(text)
         if split not in need or len(rows[split]) >= need[split]:
             continue
         ids = tokenizer(text, add_special_tokens=False)["input_ids"]
@@ -276,7 +310,8 @@ def _crossfit_root_energy_profile(d, weights, q):
     }
 
 
-def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
+def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0,
+                        argmax_mean=None):
     """Paired in-distribution X values labeled by the single function f(X).
 
     The real text Z is used only to sample X conditionally.  Qwen is then
@@ -292,6 +327,13 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
     rng = torch.Generator(device="cuda").manual_seed(seed)
     all_d, all_y, all_yp = [], [], []
     raw_w, argmax_raw_w = [], []
+    argmax_centered_w = []
+    if argmax_mean is not None:
+        mean = torch.as_tensor(argmax_mean, dtype=torch.float32, device="cuda")
+        if mean.shape != (q,) or bool((mean < 0).any()):
+            raise ValueError("argmax_mean must be a nonnegative tokenizer probability vector")
+        if not torch.isclose(mean.sum(), torch.tensor(1.0, device="cuda"), atol=1e-5):
+            raise ValueError("argmax_mean must sum to one")
     t0 = time.time()
     for lo in range(0, len(prefixes), batch):
         z = torch.as_tensor(prefixes[lo:lo + batch], dtype=torch.long, device="cuda")
@@ -309,12 +351,16 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
         y0 = p[:, 0].argmax(1)
         y1 = p[:, 1].argmax(1)
         argmax_raw = (y0 == y1).float()
+        if argmax_mean is not None:
+            argmax_centered = centered_argmax_pair_weight(y0, y1, mean)
         all_d.append((suffix[:, 1, 0] - suffix[:, 0, 0]).detach().cpu().numpy() % q)
         all_y.append(suffix[:, 0, 1:].detach().cpu().numpy())
         all_yp.append(suffix[:, 1, 1:].detach().cpu().numpy())
         raw_w.append(raw.detach().cpu().numpy())
         argmax_raw_w.append(argmax_raw.detach().cpu().numpy())
-    return dict(
+        if argmax_mean is not None:
+            argmax_centered_w.append(argmax_centered.detach().cpu().numpy())
+    result = dict(
         difference=np.concatenate(all_d),
         y=np.concatenate(all_y),
         yp=np.concatenate(all_yp),
@@ -326,27 +372,39 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
         target_law=TARGET_LAW,
         seconds=time.time() - t0,
     )
+    if argmax_mean is not None:
+        result["argmax_centered"] = np.concatenate(argmax_centered_w)
+    return result
 
 
 def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
                       parent_block=16, seed=0,
                       search_target="argmax_raw", checkpoint_path=None,
-                      checkpoint_callback=None):
-    """Run the conservative gate plus a block-batched residual feature beam.
+                      checkpoint_callback=None, argmax_mean=None):
+    """Run the conservative gate plus a separately labeled diagnostic ranking.
 
     The certified frontier and heuristic bank remain separate.  The latter
     keeps ``beam`` terms at *each* degree, so three levels yield at most 3072
     explicit tokenizer-native characters before conjugate deduplication.
+    ``parent_block`` is only a GPU-memory batch size; it is unrelated to model
+    layers, and Qwen is never part of the returned Fourier representation.
     """
     import torch
 
     prefixes = np.asarray(prefixes[:pairs], dtype=np.int32)
+    if search_target == "argmax_centered" and argmax_mean is None:
+        raise ValueError("argmax_centered search requires an independently frozen mean")
+    mean_hash = None
+    if argmax_mean is not None:
+        fixed_mean = np.asarray(argmax_mean, dtype=np.float32)
+        mean_hash = hashlib.sha256(fixed_mean.tobytes()).hexdigest()
     live = np.zeros((1, 0), dtype=np.int32)
     banks = []
     report = {"q": q, "levels": [], "targets_level1": {}, "beam": beam,
               "search_target": search_target,
               "target_law": TARGET_LAW,
               "model_revision": MODEL_REVISION,
+              "argmax_mean_hash": mean_hash,
               "parent_block": parent_block, "pairs": len(prefixes), "frontier_cap": 64}
     start_level = 0
     if checkpoint_path and Path(checkpoint_path).exists():
@@ -354,9 +412,9 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
         state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         if (int(state["q"]), int(state["levels"]), int(state["beam"]),
                 int(state["pairs"]), state["search_target"], state.get("target_law"),
-                state.get("model_revision")) != (
+                state.get("model_revision"), state.get("argmax_mean_hash")) != (
                 q, levels, beam, len(prefixes), search_target, TARGET_LAW,
-                MODEL_REVISION):
+                MODEL_REVISION, mean_hash):
             raise RuntimeError("spectral checkpoint does not match requested run")
         start_level = int(state["next_level"])
         live = np.asarray(state["live"], dtype=np.int32)
@@ -366,7 +424,10 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
     radius = hoeffding_radius(len(prefixes), q)
     eb_log = math.log(4.0 * q / 0.01)
     for k in range(start_level, levels):
-        pair = collect_level_pairs(model, prefixes, k, q, seed=seed + 1009 * k)
+        pair = collect_level_pairs(
+            model, prefixes, k, q, seed=seed + 1009 * k,
+            argmax_mean=argmax_mean,
+        )
         targets = ((search_target, "raw", "constant") if k == 0
                    else (search_target,))
         targets = tuple(dict.fromkeys(targets))
@@ -495,6 +556,7 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
                 "q": q, "levels": levels, "beam": beam, "pairs": len(prefixes),
                 "search_target": search_target, "target_law": TARGET_LAW,
                 "model_revision": MODEL_REVISION,
+                "argmax_mean_hash": mean_hash,
                 "next_level": k + 1,
                 "live": live, "banks": banks, "report": report,
             }, temporary)
@@ -558,6 +620,35 @@ def generate_labeled_split(model, prefixes, q, out_path, batch=128, seed=0):
                 "target_law": TARGET_LAW}, tmp)
     os.replace(tmp, out_path)
     return str(out_path)
+
+
+def argmax_mean_from_labeled_split(path, q, rows=None, chunk=128):
+    """Compute a frozen hard-label mean from an independent labeled shard."""
+    import torch
+
+    data = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
+    if (int(data["q"]) != q or data.get("target_law") != TARGET_LAW
+            or data.get("model_revision") != MODEL_REVISION):
+        raise ValueError("calibration shard has an incompatible target law")
+    if (data["contexts"].ndim != 2 or data["contexts"].shape[1] != ROLLOUT_LEN
+            or data["teacher_logits"].ndim != 2
+            or data["teacher_logits"].shape[1] != q
+            or len(data["contexts"]) != len(data["teacher_logits"])):
+        raise ValueError("calibration shard has incompatible tensor shapes")
+    n = len(data["teacher_logits"]) if rows is None else min(int(rows), len(data["teacher_logits"]))
+    if n <= 0 or int(chunk) <= 0:
+        raise ValueError("calibration needs at least one labeled row")
+    counts = torch.zeros(q, dtype=torch.int64)
+    for lo in range(0, n, chunk):
+        winner = data["teacher_logits"][lo:min(lo + chunk, n)].argmax(1)
+        counts += torch.bincount(winner, minlength=q)
+    mean = counts.double().div(n)
+    return mean.numpy(), {
+        "rows": n,
+        "nonzero_classes": int((counts > 0).sum()),
+        "mean_norm_squared": float(mean.square().sum()),
+        "counts_sha256": hashlib.sha256(counts.numpy().tobytes()).hexdigest(),
+    }
 
 
 def load_frequency_file(path):
@@ -650,9 +741,9 @@ def chunked_fourier_low_rank(tokens, positions, alphas, q, cosine_weight,
     return result
 
 
-def build_scalable_fourier_correction(frequencies, q, hidden_size=1024,
-                                      adapter_rank=32, chunk_size=8192):
-    """Low-rank tokenizer-native Fourier head with a vector-valued output."""
+def build_fourier_low_rank_head(frequencies, q, output_width=1024,
+                                output_rank=32, chunk_size=8192):
+    """Standalone low-rank tokenizer-native Fourier vector map."""
     import torch
 
     freq = torch.as_tensor(frequencies, dtype=torch.long)
@@ -668,16 +759,16 @@ def build_scalable_fourier_correction(frequencies, q, hidden_size=1024,
         for lo in range(0, len(freq), chunk_size)
     )
 
-    class FourierCorrection(torch.nn.Module):
+    class FourierLowRankHead(torch.nn.Module):
         def __init__(self):
             super().__init__()
             self.q = int(q)
             self.chunk_size = int(chunk_size)
             self.register_buffer("positions", positions, persistent=True)
             self.register_buffer("alphas", alphas, persistent=True)
-            self.cosine_weight = torch.nn.Parameter(torch.empty(len(freq), adapter_rank))
-            self.sine_weight = torch.nn.Parameter(torch.empty(len(freq), adapter_rank))
-            self.output = torch.nn.Linear(adapter_rank, hidden_size, bias=False)
+            self.cosine_weight = torch.nn.Parameter(torch.empty(len(freq), output_rank))
+            self.sine_weight = torch.nn.Parameter(torch.empty(len(freq), output_rank))
+            self.output = torch.nn.Linear(output_rank, output_width, bias=False)
             torch.nn.init.normal_(self.cosine_weight, std=1.0 / math.sqrt(max(len(freq), 1)))
             torch.nn.init.normal_(self.sine_weight, std=1.0 / math.sqrt(max(len(freq), 1)))
             # Zero initialization starts at constant logits while allowing
@@ -692,7 +783,7 @@ def build_scalable_fourier_correction(frequencies, q, hidden_size=1024,
             )
             return self.output(latent)
 
-    return FourierCorrection()
+    return FourierLowRankHead()
 
 
 def build_fourier_vector_student(q, frequencies, output_rank=64, chunk_size=8192,
@@ -700,8 +791,8 @@ def build_fourier_vector_student(q, frequencies, output_rank=64, chunk_size=8192
     """Pure Fourier compression model with factorized q-vector coefficients."""
     import torch
 
-    head = build_scalable_fourier_correction(
-        frequencies, q, hidden_size=q, adapter_rank=output_rank,
+    head = build_fourier_low_rank_head(
+        frequencies, q, output_width=q, output_rank=output_rank,
         chunk_size=chunk_size,
     )
 
