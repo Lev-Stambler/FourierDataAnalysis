@@ -301,12 +301,18 @@ def fit_fourier_vector(train_path: str, val_path: str, test_path: str, spectral_
 @app.local_entrypoint()
 def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
          val_n: int = 512, test_n: int = 1000, pairs: int = 256, levels: int = 3,
-         beam: int = 1024):
+         beam: int = 1024, charge_seconds: float = 0.0):
     # The executable defaults are the predeclared minimum viable run.  Larger
     # target sizes reuse the same cached prefix/data artifacts.
     prefix_path = None
     if stage in {"smoke", "spectral", "spectral-eb", "data"}:
         prefix_path = prepare_prefixes.remote(search_n, train_n, val_n)
+    if stage == "charge-interrupted":
+        if charge_seconds <= 0:
+            raise ValueError("charge-interrupted requires positive --charge-seconds")
+        charge_interrupted_gpu.remote(
+            "discarded-wrong-target-searches", charge_seconds
+        )
     if stage == "smoke":
         smoke.remote(prefix_path)
     spectral_path = f"{ROOT}/spectral_{TARGET_TAG}_p{pairs}_l{levels}_b{beam}.json"
