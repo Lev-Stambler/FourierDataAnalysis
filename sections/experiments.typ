@@ -484,21 +484,20 @@ Two results, measured on identical fibers, targets, and fits:
   under-allocation failure; the complete degree-one basis must be evaluated exactly (it is one
   GEMM) rather than entrusted to the frontier, which is needed only for degree $>= 2$.
 
-  The mechanism deserves stating, because it delimits where ANY adaptive bucket tree can work on a
-  dataset.  Every one of the $2^n$ empirical coefficients carries sampling noise $tilde 1\/sqrt(m)$;
-  a bucket at level $k$ sums the squares of $2^(n-k)$ of them, so each bucket carries a common
-  noise mass $tilde 2^(n-k) EE[f^2]\/m$ that dwarfs the entire true mass until $2^(n-k) lt.tilde m$.
-  Parseval still holds -- on the wrong (empirical) function -- so the threshold cannot prune and
-  the ordering cannot rank: the tree is provably blind until the last $tilde log_2 m$ levels, and
-  every width-bounded decision before that discards leaves irrecoverably.  Debiasing the buckets by
-  the computable noise floor buys discrimination once the noise-mass *fluctuation*
-  $tilde sqrt(2^(n-k))\/m$ drops below the signal -- roughly ten further levels at our sizes -- but
-  the exponential wins regardless.  Individual low-degree coefficients, by contrast, are single
-  averages over all $m$ rows with error $1\/sqrt(m)$ and no extension-noise aggregation at all:
-  the tree aggregates noise, enumeration does not.  Dataset GL's adaptive tree is therefore the
-  correct tool exactly when the extension space is within reach of the sample size (small domains,
-  or heavy conditional multiplicity, as in the earlier slot-alphabet campaign); outside that
-  regime, exact per-degree enumeration is not a fallback but the algorithm.  Done this
+  To be precise about what failed: the failure is a property of the *estimator this implementation
+  used*, not of the dataset-GL tree of the theorems.  The implementation grouped rows by the VALUE
+  of the un-split coordinates and squared the group sums, which retains the diagonal terms
+  $sum_x f(x)^2 chi_S(x)^2 = sum_x f(x)^2$ -- an $S$-independent mass that dominates every bucket
+  while un-split values rarely coincide, producing the tie region above.  The paper's CSAMP
+  estimator is different in exactly the right way: it conditions on the FIBER (the generating
+  context), takes PAIRS of independent fills within it, and its off-diagonal pair sum
+  $sum_z sum_(x != x') f(x) chi_S (x) dot f(x') chi_S (x')$ is unbiased for the conditional weight
+  $EE_z |EE[f chi_S | z]|^2$ with no diagonal and no extension-noise aggregation: un-split
+  coordinates are averaged over the conditional law rather than matched, so the bucket
+  discriminates at every level and the threshold prunes on conditional mass, as the theorem
+  requires.  Equivalently, the pair form is the fiber group-by square minus the computable
+  diagonal.  The exact per-degree enumeration used above is a valid (and for low degree, cheap)
+  alternative; the native pair-CSAMP tree is the general method.  Done this
   way, the recovery-then-build program works end to end, verified on a strictly untouched test
   split: a model of the $approx 220$ exactly certified LSH characters plus the $1000$ heaviest
   exactly certified pairs reaches test KL $1.103$ against the unigram floor $1.630$ -- surpassing
