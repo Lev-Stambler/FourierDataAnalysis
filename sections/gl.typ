@@ -12,7 +12,8 @@ a continuation $X$.
 The model plays two roles:
 
 + its sampling probabilities generate continuations $X$;
-+ its raw next-token probabilities label those same continuations.
++ a fresh context-lens-$128$ forward on $X$ alone labels those continuations by
+  $f(X)=P_theta(dot|X)$.
 
 This defines the dataset distribution rather than merely approximating one.
 Conditioned on $Z=z$, if the sampling kernel is $Q_theta$, then
@@ -51,8 +52,9 @@ Generation solves conditional access, not spectral density: if exponentially man
 heavy, every correct all-heavy-coefficient algorithm must pay for them.
 The theorem therefore reports its complexity in $N$ and makes no low-degree assumption.
 
-For the experiment, $F(z,x)=P_theta(dot|z,x)$ is a probability vector and
+For the experiment, $F(z,x)=f(x)=P_theta(dot|x)$ is a probability vector and
 @thm:random-context-vector-gl performs one shared search over the whole next-token distribution.
 Generation may use a restricted or temperature-scaled $Q_theta$ while the label retains the raw projected
 probabilities.
-This separation changes the rollout measure but never evaluates the label off that measure.
+The real context $z$ changes the rollout measure only; it is absent from both the teacher label forward and
+the pure Fourier student's input.

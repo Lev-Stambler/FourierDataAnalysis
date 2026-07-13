@@ -212,25 +212,15 @@ def test_scalable_fourier_correction_starts_as_exact_zero_residual():
     assert sum(p.numel() for p in correction.parameters()) == 2 * 3 * 3 + 3 * 11
 
 
-def test_pure_fourier_vector_student_parameterization_and_causal_windows():
+def test_pure_fourier_vector_student_parameterization_and_context_lens():
     import torch
-    from fda_exp.qwen_argl import (build_fourier_vector_student,
-                                   _sample_rollout_windows)
+    from fda_exp.qwen_argl import build_fourier_vector_student
 
     q, terms, rank = 17, 5, 3
     frequencies = torch.randint(0, q, (terms, 128))
     model = build_fourier_vector_student(q, frequencies, output_rank=rank, chunk_size=2)
     assert sum(p.numel() for p in model.parameters()) == 2 * terms * rank + q * rank + q
     assert model(torch.randint(0, q, (4, 128))).shape == (4, q)
-
-    context = torch.arange(2 * 256).reshape(2, 256)
-    generator = torch.Generator().manual_seed(3)
-    windows, targets = _sample_rollout_windows(context, 4, generator)
-    assert windows.shape == (8, 128)
-    assert targets.shape == (8,)
-    # Every target immediately follows its corresponding length-128 window.
-    for row in range(len(windows)):
-        assert targets[row] == windows[row, -1] + 1
 
 
 class _Tokenizer:
@@ -302,11 +292,12 @@ def test_static_compile_batch_padding_only_duplicates_inputs():
 
 def test_label_shard_integrity_check_rejects_truncation(tmp_path):
     import torch
-    from fda_exp.qwen_argl import labeled_split_is_valid
+    from fda_exp.qwen_argl import MODEL_REVISION, TARGET_LAW, labeled_split_is_valid
 
     path = tmp_path / "labels.pt"
-    torch.save({"q": 7, "contexts": torch.zeros((3, 256), dtype=torch.int32),
-                "teacher_logits": torch.zeros((3, 7), dtype=torch.bfloat16)}, path)
+    torch.save({"q": 7, "contexts": torch.zeros((3, 128), dtype=torch.int32),
+                "teacher_logits": torch.zeros((3, 7), dtype=torch.bfloat16),
+                "target_law": TARGET_LAW, "model_revision": MODEL_REVISION}, path)
     assert labeled_split_is_valid(path, 3, 7)
     path.write_bytes(path.read_bytes()[:32])
     assert not labeled_split_is_valid(path, 3, 7)

@@ -102,10 +102,10 @@ binary variables or replaced by another categorical feature system.  For the vec
 one Dataset-GL search uses the Hermitian inner product of the output vectors, while the Fourier student
 receives the real and imaginary parts of the recovered $ZZ_q$ characters.
 
-=== The fixed-prefix rollout distribution
+=== The fixed-prefix rollout oracle
 
-Fix a real token prefix $pi$ once and for all, a continuation length $n$ (in the experiment, $n=128$),
-and a randomized autoregressive sampling kernel
+Fix a real token prefix $pi$ once and for all, a continuation length $n$, and a randomized autoregressive
+sampling kernel
 $
 Q_theta (dot | pi, x_1, dots, x_(j-1)) in Delta(G).
 $
@@ -117,8 +117,8 @@ calD_(pi,theta)^n (x)
 = product_(j = 1)^n Q_theta (x_j | pi, x_1, dots, x_(j-1)).
 $
 This law is generally far from uniform and far from a product law.
-In the intended application the same model $f_theta$ supplies both objects: its transformed probabilities
-define $Q_theta$ and its raw probabilities define the label $P_theta$.
+In a general application the same model may supply both objects: its transformed probabilities define
+$Q_theta$ and its raw probabilities may define a label $P_theta$.
 The generated strings are synthetic in the everyday sense but exactly in-distribution for
 $calD_(pi,theta)^n$ by construction.
 
@@ -127,11 +127,14 @@ $
 f : G^n -> CC,
 quad norm(f)_infinity <= 1.
 $
-For next-token distillation the vector target is the raw teacher distribution after the full continuation,
+For example, an admissible vector target in this fixed-prefix formulation is the raw teacher distribution
+after the full prefix and continuation,
 $
 F(x) = P_theta (dot | pi, x) in Delta(G).
 $
-Its scalar coordinates, or bounded transforms such as $2 P_theta(t | pi,x)-1$, fit the theorem below.
+Its scalar coordinates, or bounded transforms such as $2 P_theta(t | pi,x)-1$, fit the theorem below.  This
+is a general example, not the experiment's label: the experiment instead queries a fresh length-$n$ forward
+on $x$ alone, as specified after @thm:random-context-vector-gl.
 The sampling law $Q_theta$ and labeling law $P_theta$ may differ: Dataset GL only requires samples from
 $calD_(pi,theta)^n$ and bounded labels on those samples.
 
@@ -161,12 +164,13 @@ $calD_(pi,theta)^n$ and bounded labels on those samples.
 ]
 
 One ordinary rollout supplies a sample from $calD_(pi,theta)^n$.
-During that rollout the model also emits the labels
+During that rollout the model also emits the prefix-inclusive vectors
 $P_theta(dot|pi)$, $P_theta(dot|pi,X_1)$, and so on before each sampled token.
-These are valid labels for the *separate marginal problems* of lengths $0,1,dots,n-1$.
+These could be labels for *separate fixed-prefix marginal problems* of lengths $0,1,dots,n-1$.
 They must not be pooled as if they were independent length-$n$ datapoints.
-For the context lens $n=128$, the terminal query $P_theta(dot|pi,X_(1:128))$ is the label of the
-length-$128$ datapoint; the shorter-prefix logits are free auxiliary datasets at shorter lenses.
+They are not labels in the corrected context-lens experiment.  After generating its full $X$, that
+experiment performs a separate forward pass whose input is exactly $X$ and retains only
+$P_theta(dot|X)$.
 
 === Dataset coefficients under an arbitrary rollout law
 
@@ -419,7 +423,7 @@ Large $q$ increases the branching factor but does not create hidden Boolean vari
 
 === Random real contexts and vector-valued outputs
 
-The experiment does not fix one prefix forever.  Let $Z ~ mu$ be a random real context from a corpus,
+The general theorem does not fix one prefix forever.  Let $Z ~ mu$ be a random real context from a corpus,
 let $X|Z=z ~ calD_z$ be an $n$-token autoregressive rollout, and let
 $F(z,x) in CC^m$ satisfy $norm(F(z,x))_2 <= 1$.  The input alphabet size $q$ and output dimension $m$ are
 kept distinct.  For Qwen3.5-0.8B, the tokenizer has $q=m=248077$ valid ids, while the neural output matrix
@@ -482,27 +486,38 @@ Psi_k^F(a)
 $
 Using independent real contexts instead estimates a different, cancellation-prone pooled quantity.
 
-The theorem identifies useful character *correlations*; it does not learn the coefficient function
-$z mapsto hat(F)_z(alpha)$.  Prediction on unseen real contexts requires a $Z$-conditioned student and an
-empirical generalization evaluation.
+The corrected experiment is the strict specialization
+$
+Z ~ mu_"corpus",
+quad X|Z=z ~ calD_z,
+quad F(z,x)=f(x):=P_theta(dot|x).
+$
+Here $Z$ is used only to seed an in-distribution conditional rollout.  Once all $n=128$ generated tokens
+$X$ have been sampled, a fresh teacher forward pass receives exactly those $128$ tokens and no tokens from
+$Z$.  Thus the label is one well-defined function $f:G^128 -> Delta(G)$ shared across every real context;
+$Z$ changes the sampling measure of $X$ but not the function being learned.  The Fourier student is likewise
+a function of $X$ alone: its inputs are the real and imaginary coordinates of tokenizer-native $ZZ_q^128$
+characters, and its vector output is fit to $f(X)$.
+
+For a genuinely context-dependent target $F(z,x)$, the theorem identifies character *correlations* but does
+not learn the coefficient function $z mapsto hat(F)_z(alpha)$; prediction would then require a
+$Z$-conditioned student.  That extra learning problem is absent from the experiment's specialization.
 
 === Density spectrum and supervised refitting
 
 The characters are orthonormal under the uniform group law, not under a non-uniform rollout law.
-$hat(F)_z(alpha)$ is a uniform Fourier coefficient of the weighted table $calD_z(x)F(z,x)$ up to
-normalization, not an orthogonal expansion coefficient of $F$ in $L^2(calD_z)$.  In the extreme case where
-$calD_z$ is a point mass and $F$ is constant, all $q^n$ character moments have equal magnitude.  A recovered
+In the experiment, $hat(f)_z(alpha)$ is a uniform Fourier coefficient of the weighted table
+$calD_z(x)f(x)$ up to
+normalization, not an orthogonal expansion coefficient of $f$ in $L^2(calD_z)$.  In the extreme case where
+$calD_z$ is a point mass and $f$ is constant, all $q^n$ character moments have equal magnitude.  A recovered
 high-support character is therefore not, by itself, proof of a high-order functional interaction.
 
-The experiment consequently measures three targets: the raw probability vector; the continuation residual
-$
-F_"res"(z,x)=
-frac(P_theta(dot|z,x)-P_theta(dot|z),sqrt(2));
-$
-and a constant unit vector that isolates the rollout-density spectrum.  Recovered characters are features,
-not reconstruction weights: their weights are refit under the student's supervised KL objective.  KL is a
-loss on probability vectors, not a Fourier coefficient, and neither low KL nor heavy $L^2$ spectral energy
-alone guarantees top-token agreement without a teacher-margin condition.
+The experiment learns only the raw length-$128$ probability-vector function
+$f(x)=P_theta(dot|x)$.  A constant unit-vector query may be run separately as a diagnostic of the rollout
+density, but it is not an alternative teacher target.  Recovered characters are features, not reconstruction
+weights: their vector weights are refit against $f(X)$ under the Fourier student's supervised KL objective.
+KL is a loss on probability vectors, not a Fourier coefficient, and neither low KL nor heavy $L^2$ spectral
+energy alone guarantees top-token agreement without a teacher-margin condition.
 
 === What is and is not proved for the implementation
 
@@ -510,9 +525,9 @@ alone guarantees top-token agreement without a teacher-margin condition.
   from the shared left prefix is exact $sans("CSAMP")$, whether its deterministic activations are recomputed or an
   implementation-safe cache object is cloned; the reverse-time $q$-ary search recovers every heavy categorical
   coefficient subject to the stated live-width complexity.
-+ *Proved:* the raw next-token probability vector may be used as the label even if generation uses a
-  temperature or restricted sampling kernel, because it is simply a bounded function on the sampled
-  continuation.
++ *Proved:* the raw vector $f(X)=P_theta(dot|X)$ from a fresh $X$-only forward may be used as the label even
+  if $X|Z$ was generated with a temperature or restricted sampling kernel, because $f$ is simply a bounded
+  function on the sampled continuation.
 + *Not proved:* treating the logits harvested at $128$ successive time steps as $128$ i.i.d. rows of one
   length-$128$ Dataset-GL problem.  They are labels for nested prefix distributions and are dependent.
 + *Not proved:* truncating a standard model's KV cache to a sliding window unless the model's attention rule
@@ -520,7 +535,7 @@ alone guarantees top-token agreement without a teacher-margin condition.
 + *Not proved:* that a recovered non-uniform character moment is a functional interaction, a KL-optimal
   feature, or a Fourier reconstruction weight; the density target and supervised Fourier fit test those
   empirical claims.
-+ *Not proved:* compression, generalization to unseen real contexts, or $90%$ top-token agreement.
++ *Not proved:* compression, generalization to unseen generated $X$, or any fixed top-token agreement level.
 + *Not required:* exact repeated $128$-grams in a pre-existing corpus.  The generative conditional oracle
   creates independent suffixes from a realized prefix on demand; its difficulty is measured by the weighted
   collision profile $R_k$ and live width $N$, not by accidental duplicates in a flat file.

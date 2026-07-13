@@ -8,9 +8,10 @@
 
 An autoregressive model gives Dataset GL exactly the access it needs.
 Real corpus contexts define the outer distribution; the model sampling probabilities define a non-uniform
-conditional continuation law, and its tokenizer-level
-probabilities label those continuations, and a cached realized prefix can be forked to draw independent
-conditional suffixes.
+conditional continuation law, and a cached realized prefix can be forked to draw independent conditional
+suffixes.  In the corrected experiment the real context $Z$ is used only to sample $X|Z$.  A separate
+teacher forward then receives exactly the generated $128$-token $X$ and defines the single vector function
+$f(X)=P_theta(dot|X)$; it does not receive $Z$.
 Processing coordinates newest-first aligns this oracle with native categorical Goldreich--Levin over
 $ZZ_q^n$.
 
@@ -19,16 +20,17 @@ degree $n=128$, with complexity governed by the live spectral width.
 One categorical inverse DFT per live parent estimates all $q$ children from the same suffix pairs, so large $q$
 increases computation but not conditional-sample count by a multiplicative $q$.
 
-The recovered quantities are prefix-conditional RMS character correlations of a distribution-weighted
-target.  They are not non-uniform Fourier reconstruction weights, and rollout density alone may create
-high-support moments.  The constant-output density diagnostic, continuation residual, supervised Fourier
-refitting, and held-out document evaluation therefore separate the theorem from the empirical compression
-claim.  The theorem and student use only tokenizer-native $ZZ_q$ characters, represented for the real-valued
-student by their cosine and sine coordinates.
+The recovered quantities are corpus-seed-conditional RMS character correlations of the
+distribution-weighted function $f(X)$.  They are not non-uniform Fourier reconstruction weights, and rollout
+density alone may create high-support moments.  A constant-output density diagnostic, supervised Fourier
+refitting against $f(X)$, and held-out document evaluation therefore separate the theorem from the empirical
+compression claim.  The teacher function and pure Fourier student are both defined on $X$ alone.  The input
+features are only tokenizer-native $ZZ_q$ characters, represented by their cosine and sine coordinates, and
+the student fits their vector output weights.
 
-Most importantly, the predeclared $90%$ target was not met: the primary Fourier student reached $18.22%$
-top-token agreement at a $27.10 times$ full-checkpoint parameter ratio.  The experiment demonstrates that
-Dataset GL's heavy-correlation guarantee alone is far from a high-agreement compression theorem.
+Results obtained from a prefix-inclusive label $P_theta(dot|Z,X)$ do not evaluate this corrected function
+and cannot be carried over.  The $X$-only spectral search, Fourier fit, and held-out agreement evaluation must
+therefore be rerun before making a compression or top-token-agreement claim.
 
 Immediate next steps are to extend the measured three-depth profile toward all $128$ generated coordinates,
 confirm every retained Fourier leaf on independent conditional samples, and test variance-sensitive

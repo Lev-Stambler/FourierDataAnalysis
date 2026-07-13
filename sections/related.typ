@@ -32,5 +32,7 @@ and no alternate categorical representation in the theorem or Fourier student.
 *Fourier auditing of models.*
 The Active Fourier Auditor estimates distributional properties of a queried model @ajarra2024active, and
 recent explanation methods recover sparse spectra of trained predictors @gorji2025amortized @kang2025spex.
-Our target is the model's complete next-token probability vector, while the same model also generates the
-in-distribution continuation on which that vector is evaluated.
+Our corpus context $Z$ seeds an in-distribution continuation $X|Z$, but the analyzed function is the model's
+complete next-token vector from a separate forward on $X$ alone, $f(X)=P_theta(dot|X)$.  This keeps the
+sampling oracle autoregressive while making the Fourier teacher and student functions of the same
+tokenizer-native input $X$.

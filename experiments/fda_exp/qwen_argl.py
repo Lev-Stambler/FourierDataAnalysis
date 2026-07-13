@@ -18,20 +18,24 @@ from .argl import exponential_top_energy_fraction, hoeffding_radius, tokenizer_a
 
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B-Base"
+MODEL_REVISION = "5c8a1b97ddef11f79b47ab9d07bf82b9117413f6"
 FINEWEB_ID = "HuggingFaceFW/fineweb"
 FINEWEB_CONFIG = "CC-MAIN-2024-10"
+FINEWEB_REVISION = "9bb295ddab0e05d785b879661af7260fed5140fc"
 REAL_LEN = 128
 ROLLOUT_LEN = 128
+TARGET_LAW = "qwen_x_only_context_128_qwen_5c8a1b9"
 
 
 def load_teacher(device="cuda", dtype="bfloat16"):
     import torch
     from transformers import AutoModelForImageTextToText, AutoTokenizer
 
-    tok = AutoTokenizer.from_pretrained(MODEL_ID)
+    tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=MODEL_REVISION)
     td = torch.bfloat16 if dtype == "bfloat16" else torch.float16
     model = AutoModelForImageTextToText.from_pretrained(
-        MODEL_ID, dtype=td, device_map=device, low_cpu_mem_usage=True
+        MODEL_ID, revision=MODEL_REVISION, dtype=td, device_map=device,
+        low_cpu_mem_usage=True
     ).eval()
     raw = int(model.config.text_config.vocab_size)
     q = tokenizer_alphabet(tok, raw)
@@ -54,7 +58,8 @@ def autoregressive_rollout(model, input_ids, new_tokens: int, q: int, generator=
     if new_tokens < 0:
         raise ValueError("new_tokens must be nonnegative")
     with torch.inference_mode():
-        out = model(input_ids=input_ids, use_cache=True, return_dict=True)
+        out = model(input_ids=input_ids, use_cache=True, return_dict=True,
+                    logits_to_keep=1)
         past = out.past_key_values
         logits = out.logits[:, -1, :]
         made = []
@@ -62,7 +67,8 @@ def autoregressive_rollout(model, input_ids, new_tokens: int, q: int, generator=
             probs = tokenizer_softmax(logits, q)
             nxt = torch.multinomial(probs, 1, generator=generator)
             made.append(nxt)
-            out = model(input_ids=nxt, past_key_values=past, use_cache=True, return_dict=True)
+            out = model(input_ids=nxt, past_key_values=past, use_cache=True,
+                        return_dict=True, logits_to_keep=1)
             past = out.past_key_values
             logits = out.logits[:, -1, :]
     if made:
@@ -92,7 +98,8 @@ def deterministic_span(ids, text: str, length=REAL_LEN):
     return ids[start:start + length]
 
 
-def prepare_fineweb_prefixes(tokenizer, counts, out_path, max_documents=2_000_000):
+def prepare_fineweb_prefixes(tokenizer, counts, out_path, max_documents=2_000_000,
+                             exclude_hashes=()):
     """Stream document-disjoint real prefixes and save one npz."""
     from datasets import load_dataset
 
@@ -102,9 +109,16 @@ def prepare_fineweb_prefixes(tokenizer, counts, out_path, max_documents=2_000_00
     need = {k: int(v) for k, v in counts.items()}
     rows = {k: [] for k in need}
     hashes = {k: [] for k in need}
-    ds = load_dataset(FINEWEB_ID, name=FINEWEB_CONFIG, split="train", streaming=True)
+    excluded = frozenset(str(x) for x in exclude_hashes)
+    ds = load_dataset(
+        FINEWEB_ID, name=FINEWEB_CONFIG, split="train", streaming=True,
+        revision=FINEWEB_REVISION,
+    )
     for i, row in enumerate(ds):
         text = row.get("text") or ""
+        document_hash = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
+        if document_hash in excluded:
+            continue
         split = stable_split(text)
         if split not in need or len(rows[split]) >= need[split]:
             continue
@@ -113,7 +127,7 @@ def prepare_fineweb_prefixes(tokenizer, counts, out_path, max_documents=2_000_00
         if span is None:
             continue
         rows[split].append(span.astype(np.int32))
-        hashes[split].append(hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest())
+        hashes[split].append(document_hash)
         if all(len(rows[k]) >= need[k] for k in need):
             break
         if i + 1 >= max_documents:
@@ -124,6 +138,9 @@ def prepare_fineweb_prefixes(tokenizer, counts, out_path, max_documents=2_000_00
     out_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {k: np.stack(v) for k, v in rows.items()}
     payload.update({f"{k}_hash": np.asarray(v, dtype="U64") for k, v in hashes.items()})
+    payload.update(model_revision=np.asarray(MODEL_REVISION),
+                   fineweb_revision=np.asarray(FINEWEB_REVISION),
+                   target_law=np.asarray(TARGET_LAW))
     np.savez(out_path, **payload)
     return str(out_path)
 
@@ -248,7 +265,12 @@ def _crossfit_root_energy_profile(d, weights, q):
 
 
 def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
-    """Fresh independent (Z,L^-) contexts and paired (U,Y),(U',Y')."""
+    """Paired in-distribution X values labeled by the single function f(X).
+
+    The real text Z is used only to sample X conditionally.  Qwen is then
+    evaluated afresh on each complete 128-token X with no Z tokens in its
+    attention context, so the label is a deterministic function on Z_q^128.
+    """
     import torch
 
     n = ROLLOUT_LEN
@@ -257,51 +279,41 @@ def collect_level_pairs(model, prefixes, k, q, batch=32, seed=0):
         raise ValueError("k must be in 0..n-1")
     rng = torch.Generator(device="cuda").manual_seed(seed)
     all_d, all_y, all_yp = [], [], []
-    raw_w, res_w, argmax_raw_w, argmax_res_w = [], [], [], []
+    raw_w, argmax_raw_w = [], []
     t0 = time.time()
     for lo in range(0, len(prefixes), batch):
         z = torch.as_tensor(prefixes[lo:lo + batch], dtype=torch.long, device="cuda")
-        with torch.inference_mode():
-            base_out = model(input_ids=z, use_cache=False, return_dict=True)
-            pz = tokenizer_softmax(base_out.logits[:, -1], q)
-            yz = pz.argmax(1)
         left, _ = autoregressive_rollout(model, z, left_len, q, rng)
         ctx = torch.cat([z, left], dim=1)
         paired_ctx = ctx.repeat_interleave(2, dim=0)
-        suffix, terminal = autoregressive_rollout(model, paired_ctx, k + 1, q, rng)
-        p = tokenizer_softmax(terminal, q).reshape(len(z), 2, q)
+        suffix, _ = autoregressive_rollout(model, paired_ctx, k + 1, q, rng)
+        suffix = suffix.reshape(len(z), 2, k + 1)
+        complete = torch.cat([
+            left[:, None].expand(-1, 2, -1), suffix
+        ], dim=2).reshape(2 * len(z), n)
+        with torch.inference_mode():
+            label_out = model(input_ids=complete, use_cache=False, return_dict=True,
+                              logits_to_keep=1)
+            p = tokenizer_softmax(label_out.logits[:, -1], q).reshape(len(z), 2, q)
         raw = (p[:, 0] * p[:, 1]).sum(1)
-        r0 = (p[:, 0] - pz) / math.sqrt(2.0)
-        r1 = (p[:, 1] - pz) / math.sqrt(2.0)
-        res = (r0 * r1).sum(1)
         y0 = p[:, 0].argmax(1)
         y1 = p[:, 1].argmax(1)
         argmax_raw = (y0 == y1).float()
-        # <(e_y0-e_yz)/sqrt(2),(e_y1-e_yz)/sqrt(2)> exactly,
-        # without materializing either q-dimensional one-hot vector.
-        argmax_res = 0.5 * ((y0 == y1).float() - (y0 == yz).float()
-                            - (y1 == yz).float() + 1.0)
-        suffix = suffix.reshape(len(z), 2, k + 1)
         all_d.append((suffix[:, 1, 0] - suffix[:, 0, 0]).detach().cpu().numpy() % q)
         all_y.append(suffix[:, 0, 1:].detach().cpu().numpy())
         all_yp.append(suffix[:, 1, 1:].detach().cpu().numpy())
         raw_w.append(raw.detach().cpu().numpy())
-        res_w.append(res.detach().cpu().numpy())
-        # Keep the hard-label vector target distinct from the probability
-        # target; it is primary when strict teacher argmax agreement is the
-        # requested metric.
         argmax_raw_w.append(argmax_raw.detach().cpu().numpy())
-        argmax_res_w.append(argmax_res.detach().cpu().numpy())
     return dict(
         difference=np.concatenate(all_d),
         y=np.concatenate(all_y),
         yp=np.concatenate(all_yp),
         raw=np.concatenate(raw_w),
-        residual=np.concatenate(res_w),
         argmax_raw=np.concatenate(argmax_raw_w),
-        argmax_residual=np.concatenate(argmax_res_w),
         constant=np.ones(len(prefixes), dtype=np.float32),
         generated_tokens=int(len(prefixes) * (left_len + 2 * (k + 1))),
+        label_forward_tokens=int(2 * len(prefixes) * n),
+        target_law=TARGET_LAW,
         seconds=time.time() - t0,
     )
 
@@ -323,14 +335,18 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
     banks = []
     report = {"q": q, "levels": [], "targets_level1": {}, "beam": beam,
               "search_target": search_target,
+              "target_law": TARGET_LAW,
+              "model_revision": MODEL_REVISION,
               "parent_block": parent_block, "pairs": len(prefixes), "frontier_cap": 64}
     start_level = 0
     if checkpoint_path and Path(checkpoint_path).exists():
         import torch
         state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         if (int(state["q"]), int(state["levels"]), int(state["beam"]),
-                int(state["pairs"]), state["search_target"]) != (
-                q, levels, beam, len(prefixes), search_target):
+                int(state["pairs"]), state["search_target"], state.get("target_law"),
+                state.get("model_revision")) != (
+                q, levels, beam, len(prefixes), search_target, TARGET_LAW,
+                MODEL_REVISION):
             raise RuntimeError("spectral checkpoint does not match requested run")
         start_level = int(state["next_level"])
         live = np.asarray(state["live"], dtype=np.int32)
@@ -467,7 +483,9 @@ def run_spectral_gate(model, prefixes, q, levels=3, pairs=256, beam=1024,
             )
             torch.save({
                 "q": q, "levels": levels, "beam": beam, "pairs": len(prefixes),
-                "search_target": search_target, "next_level": k + 1,
+                "search_target": search_target, "target_law": TARGET_LAW,
+                "model_revision": MODEL_REVISION,
+                "next_level": k + 1,
                 "live": live, "banks": banks, "report": report,
             }, temporary)
             os.replace(temporary, checkpoint)
@@ -492,14 +510,16 @@ def labeled_split_is_valid(path, n, q):
     try:
         data = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
         return (int(data["q"]) == q
-                and data["contexts"].shape == (n, REAL_LEN + ROLLOUT_LEN)
+                and data.get("target_law") == TARGET_LAW
+                and data.get("model_revision") == MODEL_REVISION
+                and data["contexts"].shape == (n, ROLLOUT_LEN)
                 and data["teacher_logits"].shape == (n, q))
     except (OSError, RuntimeError, KeyError, ValueError):
         return False
 
 
 def generate_labeled_split(model, prefixes, q, out_path, batch=128, seed=0):
-    """Generate one rollout and cache complete tokenizer-valid terminal logits."""
+    """Generate X after real Z, then label it with a fresh X-only forward."""
     import os, torch, uuid
 
     out_path = Path(out_path)
@@ -510,20 +530,25 @@ def generate_labeled_split(model, prefixes, q, out_path, batch=128, seed=0):
     rng = torch.Generator(device="cuda").manual_seed(seed)
     # Preallocate once on CPU.  A Python list plus torch.cat would briefly hold
     # two copies of the ~10 GB full-vocabulary target for the 20k split.
-    contexts = torch.empty((len(prefixes), REAL_LEN + ROLLOUT_LEN), dtype=torch.int32)
+    contexts = torch.empty((len(prefixes), ROLLOUT_LEN), dtype=torch.int32)
     labels = torch.empty((len(prefixes), q), dtype=torch.bfloat16)
     for lo in range(0, len(prefixes), batch):
         z = torch.as_tensor(prefixes[lo:lo + batch], dtype=torch.long, device="cuda")
-        x, logits = autoregressive_rollout(model, z, ROLLOUT_LEN, q, rng)
+        x, _ = autoregressive_rollout(model, z, ROLLOUT_LEN, q, rng)
+        with torch.inference_mode():
+            label_out = model(input_ids=x, use_cache=False, return_dict=True,
+                              logits_to_keep=1)
+            logits = label_out.logits[:, -1]
         hi = lo + len(z)
-        contexts[lo:hi].copy_(torch.cat([z, x], 1).cpu())
+        contexts[lo:hi].copy_(x.cpu())
         labels[lo:hi].copy_(logits[:, :q].cpu())
         if lo == 0 or (lo + len(z)) % max(256, batch) == 0:
             print(f"[labels] {lo + len(z)}/{len(prefixes)}", flush=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_name(f".{out_path.name}.{uuid.uuid4().hex}.tmp")
     torch.save({"contexts": contexts, "teacher_logits": labels,
-                "q": q, "model_id": MODEL_ID}, tmp)
+                "q": q, "model_id": MODEL_ID, "model_revision": MODEL_REVISION,
+                "target_law": TARGET_LAW}, tmp)
     os.replace(tmp, out_path)
     return str(out_path)
 
@@ -693,28 +718,9 @@ def build_fourier_vector_student(q, frequencies, output_rank=64, chunk_size=8192
     return FourierVectorStudent()
 
 
-def _sample_rollout_windows(context, samples_per_context, generator=None):
-    """Draw causal length-128 windows and their teacher-sampled next tokens."""
-    import torch
-
-    batch, width = context.shape
-    if width != REAL_LEN + ROLLOUT_LEN:
-        raise ValueError("expected real prefix concatenated with 128-token rollout")
-    endpoints = torch.randint(
-        REAL_LEN, width, (batch, samples_per_context),
-        device=context.device, generator=generator,
-    )
-    offsets = torch.arange(-REAL_LEN, 0, device=context.device)
-    indices = endpoints[..., None] + offsets
-    expanded = context[:, None, :].expand(-1, samples_per_context, -1)
-    windows = torch.gather(expanded, 2, indices)
-    targets = torch.gather(context, 1, endpoints)
-    return windows.reshape(-1, REAL_LEN), targets.reshape(-1)
-
-
 def train_fourier_vector_student(train_path, val_path, frequencies, out_path,
                                  output_rank=64, epochs=3, max_train=4096,
-                                 batch_size=8, sampled_windows=3, lr=3e-4,
+                                 batch_size=8, lr=3e-4,
                                  device="cuda"):
     """Fit vector Fourier coefficients with hard argmax and soft KL targets."""
     import torch
@@ -781,30 +787,21 @@ def train_fourier_vector_student(train_path, val_path, frequencies, out_path,
 
     best = None
     best_state = None
-    rng = torch.Generator(device=device).manual_seed(20260713)
     for epoch in range(epochs):
         model.train()
         for step, (context, teacher_logits) in enumerate(train_loader):
             context = context.to(device).long()
             teacher_logits = teacher_logits.to(device).float()
-            sampled_input, sampled_target = _sample_rollout_windows(
-                context, sampled_windows, rng
-            )
-            terminal_input = context[:, -ROLLOUT_LEN:]
-            all_input = torch.cat([terminal_input, sampled_input], 0)
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                all_logits = model(all_input)
-            terminal_logits = all_logits[:len(context)].float()
-            sampled_logits = all_logits[len(context):].float()
+                terminal_logits = model(context).float()
             teacher_probability = torch.softmax(teacher_logits, 1)
             terminal_log_probability = torch.log_softmax(terminal_logits, 1)
             hard_terminal = torch_f.nll_loss(
                 terminal_log_probability, teacher_logits.argmax(1)
             )
             soft_terminal = -(teacher_probability * terminal_log_probability).sum(1).mean()
-            sampled_loss = torch_f.cross_entropy(sampled_logits, sampled_target)
-            loss = 0.55 * hard_terminal + 0.25 * soft_terminal + 0.20 * sampled_loss
+            loss = 0.70 * hard_terminal + 0.30 * soft_terminal
             loss.backward()
             torch.nn.utils.clip_grad_norm_(base_model.parameters(), 1.0)
             optimizer.step()
@@ -823,13 +820,14 @@ def train_fourier_vector_student(train_path, val_path, frequencies, out_path,
         "state_dict": best_state, "frequencies": frequencies,
         "q": q, "output_rank": output_rank, "params": parameters,
         "val": best, "train_n": train_n, "epochs": epochs,
-        "sampled_windows": sampled_windows,
+        "target_law": TARGET_LAW, "model_revision": MODEL_REVISION,
         "compile_mode": "max-autotune-no-cudagraphs",
     }, out_path)
     return {
         "path": str(out_path), "params": parameters, "terms": len(frequencies),
         "output_rank": output_rank, "val": best, "train_n": train_n,
-        "epochs": epochs, "sampled_windows": sampled_windows,
+        "epochs": epochs, "target_law": TARGET_LAW,
+        "model_revision": MODEL_REVISION,
         "compile_mode": "max-autotune-no-cudagraphs",
     }
 
@@ -843,6 +841,11 @@ def evaluate_fourier_vector_student(checkpoint, data_path, batch_size=32,
 
     saved = torch.load(checkpoint, map_location="cpu", weights_only=False)
     data = torch.load(data_path, map_location="cpu", weights_only=True, mmap=True)
+    if (saved.get("target_law") != TARGET_LAW
+            or data.get("target_law") != TARGET_LAW
+            or saved.get("model_revision") != MODEL_REVISION
+            or data.get("model_revision") != MODEL_REVISION):
+        raise ValueError("checkpoint and evaluation shard must use the X-only context-128 law")
     base_model = build_fourier_vector_student(
         int(saved["q"]), saved["frequencies"], int(saved["output_rank"])
     ).to(device)

@@ -13,7 +13,8 @@ The categorical implementation is checked first on enumerable autoregressive mod
 The required tests cover: $ZZ_q$ orthogonality for composite $q$; exact agreement between KV continuation
 and the enumerated conditional law; the weighted level-mass identity; unbiasedness of the paired-suffix
 estimator; equality of the all-child DFT with $q$ separately computed child buckets; recovery of a planted
-degree-$n$ character; and equality of the scalar and Hermitian vector-target bucket calculations.
+degree-$n$ character; equality of the scalar and Hermitian vector-target bucket calculations; and the
+experiment specialization in which $Z$ affects the law of $X$ but a fresh label forward receives $X$ alone.
 The existing identity script #raw("verification/verify_identities.py") remains a regression suite for the
 general dataset Fourier identities in the preliminaries; the autoregressive categorical tests live with the
 new experiment code.

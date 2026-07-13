@@ -26,6 +26,7 @@ image = (
 )
 
 ROOT = "/cache/qwen35_argl"
+TARGET_TAG = "xonly_l128_qwen5c8a1b9"
 A10_PER_SECOND = 0.000306
 GPU_BUDGET = 23.0
 
@@ -69,13 +70,34 @@ def _record_gpu(stage, started, extra=None):
 
 
 @app.function(image=image, volumes={"/cache": vol}, timeout=7200, memory=8192)
-def prepare_prefixes(search_n=2000, train_n=20000, val_n=2000, test_n=5000):
+def prepare_prefixes(search_n=2000, train_n=20000, val_n=2000):
     from transformers import AutoTokenizer
-    from fda_exp.qwen_argl import MODEL_ID, prepare_fineweb_prefixes
+    from fda_exp.qwen_argl import MODEL_ID, MODEL_REVISION, prepare_fineweb_prefixes
     vol.reload()
-    tok = AutoTokenizer.from_pretrained(MODEL_ID)
-    path = f"{ROOT}/prefixes_s{search_n}_tr{train_n}_v{val_n}_te{test_n}.npz"
-    return prepare_fineweb_prefixes(tok, dict(search=search_n, train=train_n, val=val_n, test=test_n), path)
+    tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=MODEL_REVISION)
+    path = f"{ROOT}/prefixes_{TARGET_TAG}_s{search_n}_tr{train_n}_v{val_n}.npz"
+    return prepare_fineweb_prefixes(
+        tok, dict(search=search_n, train=train_n, val=val_n), path
+    )
+
+
+@app.function(image=image, volumes={"/cache": vol}, timeout=7200, memory=8192)
+def prepare_lockbox_prefixes(test_n=5000):
+    """Choose fresh test documents, excluding every previously viewed test hash."""
+    import os, numpy as np
+    from transformers import AutoTokenizer
+    from fda_exp.qwen_argl import MODEL_ID, MODEL_REVISION, prepare_fineweb_prefixes
+
+    vol.reload()
+    prior = f"{ROOT}/prefixes_s4096_tr20000_v2000_te5000.npz"
+    if not os.path.exists(prior):
+        raise RuntimeError("prior test-hash manifest is required to construct a fresh lockbox")
+    excluded = np.load(prior)["test_hash"]
+    tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=MODEL_REVISION)
+    path = f"{ROOT}/prefixes_{TARGET_TAG}_fresh_te{test_n}.npz"
+    return prepare_fineweb_prefixes(
+        tok, dict(test=test_n), path, exclude_hashes=excluded
+    )
 
 
 @app.function(image=image, volumes={"/cache": vol}, timeout=300)
@@ -102,8 +124,15 @@ def validate_data(path: str, n: int, q: int = 248077):
         "contexts": list(data["contexts"].shape),
         "teacher_logits": list(data["teacher_logits"].shape),
         "q": int(data["q"]),
+        "target_law": data.get("target_law"),
+        "model_revision": data.get("model_revision"),
     }
-    if result["contexts"] != [n, 256] or result["teacher_logits"] != [n, q] or result["q"] != q:
+    from fda_exp.qwen_argl import MODEL_REVISION, TARGET_LAW
+    if (result["contexts"] != [n, 128]
+            or result["teacher_logits"] != [n, q]
+            or result["q"] != q
+            or result["target_law"] != TARGET_LAW
+            or result["model_revision"] != MODEL_REVISION):
         raise RuntimeError(f"invalid label shard: {result}")
     return result
 
@@ -148,13 +177,13 @@ def spectral(prefix_path: str, pairs: int = 256, levels: int = 3, beam: int = 10
     import json, time, numpy as np
     from fda_exp.qwen_argl import load_teacher, run_spectral_gate
     vol.reload(); _check_budget("spectral", 4.0); started = time.time()
-    out = f"{ROOT}/spectral_p{pairs}_l{levels}_b{beam}.json"
+    out = f"{ROOT}/spectral_{TARGET_TAG}_p{pairs}_l{levels}_b{beam}.json"
     import os
     if os.path.exists(out):
         return out
     model, _, q, _ = load_teacher()
     prefixes = np.load(prefix_path)["search"][:pairs]
-    checkpoint = f"{ROOT}/checkpoints/spectral_p{pairs}_l{levels}_b{beam}.pt"
+    checkpoint = f"{ROOT}/checkpoints/spectral_{TARGET_TAG}_p{pairs}_l{levels}_b{beam}.pt"
     report = run_spectral_gate(
         model, prefixes, q, levels=levels, pairs=pairs, beam=beam,
         checkpoint_path=checkpoint, checkpoint_callback=vol.commit,
@@ -180,13 +209,13 @@ def spectral_eb(prefix_path: str, pairs: int = 4096, levels: int = 1, beam: int 
     from fda_exp.qwen_argl import load_teacher, run_spectral_gate
 
     vol.reload(); _check_budget("spectral-eb", 3.0); started = time.time()
-    out = f"{ROOT}/spectral_eb_energy_p{pairs}_l{levels}_b{beam}.json"
+    out = f"{ROOT}/spectral_eb_energy_{TARGET_TAG}_p{pairs}_l{levels}_b{beam}.json"
     import os
     if os.path.exists(out):
         return out
     model, _, q, _ = load_teacher()
     prefixes = np.load(prefix_path)["search"][:pairs]
-    checkpoint = f"{ROOT}/checkpoints/spectral_eb_p{pairs}_l{levels}_b{beam}.pt"
+    checkpoint = f"{ROOT}/checkpoints/spectral_eb_{TARGET_TAG}_p{pairs}_l{levels}_b{beam}.pt"
     report = run_spectral_gate(
         model, prefixes, q, levels=levels, pairs=pairs, beam=beam,
         checkpoint_path=checkpoint, checkpoint_callback=vol.commit,
@@ -209,7 +238,7 @@ def make_data(prefix_path: str, split: str, n: int, seed: int = 0):
     import time, numpy as np
     from fda_exp.qwen_argl import generate_labeled_split, labeled_split_is_valid, load_teacher
     vol.reload(); _check_budget(f"data-{split}", 6.0); started = time.time()
-    out = f"{ROOT}/{split}_n{n}.pt"
+    out = f"{ROOT}/{split}_{TARGET_TAG}_n{n}.pt"
     if labeled_split_is_valid(out, n, 248077):
         return out
     model, _, q, _ = load_teacher()
@@ -247,14 +276,14 @@ def fit_fourier_vector(train_path: str, val_path: str, test_path: str, spectral_
             "strict Fourier fitting requires a complete certified Dataset-GL list; "
             f"got search statuses {search_statuses}"
         )
-    out = f"{ROOT}/fourier_vector_k{len(frequencies)}_r{output_rank}.pt"
-    summary_path = f"{ROOT}/fourier_vector_k{len(frequencies)}_r{output_rank}.json"
+    out = f"{ROOT}/fourier_vector_{TARGET_TAG}_k{len(frequencies)}_r{output_rank}.pt"
+    summary_path = f"{ROOT}/fourier_vector_{TARGET_TAG}_k{len(frequencies)}_r{output_rank}.json"
     if os.path.exists(out) and os.path.exists(summary_path):
         return summary_path
     result = train_fourier_vector_student(
         train_path, val_path, frequencies, out,
         output_rank=output_rank, epochs=2, max_train=20000,
-        batch_size=8, sampled_windows=3,
+        batch_size=8,
     )
     result["test"] = evaluate_fourier_vector_student(out, test_path)
     result["spectral_paths"] = spectral_paths
@@ -275,10 +304,12 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
          beam: int = 1024):
     # The executable defaults are the predeclared minimum viable run.  Larger
     # target sizes reuse the same cached prefix/data artifacts.
-    prefix_path = prepare_prefixes.remote(search_n, train_n, val_n, test_n)
+    prefix_path = None
+    if stage in {"smoke", "spectral", "spectral-eb", "data"}:
+        prefix_path = prepare_prefixes.remote(search_n, train_n, val_n)
     if stage == "smoke":
         smoke.remote(prefix_path)
-    spectral_path = f"{ROOT}/spectral_p{pairs}_l{levels}_b{beam}.json"
+    spectral_path = f"{ROOT}/spectral_{TARGET_TAG}_p{pairs}_l{levels}_b{beam}.json"
     if stage == "spectral":
         spectral_path = spectral.remote(prefix_path, pairs, levels, beam)
     if stage == "spectral-eb":
@@ -286,13 +317,16 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
     if stage == "data":
         train_path = make_data.remote(prefix_path, "train", train_n, 1)
         val_path = make_data.remote(prefix_path, "val", val_n, 2)
-        test_path = make_data.remote(prefix_path, "test", test_n, 3)
-        print({"train": train_path, "val": val_path, "test": test_path})
+        print({"train": train_path, "val": val_path})
+    if stage == "fresh-lockbox":
+        lockbox_path = prepare_lockbox_prefixes.remote(test_n)
+        test_path = make_data.remote(lockbox_path, "test", test_n, 3)
+        print({"test": test_path, "prefixes": lockbox_path})
     if stage in ("fourier-vector", "fourier-vector-diagnostic"):
-        train_path = f"{ROOT}/train_n{train_n}.pt"
-        val_path = f"{ROOT}/val_n{val_n}.pt"
-        test_path = f"{ROOT}/test_n{test_n}.pt"
-        eb_path = f"{ROOT}/spectral_eb_energy_p{pairs}_l{levels}_b{beam}.json"
+        train_path = f"{ROOT}/train_{TARGET_TAG}_n{train_n}.pt"
+        val_path = f"{ROOT}/val_{TARGET_TAG}_n{val_n}.pt"
+        test_path = f"{ROOT}/test_{TARGET_TAG}_n{test_n}.pt"
+        eb_path = f"{ROOT}/spectral_eb_energy_{TARGET_TAG}_p{pairs}_l{levels}_b{beam}.json"
         # One real sine/cosine pair spans two conjugate complex characters.
         # The 109k-character root bank is therefore about 54.5k stored rows;
         # rank 128 remains below the declared 50M-parameter ceiling.
@@ -301,11 +335,11 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
             stage.endswith("-diagnostic"),
         )
     if stage == "fourier-vector-merged-diagnostic":
-        train_path = f"{ROOT}/train_n{train_n}.pt"
-        val_path = f"{ROOT}/val_n{val_n}.pt"
-        test_path = f"{ROOT}/test_n{test_n}.pt"
-        root_path = f"{ROOT}/spectral_eb_energy_p4096_l1_b109000.json"
-        high_path = f"{ROOT}/spectral_eb_energy_p256_l128_b858.json"
+        train_path = f"{ROOT}/train_{TARGET_TAG}_n{train_n}.pt"
+        val_path = f"{ROOT}/val_{TARGET_TAG}_n{val_n}.pt"
+        test_path = f"{ROOT}/test_{TARGET_TAG}_n{test_n}.pt"
+        root_path = f"{ROOT}/spectral_eb_energy_{TARGET_TAG}_p4096_l1_b109000.json"
+        high_path = f"{ROOT}/spectral_eb_energy_{TARGET_TAG}_p256_l128_b858.json"
         fit_fourier_vector.remote(
             train_path, val_path, test_path, root_path, 64, high_path, True
         )
