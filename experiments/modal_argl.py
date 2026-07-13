@@ -315,25 +315,31 @@ def fit_tensor_simplex(train_path: str, val_path: str, test_path: str, spectral_
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=24576)
 def fit_fourier_vector(train_path: str, val_path: str, test_path: str, spectral_path: str,
-                       output_rank: int = 64):
+                       output_rank: int = 64, extra_spectral_path: str = ""):
     """Fit the pure vector-valued Fourier compression model."""
     import json, time, os
     from fda_exp.qwen_argl import (evaluate_fourier_vector_student, load_frequency_file,
-                                   train_fourier_vector_student)
+                                   merge_frequency_banks, train_fourier_vector_student)
 
     vol.reload(); _check_budget("fit-fourier-vector", 6.0); started = time.time()
     frequencies = load_frequency_file(spectral_path)
+    spectral_paths = [spectral_path]
+    if extra_spectral_path:
+        frequencies = merge_frequency_banks(
+            frequencies, load_frequency_file(extra_spectral_path), q=248077
+        )
+        spectral_paths.append(extra_spectral_path)
     out = f"{ROOT}/fourier_vector_k{len(frequencies)}_r{output_rank}.pt"
     summary_path = f"{ROOT}/fourier_vector_k{len(frequencies)}_r{output_rank}.json"
     if os.path.exists(out) and os.path.exists(summary_path):
         return summary_path
     result = train_fourier_vector_student(
         train_path, val_path, frequencies, out,
-        output_rank=output_rank, epochs=3, max_train=4096,
+        output_rank=output_rank, epochs=2, max_train=20000,
         batch_size=8, sampled_windows=3,
     )
     result["test"] = evaluate_fourier_vector_student(out, test_path)
-    result["spectral_path"] = spectral_path
+    result["spectral_paths"] = spectral_paths
     result["teacher_role"] = "fixed label oracle and conditional sampler only"
     _write_json(summary_path, result)
     _record_gpu("fit-fourier-vector", started, result)
@@ -376,4 +382,16 @@ def main(stage: str = "smoke", search_n: int = 256, train_n: int = 4096,
         val_path = f"{ROOT}/val_n{val_n}.pt"
         test_path = f"{ROOT}/test_n{test_n}.pt"
         eb_path = f"{ROOT}/spectral_eb_energy_p{pairs}_l{levels}_b{beam}.json"
-        fit_fourier_vector.remote(train_path, val_path, test_path, eb_path, 64)
+        # One real sine/cosine pair spans two conjugate complex characters.
+        # The 109k-character root bank is therefore about 54.5k stored rows;
+        # rank 128 remains below the declared 50M-parameter ceiling.
+        fit_fourier_vector.remote(train_path, val_path, test_path, eb_path, 128, "")
+    if stage == "fourier-vector-merged":
+        train_path = f"{ROOT}/train_n{train_n}.pt"
+        val_path = f"{ROOT}/val_n{val_n}.pt"
+        test_path = f"{ROOT}/test_n{test_n}.pt"
+        root_path = f"{ROOT}/spectral_eb_energy_p4096_l1_b109000.json"
+        high_path = f"{ROOT}/spectral_eb_energy_p256_l128_b858.json"
+        fit_fourier_vector.remote(
+            train_path, val_path, test_path, root_path, 64, high_path
+        )

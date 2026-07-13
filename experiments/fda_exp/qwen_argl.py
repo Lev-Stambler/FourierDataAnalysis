@@ -514,6 +514,22 @@ def load_frequency_file(path):
     return np.asarray(out, dtype=np.int64).reshape(-1, ROLLOUT_LEN)
 
 
+def merge_frequency_banks(*banks, q=248077):
+    """Union canonical real character pairs from several search transcripts."""
+    out, seen = [], set()
+    for bank in banks:
+        for row in np.asarray(bank, dtype=np.int64).reshape(-1, ROLLOUT_LEN):
+            if not np.any(row):
+                continue
+            pos = tuple(int(x) for x in (row % q))
+            neg = tuple(int(x) for x in ((-row) % q))
+            key = min(pos, neg)
+            if key not in seen:
+                seen.add(key)
+                out.append(key)
+    return np.asarray(out, dtype=np.int64).reshape(-1, ROLLOUT_LEN)
+
+
 def _fourier_features(tokens, frequencies, q):
     import torch
     if frequencies.numel() == 0:
@@ -544,7 +560,7 @@ def pack_frequency_support(frequencies):
 
 
 def chunked_fourier_low_rank(tokens, positions, alphas, q, cosine_weight,
-                             sine_weight, chunk_size=8192):
+                             sine_weight, chunk_size=8192, chunk_widths=None):
     """Project many characters without materializing a dense B-by-K-by-N tensor."""
     import torch
 
@@ -555,10 +571,14 @@ def chunked_fourier_low_rank(tokens, positions, alphas, q, cosine_weight,
     result = torch.zeros((len(tokens), cosine_weight.shape[1]),
                          dtype=cosine_weight.dtype, device=tokens.device)
     scale = 2.0 * math.pi / q
-    for lo in range(0, len(positions), chunk_size):
+    chunks = list(range(0, len(positions), chunk_size))
+    if chunk_widths is not None and len(chunk_widths) != len(chunks):
+        raise ValueError("chunk_widths must provide one fixed width per chunk")
+    for chunk_number, lo in enumerate(chunks):
         hi = min(lo + chunk_size, len(positions))
-        pos = positions[lo:hi].long()
-        alpha = alphas[lo:hi].long()
+        width = positions.shape[1] if chunk_widths is None else chunk_widths[chunk_number]
+        pos = positions[lo:hi, :width].long()
+        alpha = alphas[lo:hi, :width].long()
         selected = tokens[:, pos].long()
         dot = (selected * alpha[None]).sum(-1).remainder(q)
         angle = scale * dot.float()
@@ -575,7 +595,17 @@ def build_scalable_fourier_correction(frequencies, q, hidden_size=1024,
     import torch
 
     freq = torch.as_tensor(frequencies, dtype=torch.long)
+    # Degree sorting is an internal parameter-row permutation.  It lets every
+    # compiled chunk gather only its largest actual support rather than the
+    # maximum degree anywhere in a 100k-term bank.
+    if len(freq):
+        order = torch.argsort((freq != 0).sum(1), stable=True)
+        freq = freq[order]
     positions, alphas = pack_frequency_support(freq)
+    chunk_widths = tuple(
+        int((freq[lo:lo + chunk_size] != 0).sum(1).max().item())
+        for lo in range(0, len(freq), chunk_size)
+    )
 
     class FourierCorrection(torch.nn.Module):
         def __init__(self):
@@ -597,6 +627,7 @@ def build_scalable_fourier_correction(frequencies, q, hidden_size=1024,
             latent = chunked_fourier_low_rank(
                 rollout_tokens, self.positions, self.alphas, self.q,
                 self.cosine_weight, self.sine_weight, self.chunk_size,
+                chunk_widths,
             )
             return self.output(latent)
 
@@ -680,6 +711,8 @@ def train_fourier_vector_student(train_path, val_path, frequencies, out_path,
     expected = 2 * len(frequencies) * output_rank + q * output_rank + q
     if parameters != expected:
         raise RuntimeError(f"unexpected Fourier parameter count {parameters} != {expected}")
+    if parameters > 50_000_000:
+        raise RuntimeError(f"Fourier student has {parameters} parameters, exceeding 50M")
     torch.set_float32_matmul_precision("high")
     model = torch.compile(
         base_model, mode="max-autotune-no-cudagraphs", fullgraph=False, dynamic=False

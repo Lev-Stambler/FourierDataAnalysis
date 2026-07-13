@@ -251,6 +251,23 @@ This split prevents selection on the same noise used to claim a top-$K$ curve.  
 $G(K/q)$ are descriptive overlays only; the simultaneous bounds and the Dataset-GL transcript carry the
 statistical claim.
 
+The completed $4096$-pair root escalation gives a clear answer for the hard vector target.  Across all
+$248077$ children, estimated argmax-one-hot energies range from $0.19863$ to $0.34619$, with median
+$0.21596$.  The empirical-Bernstein radii range from $0.06532$ to $0.07238$, versus the common Hoeffding
+radius $0.09302$.  Every child's lower endpoint exceeds $0.10$.  Thus all $q$ root children are genuinely
+heavy at energy $T=0.10$ on the declared simultaneous event; the complete root frontier has width $q$ and
+cannot be replaced by a $109000$-character theorem list.
+
+The disjoint-half energy curve is much flatter than the scalar exponential overlay.  The confirmation
+point estimate for total root energy is $52328.74$.  Discovery-ranked sets of $100000$ and $109000$
+complex characters have confirmation sums $21221.14$ and $23117.41$, or descriptive point shares $40.55%$
+and $44.18%$, respectively; the latter numerator has standard error $982.12$.  The scalar exponential
+predictions are $76.93%$ and $80.07%$.  This is consistent with the warning above: a vector norm aggregates
+many coordinate energies and can be gamma-like and nearly flat even when scalar coordinate coefficients
+are approximately Gaussian.  The $54501$ stored real sine/cosine pairs span $109002$ conjugate complex
+characters, so they remain a meaningful engineering bank, but the measured curve does not certify an
+$80%$ vector-energy truncation.
+
 === The old gate was not the theorem search
 
 It is important not to read the completed $4096$-pair screen as a measurement of true spectral density.
@@ -298,6 +315,9 @@ This restricts the recovered coefficient vectors to a learned output subspace bu
 characters or encode tokens into bits.  Its parameter count, including the output bias, is
 $2 K r+r q+q$.  At $K=109000$, $r=64$, and $q=248077$, this is $30077005$ parameters.  The rank is selected on
 validation agreement; the full-$q$ softmax and argmax are always evaluated.
+For a real target, one stored sine/cosine pair spans the conjugate characters $alpha$ and $-alpha$.
+Thus $109000$ selected complex characters normally become about $54500$ stored real pairs; at rank $128$
+this uses $45953933$ parameters and remains below the same $50$ million ceiling.
 
 The packed GPU evaluator stores only each character's nonzero token positions and $ZZ_q$ frequencies.
 For fixed chunks of $8192$ terms it gathers the required tokenizer ids, performs one integer dot product
@@ -312,6 +332,15 @@ rows increase fitting data but do not count as independent GL pairs or alter the
 The first-level $109000$ run characterizes the energy scale only; a final high-order bank must retain and
 confirm complete $128$-coordinate character indices, and its capped engineering status remains distinct
 from the uncapped Dataset-GL transcript above.
+
+As a capacity control, the first completed pure-Fourier fit used only the $54500$ nonconstant stored pairs
+from that first-level bank, rank $128$, and $45953933$ parameters.  It reached $13.20%$ validation and
+$13.66%$ test top-one agreement ($683/5000$), with one-sided $99%$ exact-binomial lower bound $12.55%$;
+top-five was $32.84%$ and full-tokenizer KL was $4.4530$.  Only $26/5000$ rows met the deterministic
+per-example KL/argmax certificate.  This is not the final context-lens result: every term in that control
+touches only the newest coordinate.  It shows that widening the last-token Fourier table alone does not
+substitute for recovered high-order context characters.  The active $128$-level run therefore builds the
+separate high-order bank before the merged fit.
 
 === What would constitute a provable $80%$ agreement result
 

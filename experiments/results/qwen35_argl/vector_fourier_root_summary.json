@@ -1,0 +1,63 @@
+{
+  "schema": "qwen35-vector-fourier-root-v1",
+  "teacher_role": "fixed label oracle and conditional sampler only",
+  "search": {
+    "pairs": 4096,
+    "q": 248077,
+    "search_target": "argmax_raw",
+    "stored_real_pairs": 54501,
+    "represented_conjugate_complex_characters": 109002,
+    "root_score_quantiles": [
+      0.1986314058303833,
+      0.20580416917800903,
+      0.21596172451972961,
+      0.23054108023643494,
+      0.34619140625
+    ],
+    "root_radius_quantiles": [
+      0.06531558185815811,
+      0.06623983383178711,
+      0.0668860375881195,
+      0.0677201971411705,
+      0.07238426804542542
+    ],
+    "hoeffding_radius": 0.09301748152275426,
+    "certified_heavy_at_energy_0_1": 248077,
+    "heavy_plus_unresolved_width": 248077,
+    "theorem_frontier_status": "spectral_blowup"
+  },
+  "crossfit_energy": {
+    "discovery_pairs": 2048,
+    "confirmation_pairs": 2048,
+    "confirmed_total_energy": 52328.73560360074,
+    "k_100000": {
+      "confirmed_energy_sum": 21221.142807498574,
+      "descriptive_fraction": 0.4055351722665806,
+      "iid_scalar_complex_gaussian_fraction": 0.7693454031843807
+    },
+    "k_109000": {
+      "confirmed_energy_sum": 23117.406933650374,
+      "confirmed_standard_error": 982.1178676654986,
+      "descriptive_fraction": 0.4417727022637953,
+      "iid_scalar_complex_gaussian_fraction": 0.8007217583984664
+    },
+    "status": "descriptive split-rank-confirm curve, not a finite-sample energy-ratio certificate"
+  },
+  "root_only_fit": {
+    "terms": 54500,
+    "output_rank": 128,
+    "params": 45953933,
+    "train_n": 20000,
+    "validation_top1": 0.132,
+    "test_n": 5000,
+    "test_top1": 0.1366,
+    "test_top1_successes": 683,
+    "test_top1_clopper_pearson_lower_99": 0.12549290230576673,
+    "test_top5": 0.3284,
+    "test_kl_mean": 4.453027645874023,
+    "test_hard_ce_mean": 6.467499372863769,
+    "test_brier_mean": 0.9928767993927002,
+    "kl_argmax_certified_count": 26,
+    "status": "capacity control using newest coordinate only; not final context-lens-128 model"
+  }
+}

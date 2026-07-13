@@ -190,6 +190,13 @@ def test_chunked_packed_fourier_projection_matches_dense_features():
         tokens, positions, alphas, q, cosine_weight, sine_weight, chunk_size=3
     )
     assert torch.allclose(actual, expected, atol=1e-5, rtol=1e-5)
+    widths = [int((alphas[lo:lo + 3] != 0).any(0).sum())
+              for lo in range(0, len(alphas), 3)]
+    narrowed = chunked_fourier_low_rank(
+        tokens, positions, alphas, q, cosine_weight, sine_weight,
+        chunk_size=3, chunk_widths=widths,
+    )
+    assert torch.allclose(narrowed, expected, atol=1e-5, rtol=1e-5)
 
 
 def test_scalable_fourier_correction_starts_as_exact_zero_residual():
@@ -276,6 +283,21 @@ def test_frequency_loader_drops_constant_and_conjugate_duplicates(tmp_path):
     p.write_text(json.dumps({"q": 17, "frequencies": rows.tolist()}))
     got = load_frequency_file(p)
     assert got.shape == (2, 128)
+
+
+def test_frequency_bank_merge_preserves_degree_and_deduplicates_conjugates():
+    from fda_exp.qwen_argl import merge_frequency_banks
+
+    q = 17
+    first = np.zeros((2, 128), dtype=np.int64)
+    first[0, -1] = 3
+    first[1, -2:] = [4, 5]
+    second = np.zeros((2, 128), dtype=np.int64)
+    second[0] = (-first[0]) % q
+    second[1, -3:] = [2, 6, 7]
+    merged = merge_frequency_banks(first, second, q=q)
+    assert len(merged) == 3
+    assert sorted((merged != 0).sum(1).tolist()) == [1, 2, 3]
 
 
 def test_static_compile_batch_padding_only_duplicates_inputs():
