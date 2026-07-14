@@ -1598,16 +1598,25 @@ def stream_top1(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
     fl = np.load(tr_tbl)["G"].shape[1]
     meanH_tr, meanH_te = H_tr / n_tr[:, None], H_te / n_te[:, None]
     rng = np.random.default_rng(0); vm = rng.random(len(n_tr)) < 0.15
+    N = float(n_tr.sum())
+    # standardize the target per dim so anchor selection is scale-free (hidden
+    # states have large magnitude; a fixed prob-scale threshold would pass all)
+    Hs = ((meanH_tr - (H_tr.sum(0) / N)[None, :]) / (meanH_tr.std(0) + 1e-6))
+    Hs_t = torch.tensor(Hs, dtype=torch.float32, device="cuda")
+    nt = torch.tensor(n_tr, dtype=torch.float32, device="cuda")
+    n_anchor = 512
     summary = {"target": target, "m_train": m_train, "m_test": m_test, "encodings": {}}
     for name in ("lsh", "ctrl"):
         codes = ztab[name]; B = codes.shape[1]; nb = fl * B
         bt = context_bits(c_tr, codes)[:, :nb]; bte = context_bits(c_te, codes)[:, :nb]
-        A_c = H_tr - n_tr[:, None] * (H_tr.sum(0) / n_tr.sum())[None, :]
-        anchors, ii, jj = _deg12_basis(bt, A_c, float(n_tr.sum()))
+        Ff = torch.tensor(1.0 - 2.0 * bt.astype(np.float32), device="cuda")   # (D, nb)
+        corr = (Ff * nt[:, None]).t() @ Hs_t / N                              # (nb, d)
+        d1n = corr.pow(2).sum(1).sqrt().cpu().numpy()
+        anchors = np.argsort(-d1n)[:n_anchor]                                 # deg-1 top-K
+        del Ff, corr; torch.cuda.empty_cache()
 
         def feat(bits):
-            S = 1.0 - 2.0 * bits.astype(np.float32)
-            return np.concatenate([S[:, anchors], S[:, ii] * S[:, jj]], axis=1)
+            return (1.0 - 2.0 * bits.astype(np.float32))[:, anchors]
         F_tr, F_te = feat(bt), feat(bte)
         Y = meanH_tr if target == "hidden" else codes[t_tr].astype(np.float32)
         best = None                                               # ridge wd on a val split
@@ -1624,7 +1633,7 @@ def stream_top1(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
         # sanity: the TRUE target must decode back to t* (validates hook/unembed/decode)
         true_te = meanH_te if target == "hidden" else codes[t_te].astype(np.float32)
         sane = weighted_agreement(_decode_top1(target, true_te, Wu, codes), t_te, n_te)
-        rec = {"n_features": int(len(anchors) + len(jj)), "wd": wd,
+        rec = {"n_features": int(len(anchors)), "wd": wd,
                "val_top1": val_top1, "TEST_top1": test_top1, "sanity_top1": sane}
         summary["encodings"][name] = rec
         print(f"[top1:{name}:{target}] TEST {test_top1:.4f} (val {val_top1:.4f}, "
