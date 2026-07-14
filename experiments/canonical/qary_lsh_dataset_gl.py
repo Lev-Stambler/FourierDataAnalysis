@@ -656,6 +656,62 @@ def _fill_and_label(model, PRE, w_fill, R, q, slot_ids, batch=32, seed=0):
     return G, P
 
 
+def _fork_and_label(model, PRE_ext, w, G_branches, q, slot_ids, batch_fibers=48,
+                    seed=0, selfcheck=True):
+    """The paper's cache FORK, done efficiently: forward each fiber's shared
+    PRE_ext ONCE, then branch ``G_branches`` independent continuations of ``w``
+    tokens from the cached state via the official ``Cache.batch_repeat_interleave``.
+    ~G x less prefix compute than re-forwarding PRE_ext per branch (the whole
+    point of a fork).  Rows come out fiber-major, branch-minor -- matching
+    ``np.repeat(arange(M), G_branches)``.  Returns (G_toks (M*G, w), P (M*G, V))."""
+    import torch
+    rng = torch.Generator(device="cuda").manual_seed(seed)
+    M = len(PRE_ext)
+    Gt = np.empty((M * G_branches, w), dtype=np.int64)
+    P = np.empty((M * G_branches, len(slot_ids)), dtype=np.float32)
+    slot_t = torch.tensor(slot_ids[1:], dtype=torch.long, device="cuda")
+    for lo in range(0, M, batch_fibers):
+        pre = torch.tensor(PRE_ext[lo:lo + batch_fibers], dtype=torch.long,
+                           device="cuda")
+        bf = pre.shape[0]
+        with torch.inference_mode():
+            out = model(input_ids=pre, use_cache=True, return_dict=True,
+                        logits_to_keep=1)
+            past, logits = out.past_key_values, out.logits[:, -1, :]     # (bf, V)
+            past.batch_repeat_interleave(G_branches)                     # fork the cache
+            logits = logits.repeat_interleave(G_branches, dim=0)         # (bf*G, V)
+            made = []
+            for _ in range(w):
+                probs = torch.softmax(logits[:, :q].float(), dim=-1)
+                nxt = torch.multinomial(probs, 1, generator=rng)
+                made.append(nxt)
+                out = model(input_ids=nxt, past_key_values=past, use_cache=True,
+                            return_dict=True, logits_to_keep=1)
+                past, logits = out.past_key_values, out.logits[:, -1, :]
+            term = torch.softmax(logits[:, :q].float(), dim=-1)
+        toks = torch.cat(made, dim=1).cpu().numpy()                      # (bf*G, w)
+        if selfcheck and lo == 0:
+            # fail loudly if the forked cache does not reproduce a fresh forward:
+            # branch 0 of fiber 0 must match re-forwarding [PRE_ext[0], its fills]
+            seq = np.concatenate([PRE_ext[0], toks[0]])[None, :]
+            with torch.inference_mode():
+                ref = model(input_ids=torch.tensor(seq, device="cuda"),
+                            return_dict=True, logits_to_keep=1).logits[0, -1, :q]
+                ref = torch.softmax(ref.float(), -1)[slot_t].cpu().numpy()
+            got = term[0, slot_t].cpu().numpy()
+            err = float(np.abs(ref - got).max())
+            assert err < 1e-2, f"forked cache mismatch (max slot err {err})"
+            print(f"[fork] self-check ok (max slot err {err:.2e})", flush=True)
+        base = lo * G_branches
+        Gt[base:base + bf * G_branches] = toks
+        picked = term[:, slot_t].cpu().numpy()
+        P[base:base + bf * G_branches, 1:] = picked
+        P[base:base + bf * G_branches, 0] = np.maximum(1.0 - picked.sum(1), 0.0)
+        if (lo // batch_fibers) % 10 == 0:
+            print(f"[fork] {min(lo + bf, M)}/{M} fibers x{G_branches}", flush=True)
+    return Gt, P
+
+
 # ------------------------------------------------------------------ modal stages
 
 def _read_json(path, default):
@@ -898,9 +954,11 @@ def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
     else:
         PRE_ext = PRE
     w = fill_len - stub_len                                        # split token + newer
-    # batch 128: a 0.8B teacher at batch 32 leaves the A10G badly starved
-    G_toks, P = _fill_and_label(model, PRE_ext, w, g, q, slot_ids,
-                                batch=128, seed=seed + 7)
+    # FORK the cache: forward each fiber's PRE_ext once, branch g continuations
+    # (~g x less prefix compute than re-forwarding it per branch).  The branched
+    # gen step holds batch_fibers*g replicated caches, so keep batch_fibers small.
+    G_toks, P = _fork_and_label(model, PRE_ext, w, g, q, slot_ids,
+                                batch_fibers=32, seed=seed + 7)
     split_tok = G_toks[:, 0].astype(np.int64)                     # the split coordinate
     fiber_gid = np.repeat(np.arange(m_fibers), g)
     os.makedirs(ROOT, exist_ok=True)
