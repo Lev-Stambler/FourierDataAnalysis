@@ -802,6 +802,187 @@ def weighted_agreement(pred, tstar, n):
     return float((n * (pred == tstar)).sum() / n.sum())
 
 
+# --------------------------------------------------- learned Fourier features
+
+def harden_masks(sel_logits_list, n):
+    """Argmax bit picks of STE selection logits [(K_d, d, n) arrays] -> XOR
+    parity masks (K_tot, n) uint8 + realized degrees (K_tot,).  A bit picked
+    twice cancels (x*x = 1), exactly the +-1 product semantics."""
+    masks, degs = [], []
+    for L in sel_logits_list:
+        idx = np.asarray(L).argmax(-1)                             # (K_d, d)
+        m = np.zeros((len(idx), n), np.uint8)
+        for j in range(idx.shape[1]):
+            m[np.arange(len(idx)), idx[:, j]] ^= 1
+        masks.append(m); degs.append(m.sum(1))
+    return np.concatenate(masks).astype(np.uint8), np.concatenate(degs).astype(np.int64)
+
+
+def random_profile_masks(n, profile, seed=0):
+    """Exact-degree random baseline: profile = (K_1, K_2, K_3, ...) counts per
+    degree; each mask picks d DISTINCT bits uniformly.  (K_tot, n) uint8."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for d, k in enumerate(profile, start=1):
+        for _ in range(k):
+            m = np.zeros(n, np.uint8)
+            m[rng.choice(n, size=d, replace=False)] = 1
+            rows.append(m)
+    return np.stack(rows)
+
+
+def decorrelation_penalty(F):
+    """Diversity regularizer: mean squared off-diagonal of the batch Gram
+    F^T F / B.  Exactly 0 for distinct parity characters on the full domain."""
+    import torch
+    B, K = F.shape
+    if K < 2:
+        return F.new_zeros(())
+    C = F.t() @ F / B
+    off = C - torch.diag_embed(torch.diagonal(C))
+    return (off ** 2).sum() / (K * (K - 1))
+
+
+def _ste_features(X, sel_logits, temp):
+    """Straight-through parity features: X (B, n) +-1 floats, sel_logits list
+    of (K_d, d, n) torch params.  Hard one-hot forward (features are EXACT
+    +-1 parities of the argmax picks), softmax(L/temp) gradient.  (B, K_tot)."""
+    import torch
+    feats = []
+    for L in sel_logits:
+        K_d, d, n = L.shape
+        S = torch.softmax(L / temp, dim=-1)
+        hard = torch.nn.functional.one_hot(L.argmax(-1), n).to(S.dtype)
+        P = hard + S - S.detach()                                  # STE
+        feats.append((X @ P.reshape(K_d * d, n).t()).view(len(X), K_d, d).prod(-1))
+    return torch.cat(feats, dim=1)
+
+
+def learn_fourier_masks(bits, Hs, w, vm, profile=(512, 512, 256), lam=0.1,
+                        steps=3000, lr=0.02, batch=8192, temp=(1.0, 0.1),
+                        device=None, seed=0):
+    """Learn WHICH parities to use by gradient descent: an explicit degree
+    profile of STE-selected parity features, linear head to the standardized
+    hidden target, count-weighted MSE + lam * activation decorrelation.
+    Adam + cosine + clip, best-val iterate kept (fit_softmax_slots skeleton).
+    Returns hardened masks/degrees + head at the best-val state."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(seed)
+    n = bits.shape[1]
+    dY = Hs.shape[1]
+    X = torch.tensor(1.0 - 2.0 * np.asarray(bits, np.float32), device=device)
+    Y = torch.tensor(np.asarray(Hs, np.float32), device=device)
+    wt = torch.tensor(np.asarray(w, np.float32), device=device)
+    vmask = torch.tensor(np.asarray(vm, bool), device=device)
+    tr = torch.nonzero(~vmask).ravel()
+    K = int(sum(profile))
+    gen = torch.Generator(device="cpu").manual_seed(seed)
+    logits = [(0.1 * torch.randn(k, d, n, generator=gen)).to(device).requires_grad_(True)
+              for d, k in enumerate(profile, start=1) if k > 0]
+    W = torch.zeros((K, dY), device=device, requires_grad=True)
+    b = torch.zeros(dY, device=device, requires_grad=True)
+    opt = torch.optim.Adam(logits + [W, b], lr=lr)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps)
+
+    def val_mse():
+        with torch.no_grad():
+            out, wsum = 0.0, 0.0
+            for lo in range(0, int(vmask.sum()), 16384):
+                idx = torch.nonzero(vmask).ravel()[lo:lo + 16384]
+                Fv = _ste_features(X[idx], logits, temp[1])
+                out += float((wt[idx][:, None] * (Fv @ W + b - Y[idx]) ** 2).sum())
+                wsum += float(wt[idx].sum())
+            return out / (wsum * dY)
+
+    best = init_val = val_mse()
+    best_state = [t.detach().clone() for t in logits + [W, b]]
+    history = [(0, best)]
+    for t in range(steps):
+        T = temp[0] + (temp[1] - temp[0]) * t / max(steps - 1, 1)
+        bi = tr[torch.randint(len(tr), (min(batch, len(tr)),), generator=gen)]
+        F = _ste_features(X[bi], logits, T)
+        pred = F @ W + b
+        mse = (wt[bi][:, None] * (pred - Y[bi]) ** 2).sum() / (wt[bi].sum() * dY)
+        loss = mse + lam * decorrelation_penalty(F)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(logits + [W, b], 1.0)
+        opt.step()
+        sched.step()
+        if (t + 1) % 50 == 0 or t + 1 == steps:
+            vmse = val_mse()
+            history.append((t + 1, vmse))
+            if vmse < best:
+                best = vmse
+                best_state = [x.detach().clone() for x in logits + [W, b]]
+    with torch.no_grad():
+        for x, s in zip(logits + [W, b], best_state):
+            x.copy_(s)
+    logits_np = [L.detach().cpu().numpy() for L in logits]
+    masks, deg = harden_masks(logits_np, n)
+    nominal = np.concatenate([np.full(k, d) for d, k in enumerate(profile, 1) if k > 0])
+    return {"masks": masks, "deg": deg, "W": W.detach().cpu().numpy(),
+            "b": b.detach().cpu().numpy(), "val_mse": best, "init_val_mse": init_val,
+            "n_collapsed": int((deg < nominal).sum()), "history": history}
+
+
+def fit_mlp_hidden(bits, Hs, w, vm, bits_te, hidden=2048, steps=3000, lr=1e-3,
+                   batch=8192, device=None, seed=0):
+    """Unconstrained ceiling baseline: 2-hidden-layer GELU MLP on the raw +-1
+    bits -> standardized hidden target, count-weighted MSE, best-val kept.
+    Measures what ANY function of these bits can reach at this data size --
+    the parity model is judged against this, not just against random masks."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(seed)
+    n, dY = bits.shape[1], Hs.shape[1]
+    X = torch.tensor(1.0 - 2.0 * np.asarray(bits, np.float32), device=device)
+    Y = torch.tensor(np.asarray(Hs, np.float32), device=device)
+    wt = torch.tensor(np.asarray(w, np.float32), device=device)
+    vmask = torch.tensor(np.asarray(vm, bool), device=device)
+    tr = torch.nonzero(~vmask).ravel()
+    va = torch.nonzero(vmask).ravel()
+    net = torch.nn.Sequential(
+        torch.nn.Linear(n, hidden), torch.nn.GELU(),
+        torch.nn.Linear(hidden, hidden), torch.nn.GELU(),
+        torch.nn.Linear(hidden, dY)).to(device)
+    opt = torch.optim.Adam(net.parameters(), lr=lr)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps)
+    gen = torch.Generator(device="cpu").manual_seed(seed)
+
+    def val_mse():
+        with torch.no_grad():
+            out, wsum = 0.0, 0.0
+            for lo in range(0, len(va), 16384):
+                idx = va[lo:lo + 16384]
+                out += float((wt[idx][:, None] * (net(X[idx]) - Y[idx]) ** 2).sum())
+                wsum += float(wt[idx].sum())
+            return out / (wsum * dY)
+
+    best = val_mse()
+    best_state = {k: v.detach().clone() for k, v in net.state_dict().items()}
+    for t in range(steps):
+        bi = tr[torch.randint(len(tr), (min(batch, len(tr)),), generator=gen)]
+        loss = (wt[bi][:, None] * (net(X[bi]) - Y[bi]) ** 2).sum() / (wt[bi].sum() * dY)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
+        opt.step()
+        sched.step()
+        if (t + 1) % 50 == 0 or t + 1 == steps:
+            vmse = val_mse()
+            if vmse < best:
+                best = vmse
+                best_state = {k: v.detach().clone() for k, v in net.state_dict().items()}
+    net.load_state_dict(best_state)
+    with torch.no_grad():
+        Xte = torch.tensor(1.0 - 2.0 * np.asarray(bits_te, np.float32), device=device)
+        pred = np.concatenate([net(Xte[lo:lo + 16384]).cpu().numpy()
+                               for lo in range(0, len(Xte), 16384)])
+    return {"pred_te": pred, "val_mse": best}
+
+
 # ------------------------------------------- sensitivity -> degree bounds core
 
 def _sens_from_groups(F):
@@ -1133,6 +1314,18 @@ def _record(stage, started, extra=None):
                                  **(extra or {})))
     _write_json(f"{ROOT}/cost.json", ledger)
     vol.commit()
+
+
+def _collapse_table(tbl, lbl):
+    """Collapse a flat table + hidden labels to distinct contexts: rows,
+    count-mean hidden state, counts, teacher top-1 token."""
+    d = np.load(tbl); L = np.load(lbl)
+    ctx = np.concatenate([d["PRE"][d["fiber_id"]], d["G"]], axis=1)
+    rows, inv, cnt = np.unique(ctx, axis=0, return_inverse=True, return_counts=True)
+    Hs = np.zeros((len(rows), L["H"].shape[1]), np.float64)
+    np.add.at(Hs, inv, L["H"].astype(np.float64))
+    tg = np.empty(len(rows), np.int64); tg[inv] = L["tstar"]
+    return rows, Hs / cnt[:, None], cnt.astype(np.float64), tg
 
 
 def _table_path(fill_len, m_fibers, r, tag=""):
@@ -2027,16 +2220,8 @@ def refit_top1(depth: int = 6, fill_len: int = 61, flat_m: int = 16000, flat_r: 
     Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
     ztab = dict(np.load(f"{ROOT}/codes.npz"))
 
-    def collapse(tbl, lbl):
-        d = np.load(tbl); L = np.load(lbl)
-        ctx = np.concatenate([d["PRE"][d["fiber_id"]], d["G"]], axis=1)
-        rows, inv, cnt = np.unique(ctx, axis=0, return_inverse=True, return_counts=True)
-        Hs = np.zeros((len(rows), L["H"].shape[1]), np.float64)
-        np.add.at(Hs, inv, L["H"].astype(np.float64))
-        tg = np.empty(len(rows), np.int64); tg[inv] = L["tstar"]
-        return rows, Hs / cnt[:, None], cnt.astype(np.float64), tg
-    c_tr, mH_tr, n_tr, t_tr = collapse(tr_tbl, tr_lbl)
-    c_te, mH_te, n_te, t_te = collapse(te_tbl, te_lbl)
+    c_tr, mH_tr, n_tr, t_tr = _collapse_table(tr_tbl, tr_lbl)
+    c_te, mH_te, n_te, t_te = _collapse_table(te_tbl, te_lbl)
     rng = np.random.default_rng(0)
     if len(n_tr) > train_cap:                                        # subsample train (fit memory)
         sel = rng.choice(len(n_tr), train_cap, replace=False)
@@ -2093,6 +2278,109 @@ def refit_top1(depth: int = 6, fill_len: int = 61, flat_m: int = 16000, flat_r: 
         summary["encodings"][name] = {"sanity": sane, "ladder": ladder}
     _write_json(f"{ROOT}/summary_refit_top1_d{depth}.json", summary)
     _record("refit-top1", started, {"per_deg": per_deg})
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200,
+              memory=32768, secrets=WANDB_SECRET)
+def dl_fourier(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
+               r: int = 8, k1: int = 512, k2: int = 512, k3: int = 256,
+               lam: float = 0.1, steps: int = 3000, lr: float = 0.02,
+               batch: int = 8192, mlp_hidden: int = 2048, seed: int = 0):
+    """LEARN the Fourier features instead of GL-searching them: an explicit
+    degree profile (k1 deg-1, k2 deg-2, k3 deg-3) of STE-selected parities +
+    linear head, trained end-to-end on the standardized hidden target with an
+    activation-decorrelation diversity term.  Evaluated four ways per encoding
+    (full-vocab TEST top-1): end-to-end, ridge-refit of the hardened masks
+    (comparable to stream_top1 / refit_top1), random masks with the SAME
+    degree profile (what learning buys), and an unconstrained MLP on the raw
+    bits (the ceiling any function of these bits reaches at this data size)."""
+    import time
+    import torch
+    vol.reload()
+    _budget("dl-fourier", 4.0)
+    started = time.time()
+    te_tbl = make_data.local(m_test, r, 0, fill_len, "edu", 0, "edu_test")
+    tr_tbl = make_data.local(m_train, r, 0, fill_len, "edu", 3 * m_test, "edu_tr")
+    te_lbl = relabel_hidden.local(m_test, fill_len, r, "edu_test")
+    tr_lbl = relabel_hidden.local(m_train, fill_len, r, "edu_tr")
+    Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    ztab = dict(np.load(f"{ROOT}/codes.npz"))
+    c_tr, mH_tr, n_tr, t_tr = _collapse_table(tr_tbl, tr_lbl)
+    c_te, mH_te, n_te, t_te = _collapse_table(te_tbl, te_lbl)
+    vm = np.random.default_rng(0).random(len(n_tr)) < 0.15
+    wmean = (mH_tr * n_tr[:, None]).sum(0) / n_tr.sum()
+    std = mH_tr.std(0) + 1e-6
+    Hs = ((mH_tr - wmean[None, :]) / std).astype(np.float32)
+    sane = weighted_agreement(unembed_top1(mH_te, Wu), t_te, n_te)
+    profile = (k1, k2, k3)
+    summary = {"m_train": m_train, "profile": list(profile), "lam": lam,
+               "steps": steps, "sanity_top1": sane, "encodings": {}}
+
+    def ridge_top1(Ftr, Fte):
+        """The established comparable fit: wd sweep on val top-1, full-train
+        refit on the RAW mean hidden target, full-vocab decode."""
+        best = None
+        for wd in (1.0, 10.0, 100.0, 1000.0):
+            fit = fit_regression(Ftr[~vm], mH_tr[~vm], n_tr[~vm], wd=wd)
+            acc = weighted_agreement(
+                unembed_top1(Ftr[vm] @ fit["W"] + fit["b"], Wu), t_tr[vm], n_tr[vm])
+            if best is None or acc > best[0]:
+                best = (acc, wd)
+        val_top1, wd = best
+        fit = fit_regression(Ftr, mH_tr, n_tr, wd=wd)
+        test = weighted_agreement(
+            unembed_top1(Fte @ fit["W"] + fit["b"], Wu), t_te, n_te)
+        return test, val_top1, wd
+
+    for name in ("lsh", "ctrl"):
+        codes = ztab[name]; B = codes.shape[1]; nb = fill_len * B
+        bt = context_bits(c_tr, codes)[:, :nb]
+        bte = context_bits(c_te, codes)[:, :nb]
+        res = learn_fourier_masks(bt, Hs, n_tr, vm, profile, lam, steps, lr,
+                                  batch, seed=seed)
+        # end-to-end: hardened features (order matches W rows), un-standardize
+        Hp = parity_features(bte, res["masks"]) @ res["W"] + res["b"]
+        e2e = weighted_agreement(
+            unembed_top1(Hp * std[None, :] + wmean[None, :], Wu), t_te, n_te)
+        # ridge-refit of the deduped learned masks (drop the collapsed empty row)
+        um = np.unique(res["masks"], axis=0)
+        um = um[um.sum(1) > 0]
+        refit, refit_val, wd = ridge_top1(parity_features(bt, um),
+                                          parity_features(bte, um))
+        # random masks, same degree profile, same refit
+        rm = random_profile_masks(nb, profile, seed)
+        rand, _, _ = ridge_top1(parity_features(bt, rm), parity_features(bte, rm))
+        torch.cuda.empty_cache()
+        # unconstrained ceiling: MLP on the raw bits, same standardized target
+        mlp = fit_mlp_hidden(bt, Hs, n_tr, vm, bte, hidden=mlp_hidden,
+                             steps=steps, batch=batch, seed=seed)
+        mlp_top1 = weighted_agreement(
+            unembed_top1(mlp["pred_te"] * std[None, :] + wmean[None, :], Wu),
+            t_te, n_te)
+        deg_hist = {str(d): int((res["deg"] == d).sum()) for d in range(4)}
+        rec = {"TEST_top1_e2e": e2e, "TEST_top1_refit": refit,
+               "TEST_top1_random": rand, "TEST_top1_mlp": mlp_top1,
+               "val_top1_refit": refit_val, "wd": wd, "val_mse": res["val_mse"],
+               "mlp_val_mse": mlp["val_mse"], "n_unique_masks": int(len(um)),
+               "n_collapsed": res["n_collapsed"], "deg_hist": deg_hist}
+        summary["encodings"][name] = rec
+        print(f"[dlfourier:{name}] e2e {e2e:.4f} refit {refit:.4f} "
+              f"random {rand:.4f} mlp {mlp_top1:.4f} (sanity {sane:.4f}, "
+              f"{len(um)} masks, {res['n_collapsed']} collapsed)", flush=True)
+        np.savez_compressed(
+            f"{ROOT}/dlfourier_masks_{name}_M{m_train}_K{k1}_{k2}_{k3}.npz",
+            masks=res["masks"], deg=res["deg"], W=res["W"], b=res["b"])
+        run = _wandb_run(f"dlfourier-{name}-M{m_train}-K{k1}+{k2}+{k3}",
+                         {**rec, "encoding": name, "lam": lam, "steps": steps})
+        if run is not None:
+            for s, v in res["history"]:
+                run.log({"val_mse": v, "step": s})
+            run.summary.update(rec); run.finish()
+        torch.cuda.empty_cache()
+    _write_json(f"{ROOT}/summary_dlfourier_M{m_train}_K{k1}_{k2}_{k3}.json", summary)
+    _record("dl-fourier", started, {"profile": list(profile), "lam": lam})
     print(json.dumps(summary), flush=True)
     return summary
 
@@ -3097,7 +3385,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          interactions: int = 0, top_pairs: int = 1000,
          g: int = 24, p_back: int = 0, depth: int = 6,
          resample: str = "conditional", corpus: str = "fineweb",
-         positions: str = "", target: str = "hidden"):
+         positions: str = "", target: str = "hidden",
+         k1: int = 512, k2: int = 512, k3: int = 256, lam: float = 0.1,
+         batch: int = 8192):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -3148,6 +3438,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         print(refit_top1.remote(depth, fill_len))
     if stage == "stream-top1":
         print(stream_top1.remote(m_fibers, 3000, fill_len, r, target))
+    if stage == "dl-fourier":                                        # learned STE parities
+        print(dl_fourier.remote(m_fibers, 3000, fill_len, r, k1, k2, k3,
+                                lam, steps, 0.02, batch))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":

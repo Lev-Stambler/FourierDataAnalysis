@@ -13,6 +13,7 @@ from qary_lsh_dataset_gl import (
     _sens_from_groups,
     _sens_from_top1,
     _sens_report,
+    _ste_features,
     _top1_variance,
     build_lsh_codes,
     code_decode,
@@ -20,12 +21,17 @@ from qary_lsh_dataset_gl import (
     control_codes,
     dataset_gl_csamp,
     dataset_gl_tau,
+    decorrelation_penalty,
     draw_fibers,
+    fit_mlp_hidden,
     fit_regression,
     fit_softmax_slots,
     forked_gl_tree,
+    harden_masks,
+    learn_fourier_masks,
     oracle_deg1_psi,
     parity_features,
+    random_profile_masks,
     soft_collapse,
     token_id_codes,
     unembed_top1,
@@ -672,6 +678,84 @@ def test_sens_report_arithmetic_and_interp():
     rep = _sens_report(pos, sens, 1.0)
     assert abs(rep["S_interp"] - sum(100.0 - b for b in range(21))) < 1e-9
     assert rep["S_measured"] < rep["S_interp"]
+
+
+def test_ste_hard_forward_matches_parity():
+    import torch
+    rng = np.random.default_rng(0)
+    m_rows, n = 256, 10
+    bits = rng.integers(0, 2, (m_rows, n)).astype(np.uint8)
+    logits = [rng.normal(size=(k, d, n)).astype(np.float32)
+              for d, k in ((1, 4), (2, 4), (3, 2))]
+    # plant a duplicate-pick deg-2 feature: both slots argmax bit 7 -> the
+    # picks cancel (x*x = 1) and the hardened mask is empty (constant-1 parity)
+    logits[1][0, :, :] = 0.0
+    logits[1][0, :, 7] = 5.0
+    X = torch.tensor(1.0 - 2.0 * bits.astype(np.float32))
+    Lt = [torch.tensor(L) for L in logits]
+    for temp in (1.0, 0.1):
+        F = _ste_features(X, Lt, temp).numpy()
+        masks, deg = harden_masks(logits, n)
+        assert np.allclose(F, parity_features(bits, masks))
+    assert deg[4] == 0 and np.all(F[:, 4] == 1.0)                  # collapsed pair
+    assert masks.shape == (10, n)
+    assert np.all(deg == masks.sum(1))
+
+
+def test_decorrelation_penalty_orthogonal_zero():
+    import torch
+    n = 4
+    bits = _all_masks(n)                                           # full domain
+    masks = _all_masks(n)[[1, 2, 5, 9, 14, 15]]                    # distinct chars
+    F = torch.tensor(parity_features(bits, masks))
+    assert float(decorrelation_penalty(F)) < 1e-10                 # exact orthogonality
+    Fdup = torch.cat([F, F[:, :1]], dim=1)                         # duplicated column
+    # one perfectly correlated pair among K=7: penalty = 2/(K*(K-1)) = 0.0476
+    assert abs(float(decorrelation_penalty(Fdup)) - 2.0 / 42.0) < 1e-6
+
+
+def test_random_profile_masks_degrees():
+    masks = random_profile_masks(20, (8, 8, 4), seed=1)
+    assert masks.shape == (20, 20)
+    assert np.array_equal(masks.sum(1), np.r_[np.full(8, 1), np.full(8, 2), np.full(4, 3)])
+
+
+def test_learn_fourier_recovers_planted_parities():
+    rng = np.random.default_rng(5)
+    m_rows, n, dY = 8192, 12, 8
+    bits = rng.integers(0, 2, (m_rows, n)).astype(np.uint8)
+    planted = np.zeros((5, n), np.uint8)
+    planted[0, 3] = 1                                              # deg-1
+    planted[1, 9] = 1                                              # deg-1
+    planted[2, [1, 6]] = 1                                         # deg-2
+    planted[3, [4, 10]] = 1                                        # deg-2
+    planted[4, [0, 5, 11]] = 1                                     # deg-3
+    Y = (parity_features(bits, planted) @ rng.normal(size=(5, dY))).astype(np.float32)
+    w = np.ones(m_rows)
+    vm = rng.random(m_rows) < 0.15
+    res = learn_fourier_masks(bits, Y, w, vm, profile=(4, 4, 2), lam=0.05,
+                              steps=600, lr=0.05, batch=2048, device="cpu", seed=0)
+    got = {tuple(mk) for mk in res["masks"]}
+    assert all(tuple(mk) in got for mk in planted)
+    assert res["val_mse"] < 0.05 * float(Y.var())
+    # realized degree never exceeds the nominal profile of its group
+    assert np.all(res["deg"] <= np.r_[np.full(4, 1), np.full(4, 2), np.full(2, 3)])
+
+
+def test_mlp_fits_planted_parity():
+    # a deg-2 parity is invisible to any linear model over raw bits; the MLP
+    # ceiling baseline must fit it
+    rng = np.random.default_rng(7)
+    m_rows, n = 4096, 8
+    bits = rng.integers(0, 2, (m_rows, n)).astype(np.uint8)
+    mask = np.zeros((1, n), np.uint8); mask[0, [1, 3]] = 1
+    Y = parity_features(bits, mask).astype(np.float32)
+    w = np.ones(m_rows)
+    vm = rng.random(m_rows) < 0.15
+    res = fit_mlp_hidden(bits, Y, w, vm, bits[vm], hidden=64, steps=400,
+                         lr=3e-3, batch=1024, device="cpu", seed=0)
+    assert res["val_mse"] < 0.05                                   # Y has unit variance
+    assert np.mean((res["pred_te"] - Y[vm]) ** 2) < 0.05
 
 
 def test_fit_recovers_planted_soft_teacher():
