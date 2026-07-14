@@ -638,4 +638,7 @@ attempted.  Two caveats keep the claim honest: the resampling measure is the tea
 conditional rather than the uniform $mu$ of the theorem (the natural dataset-weighted reading of
 @prop:dataset-sensitivity, whose inequality direction makes the measured $overline(S)$ an
 estimate from below), and degree here counts token coordinates -- the same granularity as the
-ladder's per-token blocks.
+ladder's per-token blocks.  The first caveat turns out to be immaterial: rerunning the identical
+protocol with the theorem's uniform $mu$ over the $511$-token slot alphabet gives a
+near-identical profile ($"Sens"_0 = 0.131$ vs $0.143$) and $d_"eff" = 1.03$ vs $1.04$ -- the
+low-degree verdict is robust to the resampling measure.
