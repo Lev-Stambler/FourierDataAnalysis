@@ -954,11 +954,16 @@ def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
     else:
         PRE_ext = PRE
     w = fill_len - stub_len                                        # split token + newer
-    # FORK the cache: forward each fiber's PRE_ext once, branch g continuations
-    # (~g x less prefix compute than re-forwarding it per branch).  The branched
-    # gen step holds batch_fibers*g replicated caches, so keep batch_fibers small.
-    G_toks, P = _fork_and_label(model, PRE_ext, w, g, q, slot_ids,
-                                batch_fibers=32, seed=seed + 7)
+    # FORK the cache when the model's cache supports it (~g x less prefix
+    # compute); Qwen3.5's LinearAttentionLayer cache lacks batch_repeat_interleave,
+    # so fall back to the correct (if g x costlier) re-forward.
+    try:
+        G_toks, P = _fork_and_label(model, PRE_ext, w, g, q, slot_ids,
+                                    batch_fibers=32, seed=seed + 7)
+    except AttributeError as e:
+        print(f"[fork] unsupported cache ({e}); re-forwarding per branch", flush=True)
+        G_toks, P = _fill_and_label(model, PRE_ext, w, g, q, slot_ids,
+                                    batch=128, seed=seed + 7)
     split_tok = G_toks[:, 0].astype(np.int64)                     # the split coordinate
     fiber_gid = np.repeat(np.arange(m_fibers), g)
     os.makedirs(ROOT, exist_ok=True)
