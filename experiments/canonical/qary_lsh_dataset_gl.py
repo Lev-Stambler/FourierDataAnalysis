@@ -678,7 +678,11 @@ def _fork_and_label(model, PRE_ext, w, G_branches, q, slot_ids, batch_fibers=48,
             out = model(input_ids=pre, use_cache=True, return_dict=True,
                         logits_to_keep=1)
             past, logits = out.past_key_values, out.logits[:, -1, :]     # (bf, V)
-            past.batch_repeat_interleave(G_branches)                     # fork the cache
+            # fork the cache G-fold via beam reindex: reorder_cache dispatches to
+            # every layer (KV *and* Qwen3.5's linear-attention conv/recurrent
+            # states), unlike batch_repeat_interleave which only covers KV layers
+            beam = torch.arange(bf, device=pre.device).repeat_interleave(G_branches)
+            past.reorder_cache(beam)                                      # (bf*G, ...)
             logits = logits.repeat_interleave(G_branches, dim=0)         # (bf*G, V)
             made = []
             for _ in range(w):
