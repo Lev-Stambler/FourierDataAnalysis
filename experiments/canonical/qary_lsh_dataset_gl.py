@@ -1279,6 +1279,107 @@ def gl_tree(m_fibers: int = 2000, g: int = 16, depth: int = 6,
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
+def gl_tree_refit(fill_len: int = 61, depth: int = 6, fit_m: int = 8000,
+                  val_frac: float = 0.15, per_deg: int = 8000, block: int = 400,
+                  encoding: str = "lsh"):
+    """Cheap re-fit from SAVED tree masks (no tree, no generation): does adding
+    MANY more high-degree characters -- STAGED in small val-gated blocks, not
+    one wholesale block -- push below the deg-1+2 ceiling?  This exhausts the
+    'maybe top-800 missed the useful ones / maybe they help cumulatively'
+    possibility before concluding degree is spanned."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("gl-tree-refit", 1.0)
+    started = time.time()
+    z = dict(np.load(f"{ROOT}/codes.npz"))
+    codes = z[encoding]; B = codes.shape[1]
+    mk = np.load(f"{ROOT}/gltree_masks_f{fill_len}_d{depth}_{encoding}.npz")
+    masks, deg = mk["masks"], mk["deg"]                            # psi-sorted
+    data = np.load(_table_path(fill_len, fit_m, R_FILLS))
+    P, fiber_id = data["P"], data["fiber_id"]
+    fill_len = data["G"].shape[1]
+    contexts = np.concatenate([data["PRE"][fiber_id], data["G"]], axis=1)
+    rng = np.random.default_rng(0)
+    u = rng.random(fiber_id.max() + 1)[fiber_id]
+    te, va = u < 0.15, (u >= 0.15) & (u < 0.30); tr = ~(te | va)
+    ctx_tr, A_tr, n_tr, _ = soft_collapse(contexts[tr], P[tr])
+    ctx_va, A_va, n_va, _ = soft_collapse(contexts[va], P[va])
+    ctx_te, A_te, n_te, _ = soft_collapse(contexts[te], P[te])
+    Ptr, Pva, Pte = A_tr / n_tr[:, None], A_va / n_va[:, None], A_te / n_te[:, None]
+    mu = A_tr.sum(0) / n_tr.sum(); Mtr = int(tr.sum())
+    nb_full, ndep = fill_len * B, depth * B
+    bt, bv, bte = (context_bits(ctx_tr, codes), context_bits(ctx_va, codes),
+                   context_bits(ctx_te, codes))
+
+    def slot_kl(off, Pn, n):
+        lq = off - torch.logsumexp(off, 1, keepdim=True)
+        lp = torch.tensor(np.log(np.clip(Pn, 1e-12, None)), device=off.device)
+        return float((torch.tensor(n[:, None] * Pn, device=off.device) * (lp - lq)).sum()
+                     / float(n.sum()))
+    # deg-1+2 enumeration baseline (the 1.103 recipe)
+    A_c = torch.tensor((A_tr - n_tr[:, None] * mu[None, :]).astype(np.float32), device="cuda")
+    Ff = torch.tensor(1.0 - 2.0 * bt[:, :nb_full].astype(np.float32), device="cuda")
+    d1n = ((Ff.T @ A_c) / Mtr).double().pow(2).sum(1).sqrt().cpu().numpy()
+    anchors = np.flatnonzero(d1n >= 0.01)
+    pairs = {}
+    for i in anchors:
+        ni = ((Ff * Ff[:, [i]]).T @ A_c / Mtr).double().pow(2).sum(1).sqrt().cpu().numpy()
+        ni[i] = 0.0
+        for j in np.argsort(-ni)[:max(20, 2000 // max(len(anchors), 1) + 1)]:
+            if ni[j] >= 0.01:
+                k = (min(int(i), int(j)), max(int(i), int(j)))
+                pairs[k] = max(pairs.get(k, 0.0), float(ni[j]))
+    top = sorted(pairs.items(), key=lambda kv: -kv[1])[:1000]
+    ii = np.array([k[0] for k, _ in top]); jj = np.array([k[1] for k, _ in top])
+    del Ff; torch.cuda.empty_cache()
+
+    def bfeat(bits):
+        S = 1.0 - 2.0 * bits[:, :nb_full].astype(np.float32)
+        return np.concatenate([S[:, anchors], S[:, ii] * S[:, jj]], axis=1)
+    fitB = fit_softmax_slots(bfeat(bt), Ptr, n_tr, bfeat(bv), Pva, n_va, steps=3000, lr=0.01)
+    Wb = torch.tensor(fitB["W"], device="cuda"); bb = torch.tensor(fitB["b"], device="cuda")
+    off_tr = torch.tensor(bfeat(bt), device="cuda") @ Wb + bb
+    off_va = torch.tensor(bfeat(bv), device="cuda") @ Wb + bb
+    off_te = torch.tensor(bfeat(bte), device="cuda") @ Wb + bb
+    base_test = slot_kl(off_te, Pte, n_te)
+    print(f"[refit:{encoding}] deg1+2 baseline test {base_test:.4f}", flush=True)
+    ladder = [{"stage": "deg1+2", "test_kl": base_test}]
+    kept_hi = 0
+    for dd in range(3, depth + 1):
+        md = masks[deg == dd][:per_deg]
+        bad = 0
+        for lo in range(0, len(md), block):
+            blk = md[lo:lo + block]
+            Ftr = parity_features(bt[:, :ndep], blk); Fva = parity_features(bv[:, :ndep], blk)
+            Wd, vk, improved = _fit_block(Ftr, off_tr.cpu().numpy(), Ptr, n_tr,
+                                          Fva, off_va.cpu().numpy(), Pva, n_va,
+                                          steps=1200, lr=0.01)
+            if improved:
+                Wt = torch.tensor(Wd, device="cuda")
+                off_tr = off_tr + torch.tensor(Ftr, device="cuda") @ Wt
+                off_va = off_va + torch.tensor(Fva, device="cuda") @ Wt
+                off_te = off_te + torch.tensor(parity_features(bte[:, :ndep], blk),
+                                               device="cuda") @ Wt
+                kept_hi += len(blk); bad = 0
+            else:
+                bad += 1
+                if bad >= 3:
+                    break
+        ladder.append({"stage": f"deg<= {dd}", "kept_hi": kept_hi,
+                       "test_kl": slot_kl(off_te, Pte, n_te)})
+        print(f"[refit:{encoding}] +deg{dd} (kept_hi {kept_hi}) "
+              f"test {ladder[-1]['test_kl']:.4f} (base {base_test:.4f})", flush=True)
+    out = {"encoding": encoding, "baseline_TEST_kl": base_test,
+           "final_TEST_kl": ladder[-1]["test_kl"], "kept_high_degree": kept_hi,
+           "ladder": ladder}
+    _write_json(f"{ROOT}/summary_gltree_refit_{encoding}_f{fill_len}.json", out)
+    _record("gl-tree-refit", started)
+    print(json.dumps(out), flush=True)
+    return out
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
 def oracle(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
            fill_len: int = W_WIN - K_FIXED, val_frac: float = 0.15,
            encoding: str = "all"):
@@ -2189,6 +2290,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "gl-tree":
         gl_tree.remote(m_fibers, g, depth, fill_len, tau, max_width,
                        8000, 0.15, encoding)
+    if stage == "gl-tree-refit":
+        gl_tree_refit.remote(fill_len, depth, 8000, 0.15, top_pairs, 400,
+                             encoding if encoding != "all" else "lsh")
     if stage == "oracle-sweep":
         # native deg-1 at EVERY filled token position (0=newest .. fill_len-1),
         # one container per level; the fast reorder_cache fork keeps each cheap
