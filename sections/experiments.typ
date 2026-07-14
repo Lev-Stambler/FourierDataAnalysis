@@ -488,16 +488,24 @@ Two results, measured on identical fibers, targets, and fits:
   used*, not of the dataset-GL tree of the theorems.  The implementation grouped rows by the VALUE
   of the un-split coordinates and squared the group sums, which retains the diagonal terms
   $sum_x f(x)^2 chi_S(x)^2 = sum_x f(x)^2$ -- an $S$-independent mass that dominates every bucket
-  while un-split values rarely coincide, producing the tie region above.  The paper's CSAMP
-  estimator is different in exactly the right way: it conditions on the FIBER (the generating
-  context), takes PAIRS of independent fills within it, and its off-diagonal pair sum
-  $sum_z sum_(x != x') f(x) chi_S (x) dot f(x') chi_S (x')$ is unbiased for the conditional weight
-  $EE_z |EE[f chi_S | z]|^2$ with no diagonal and no extension-noise aggregation: un-split
-  coordinates are averaged over the conditional law rather than matched, so the bucket
-  discriminates at every level and the threshold prunes on conditional mass, as the theorem
-  requires.  Equivalently, the pair form is the fiber group-by square minus the computable
-  diagonal.  The exact per-degree enumeration used above is a valid (and for low degree, cheap)
-  alternative; the native pair-CSAMP tree is the general method.  Done this
+  while un-split values rarely coincide, producing the tie region above.  The estimator of
+  @lem:qary-kv-estimator is a *paired* one: both draws share the real context $Z$ *and* the
+  generated left prefix $L_k$, only the newest $k$ tokens are resampled through the conditional
+  oracle, and the off-diagonal product is unbiased for $EE_(Z,L_k) |v_(k,a)(Z,L_k)|^2$ with no
+  diagonal term at all.  On a fixed offline table that estimator is realized exactly on the
+  *collision cells* -- rows agreeing on the entire un-split continuation -- by excluding the
+  diagonal from the within-cell square: by the autoregressive factorization, two independent
+  rollouts conditioned on agreeing over $L_k$ have i.i.d. newest-$k$ suffixes, so value-matched
+  pairs are distributionally identical to cache-forked pairs.  The offline tree's evidence at
+  level $k$ is therefore governed by its empirical collision profile -- the number of matched
+  pairs at that level -- which for long fills vanishes at early levels: a flat file certifies
+  only where multiplicity exists.  Pairing on the fiber alone (independent $L_k$) estimates the
+  cancellation-prone pooled quantity the theory explicitly excludes, and is exact only at the
+  terminal level, where $L_k$ is empty.  The oracle formulation removes the collision dependence
+  by forking the rollout cache at the split boundary on demand: its difficulty is measured by the
+  weighted collision profile $R_k$ and the live width, never by accidental duplicates in a flat
+  file.  The exact per-degree enumeration used below needs no pairs at all and is the cheap
+  estimator at low degree; the forked-cache pair tree is the general native method.  Done this
   way, the recovery-then-build program works end to end, verified on a strictly untouched test
   split: a model of the $approx 220$ exactly certified LSH characters plus the $1000$ heaviest
   exactly certified pairs reaches test KL $1.103$ against the unigram floor $1.630$ -- surpassing

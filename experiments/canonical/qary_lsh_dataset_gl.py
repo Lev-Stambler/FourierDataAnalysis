@@ -947,13 +947,29 @@ def oracle(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
         # rank agreement of the paired estimator with the exact marginal
         rho = float(np.corrcoef(_rankdata(norm), _rankdata(marg_norm))[0, 1])
         cert = np.flatnonzero(norm >= 0.01)
-        # sparse deg-1 model on oracle-certified bits (fiber-disjoint eval)
         Ptr, Pva = P[~va], P[va]
-        Xtr = 1.0 - 2.0 * sb[~va][:, cert].astype(np.float32)
-        Xva = 1.0 - 2.0 * sb[va][:, cert].astype(np.float32)
-        ntr = np.ones(len(Xtr)); nva = np.ones(len(Xva))
-        fit = fit_softmax_slots(Xtr, Ptr, ntr, Xva, Pva, nva, steps=3000, lr=0.01)
-        base = fit_softmax_slots(Xtr[:, :0], Ptr, ntr, Xva[:, :0], Pva, nva, steps=1)
+        ntr = np.ones(int((~va).sum())); nva = np.ones(int(va.sum()))
+        base = fit_softmax_slots(np.zeros((len(Ptr), 0), np.float32), Ptr, ntr,
+                                 np.zeros((len(Pva), 0), np.float32), Pva, nva, steps=1)
+        uni_kl = base["val_kl"]
+        # KL LADDER: fit the top-K heaviest oracle leaves for growing K, so the
+        # run PRINTS progress toward the goal (KL dropping below unigram as each
+        # certified leaf is added) instead of one end-of-run number.
+        ladder = []
+        rungs = [k for k in (5, 10, 25, 50, 100, 200, len(cert)) if 0 < k <= len(cert)]
+        rungs = sorted(set(rungs))
+        best_fit = None
+        for K in rungs:
+            bits_k = order[:K]
+            Xtr = 1.0 - 2.0 * sb[~va][:, bits_k].astype(np.float32)
+            Xva = 1.0 - 2.0 * sb[va][:, bits_k].astype(np.float32)
+            fk = fit_softmax_slots(Xtr, Ptr, ntr, Xva, Pva, nva, steps=1500, lr=0.01)
+            ladder.append({"K": int(K), "val_kl": fk["val_kl"],
+                           "gain": uni_kl - fk["val_kl"]})
+            best_fit = fk
+            print(f"[oracle {name}] top-{K} leaves -> val_kl {fk['val_kl']:.4f} "
+                  f"(unigram {uni_kl:.4f}, gain {uni_kl - fk['val_kl']:+.4f})",
+                  flush=True)
         summary["encodings"][name] = {
             "top_norms": norm[order[:15]].round(5).tolist(),
             "top_bits": [int(b) for b in order[:15]],
@@ -963,8 +979,10 @@ def oracle(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
             "max_norm": float(norm.max()),
             "rank_corr_paired_vs_marginal": rho,
             "n_certified": int(len(cert)),
-            "sparse_val_kl": fit["val_kl"], "sparse_improved": fit["improved"],
-            "unigram_val_kl": base["val_kl"]}
+            "kl_ladder": ladder,
+            "sparse_val_kl": (best_fit["val_kl"] if best_fit else uni_kl),
+            "sparse_improved": (best_fit["improved"] if best_fit else False),
+            "unigram_val_kl": uni_kl}
         print(name, json.dumps({k: summary["encodings"][name][k] for k in
               ("max_norm", "n_ge_0.01", "rank_corr_paired_vs_marginal",
                "sparse_val_kl", "unigram_val_kl")}), flush=True)
