@@ -2311,7 +2311,7 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         gl_tree.remote(m_fibers, g, depth, fill_len, tau, max_width,
                        8000, 0.15, encoding)
     if stage == "gl-tree-refit":
-        gl_tree_refit.remote(fill_len, depth, 8000, 0.15, top_pairs, 400,
+        gl_tree_refit.remote(fill_len, depth, m_fibers, 0.15, top_pairs, 400,
                              encoding if encoding != "all" else "lsh")
     if stage == "oracle-sweep":
         # native deg-1 at EVERY filled token position (0=newest .. fill_len-1),
