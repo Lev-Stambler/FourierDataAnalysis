@@ -1892,7 +1892,7 @@ def sensitivity(m_fibers: int = 1000, g: int = 16, resample: str = "conditional"
     return out
 
 
-@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200,
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol}, timeout=43200,
               memory=32768, secrets=WANDB_SECRET)
 def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
                  fill_len: int = 61, tau: float = 0.02, max_width: int = 128,
@@ -2002,6 +2002,97 @@ def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
         torch.cuda.empty_cache()
     _write_json(f"{ROOT}/summary_gltree_top1_d{depth}.json", summary)
     _record("gl-tree-top1", started, {"depth": depth})
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200,
+              memory=32768, secrets=WANDB_SECRET)
+def refit_top1(depth: int = 6, fill_len: int = 61, flat_m: int = 16000, flat_r: int = 8,
+               per_deg: int = 3000, train_cap: int = 40000):
+    """Re-fit the SAVED gl_tree_top1 masks DEGREE-FIRST (all deg-1, then top-K
+    deg-2 by psi, then deg-3, ... cumulative) -- the right order, since psi is
+    not comparable across tree levels and psi-order buries the predictive
+    low-degree characters.  No tree re-run.  Logs per-degree TEST top-1, R2
+    (hidden variance explained) and cumulative psi_frac, lsh vs ctrl."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("refit-top1", 2.0)
+    started = time.time()
+    te_tbl = make_data.local(3000, flat_r, 0, fill_len, "edu", 0, "edu_test")
+    tr_tbl = make_data.local(flat_m, flat_r, 0, fill_len, "edu", 9000, "edu_tr")
+    te_lbl = relabel_hidden.local(3000, fill_len, flat_r, "edu_test")
+    tr_lbl = relabel_hidden.local(flat_m, fill_len, flat_r, "edu_tr")
+    Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    ztab = dict(np.load(f"{ROOT}/codes.npz"))
+
+    def collapse(tbl, lbl):
+        d = np.load(tbl); L = np.load(lbl)
+        ctx = np.concatenate([d["PRE"][d["fiber_id"]], d["G"]], axis=1)
+        rows, inv, cnt = np.unique(ctx, axis=0, return_inverse=True, return_counts=True)
+        Hs = np.zeros((len(rows), L["H"].shape[1]), np.float64)
+        np.add.at(Hs, inv, L["H"].astype(np.float64))
+        tg = np.empty(len(rows), np.int64); tg[inv] = L["tstar"]
+        return rows, Hs / cnt[:, None], cnt.astype(np.float64), tg
+    c_tr, mH_tr, n_tr, t_tr = collapse(tr_tbl, tr_lbl)
+    c_te, mH_te, n_te, t_te = collapse(te_tbl, te_lbl)
+    rng = np.random.default_rng(0)
+    if len(n_tr) > train_cap:                                        # subsample train (fit memory)
+        sel = rng.choice(len(n_tr), train_cap, replace=False)
+        c_tr, mH_tr, n_tr, t_tr = c_tr[sel], mH_tr[sel], n_tr[sel], t_tr[sel]
+    vm = rng.random(len(n_tr)) < 0.15
+
+    def r2_hidden(Hp, Ht, n):
+        mu = (Ht * n[:, None]).sum(0) / n.sum()
+        return 1.0 - float((n[:, None] * (Ht - Hp) ** 2).sum()) / \
+            float((n[:, None] * (Ht - mu[None, :]) ** 2).sum())
+    summary = {"per_deg": per_deg, "encodings": {}}
+    for name in ("lsh", "ctrl"):
+        mp = f"{ROOT}/gltree_top1_masks_{name}_d{depth}.npz"
+        if not os.path.exists(mp):
+            print(f"[refit] no masks for {name} yet, skipping", flush=True); continue
+        d = np.load(mp); masks, psi, deg = d["masks"], d["psi"], d["deg"]
+        codes = ztab[name]; B = codes.shape[1]; nb = depth * B
+        bt = context_bits(c_tr, codes)[:, :nb]; bte = context_bits(c_te, codes)[:, :nb]
+        sane = weighted_agreement(unembed_top1(mH_te, Wu), t_te, n_te)
+        psitot = float(psi.sum())
+        run = _wandb_run(f"refit-{name}-degfirst-d{depth}",
+                         {"encoding": name, "depth": depth, "per_deg": per_deg})
+        idx_used, ladder = [], []
+        for D in range(1, depth + 1):
+            sel_D = np.flatnonzero(deg == D)
+            if not len(sel_D):
+                continue
+            idx_used.extend(sel_D[np.argsort(-psi[sel_D])][:per_deg].tolist())
+            md = masks[idx_used]
+            Ftr = parity_features(bt, md); Fte = parity_features(bte, md)
+            best = None
+            for wd in (10.0, 100.0, 1000.0):
+                fit = fit_regression(Ftr[~vm], mH_tr[~vm], n_tr[~vm], wd=wd)
+                acc = weighted_agreement(
+                    unembed_top1(Ftr[vm] @ fit["W"] + fit["b"], Wu), t_tr[vm], n_tr[vm])
+                if best is None or acc > best[0]:
+                    best = (acc, wd)
+            wd = best[1]; fit = fit_regression(Ftr, mH_tr, n_tr, wd=wd)
+            Hp = Fte @ fit["W"] + fit["b"]
+            rec = {"degree": D, "n_chars": len(md),
+                   "TEST_top1": weighted_agreement(unembed_top1(Hp, Wu), t_te, n_te),
+                   "R2_hidden": r2_hidden(Hp, mH_te, n_te),
+                   "psi_frac": float(psi[idx_used].sum() / psitot), "wd": wd}
+            ladder.append(rec)
+            print(f"[refit:{name}] deg<={D} ({len(md)} chars) top1 {rec['TEST_top1']:.4f} "
+                  f"R2 {rec['R2_hidden']:.4f} psi_frac {rec['psi_frac']:.3f} "
+                  f"(sanity {sane:.3f})", flush=True)
+            if run is not None:
+                run.log(rec)
+            del Ftr, Fte; torch.cuda.empty_cache()
+        if run is not None:
+            run.summary.update({"final_top1": ladder[-1]["TEST_top1"] if ladder else 0.0,
+                                "sanity": sane}); run.finish()
+        summary["encodings"][name] = {"sanity": sane, "ladder": ladder}
+    _write_json(f"{ROOT}/summary_refit_top1_d{depth}.json", summary)
+    _record("refit-top1", started, {"per_deg": per_deg})
     print(json.dumps(summary), flush=True)
     return summary
 
@@ -3053,6 +3144,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         print(gen_data.remote(m_fibers, r, fill_len, "edu", 9000, "edu_tr", 8))
     if stage == "gl-tree-top1":                                       # the ACTUAL Dataset GL
         print(gl_tree_top1.remote(m_fibers, g, depth, fill_len, tau, max_width))
+    if stage == "refit-top1":                                        # degree-first re-fit
+        print(refit_top1.remote(depth, fill_len))
     if stage == "stream-top1":
         print(stream_top1.remote(m_fibers, 3000, fill_len, r, target))
     if stage == "wandb-ping":
