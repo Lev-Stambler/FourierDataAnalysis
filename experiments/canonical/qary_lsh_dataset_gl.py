@@ -76,6 +76,10 @@ try:
     WANDB_SECRET = [modal.Secret.from_name("wandb")]
 except Exception:
     WANDB_SECRET = []
+try:                                                             # authenticated HF streaming
+    HF_SECRET = [modal.Secret.from_name("hf-token")]            # avoids rate-limit failures
+except Exception:                                               # when N fan-out workers stream
+    HF_SECRET = []
 
 
 def _wandb_run(name, config):
@@ -1100,7 +1104,8 @@ def _table_path(fill_len, m_fibers, r, tag=""):
     return f"{ROOT}/glds_ctx{CTX}_f{fill_len}_M{m_fibers}_R{r}{t}.npz"
 
 
-@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600,
+              memory=32768, secrets=HF_SECRET)
 def make_data(m_fibers: int = M_FIBERS, r: int = R_FILLS, seed: int = 0,
               fill_len: int = W_WIN - K_FIXED, corpus: str = "fineweb",
               skip: int = 0, tag: str = "", chunk_lo: int = 0, chunk_hi: int = 0):
