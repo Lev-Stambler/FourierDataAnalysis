@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inside the q-ary Dataset-GL experiment</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc" id="toc">
+  <a href="#s0">0 · One picture</a>
+  <a href="#s1">1 · Fibers &amp; fills</a>
+  <a href="#s2">2 · What Fourier is on</a>
+  <a href="#s3">3 · The KL &amp; the student</a>
+  <a href="#s4">4 · q-ary → bits: sign-LSH</a>
+  <a href="#s5">5 · The exact spectrum</a>
+  <a href="#s6">6 · GL tree &amp; paired ψ</a>
+  <a href="#s7">7 · Forked-cache oracle</a>
+  <a href="#s8">8 · The model, live</a>
+  <a href="#s9">9 · The “ceiling”</a>
+  <a href="#s10">10 · Degree via sensitivity</a>
+</nav>
+
+<main>
+
+<header>
+  <h1>Inside the canonical q-ary Dataset-GL experiment</h1>
+  <div class="subtitle">What the Fourier transform is actually applied to, how a 248,077-token
+  alphabet becomes 133 bits per token, what the GL tree searches, and where every KL number
+  comes from. A companion to <code>experiments/canonical/qary_lsh_dataset_gl.py</code>.</div>
+</header>
+
+<!-- ============================================================ S0 -->
+<section id="s0">
+  <h2><span class="secno">0</span>The whole experiment in one picture</h2>
+
+  <p>The experiment asks one question: <em>how much of a language model's next-token
+  distribution is captured by a tiny, interpretable Fourier series — and does the answer depend
+  on how you encode tokens as bits?</em> The teacher is Qwen3.5-0.8B. The student is a linear
+  softmax model over ±1 <em>parity features</em> of the encoded context — no attention, no MLP,
+  just certified Walsh characters. Everything else in the pipeline exists to make that
+  comparison exact and honest.</p>
+
+  <div class="fig" id="s0-pipe"></div>
+
+  <p>The headline: 1,220 exactly-certified characters (220 single bits + 1,000 bit pairs) over
+  sign-LSH codes recover a third of the teacher's non-unigram information on untouched test
+  fibers, and the <em>same recipe on random codes</em> is 0.097 nats worse. The encoding — not
+  extra capacity — is what the gap measures.</p>
+
+  <div class="cards" id="s0-cards"></div>
+
+  <div class="code-note">pipeline: <code>make_data</code> → <code>build_lsh_codes</code> /
+  <code>control_codes</code> → <code>spectrum_deg1</code>/<code>spectrum_deg2</code> →
+  <code>fit_sparse2</code> → <code>model_sparse2_lsh.npz</code> (2&nbsp;MB, 625k params).
+  Numbers: README findings 0–7.</div>
+</section>
+
+<!-- ============================================================ S1 -->
+<section id="s1">
+  <h2><span class="secno">1</span>Fibers from the dataset, fills from the model</h2>
+
+  <p>A <b>fiber</b> is an anchor in real text: a FineWeb span of 128 tokens whose first 67
+  tokens are kept as a <span style="color:var(--prefix)">■</span> real prefix. The last
+  <b>K&nbsp;=&nbsp;3</b> prefix tokens are the <span style="color:var(--fixed-s)">■</span>
+  <em>fixed string s</em>, and fibers are <em>deduplicated on s</em> — that is what makes
+  <code>f(window) = teacher(next&nbsp;|&nbsp;prefix(s), window)</code> a well-defined
+  <em>function</em> of the window instead of a relation.</p>
+
+  <p>The remaining <b>61</b> positions are <span style="color:var(--filled)">■</span> filled by
+  the teacher itself, autoregressively, <b>R&nbsp;=&nbsp;8</b> independent times per fiber. This
+  is the trick that makes Fourier analysis on a dataset possible at all: the model is its own
+  natural-language sampler, so two fills of one fiber are two draws from
+  <code>P(g&nbsp;|&nbsp;s)</code> — exactly the paired samples the CSAMP estimator of the paper
+  needs. Each completed window is labeled with the teacher's terminal next-token distribution,
+  and duplicate windows are collapsed into rows carrying weighted target sums
+  <code>A</code> and counts <code>n</code>.</p>
+
+  <div class="fig">
+    <div id="s1-fiber"></div>
+    <div class="caption">One fiber, schematically. The gray prefix comes from FineWeb (real
+    tokens, drawn once); the amber tokens are the dedup key <em>s</em>; the blue span is filled
+    by Qwen 8 times. The blue tokens shown are a real 61-token window from
+    <code>prompts.js</code>; the fills fan out into 8 windows per fiber, each ending in a
+    512-slot teacher distribution.</div>
+  </div>
+
+  <div class="code-note"><code>draw_fibers</code> (dedup on s, qary_lsh_dataset_gl.py:129),
+  <code>_fill_and_label</code> (:748), <code>soft_collapse</code> (:157). M=8000 fibers × 8
+  fills = 512k windows for the headline numbers.</div>
+</section>
+
+<!-- ============================================================ S2 -->
+<section id="s2">
+  <h2><span class="secno">2</span>What exactly the Fourier transform is applied to</h2>
+
+  <p>Not tokens, and not the whole context — <b>bits of the filled span</b>. Every one of the
+  61 filled tokens is replaced by its <b>B&nbsp;=&nbsp;133</b>-bit code (§4), newest token
+  first, giving the boolean domain</p>
+
+  <div class="eq">$$ f:\ \{0,1\}^{n}\to\mathbb{R}^{512},\qquad n \;=\; 61\times 133 \;=\; 8113 .$$</div>
+
+  <p>The value <code>f(x)</code> is <em>vector-valued</em>: the teacher's terminal distribution
+  over 512 slots. And crucially the search target is the <b>centered residual</b>
+  \( F(x)=f(x)-\mu \) — subtracting the unigram \( \mu \) kills the “bias artifact”
+  characters whose coefficient is large but parallel to the unigram and carries zero
+  conditional information (in the code, <code>A_search = A − n·μ</code>). The Fourier basis is
+  the Walsh characters, one per bit-mask \( S \):</p>
+
+  <div class="eq">$$ \chi_S(x) = (-1)^{\langle S,\,x\rangle},\qquad
+  \hat f(S) = \frac{1}{m}\sum_{x}\chi_S(x)\,A_x \;\in\;\mathbb{R}^{512},\qquad
+  \text{certified when } \lVert \hat f(S)\rVert_2 \ge \tau/2 .$$</div>
+
+  <p>A character's <b>degree</b> (in tokens) is how many token blocks its mask touches. A
+  degree-1 character is a single LSH bit of a single context token — “is the newest token on
+  the positive side of hyperplane 17?” A degree-2 character is the parity (agreement) of two
+  such bits. Only the filled span is searchable: a character on dataset-fixed prefix bits is a
+  constant sign inside each fiber, and constants square away in every bucket weight — the
+  dataset cannot certify them. “Search more context” therefore literally means “make the model
+  fill more tokens.”</p>
+
+  <div class="fig">
+    <div id="s2-bitgrid"></div>
+    <div class="caption">The real domain: 61 token blocks × 133 LSH bits (one row per token,
+    newest at top) for a real window. Dark cells are 1-bits. Overlaid:
+    <span style="color:#dc2626">●</span> the model's certified deg-1 anchor bits on that
+    token, and <span style="color:var(--fixed-s)">▲</span> one real certified pair — a
+    degree-2 character connecting a newest-token bit to a bit 3 tokens back.</div>
+  </div>
+
+  <h3>Feel the transform: a 4-bit Walsh lab</h3>
+  <p>Everything the search does reduces to this picture at n = 4. Edit \( f \) (drag the bars),
+  and watch all 16 coefficients respond. The presets reproduce the experiment's core lessons:
+  a pure character is a single spike; noise spreads mass everywhere thinly; and an uncentered
+  bias shows up entirely in \( \hat f(\varnothing) \) — the toggle removes it, which is exactly
+  what centering does at scale.</p>
+
+  <div class="fig"><div id="s2-walsh"></div></div>
+
+  <div class="code-note"><code>context_bits</code> (:149, newest-token-first block order),
+  <code>parity_features</code> (:620, \( \chi \) = 1−2·(bits@mask mod 2)), centering at
+  search (:979–984). Parseval anchor: <code>test_qary_lsh_dataset_gl.py</code> brute-force
+  tests.</div>
+</section>
+
+<!-- ============================================================ S3 -->
+<section id="s3">
+  <h2><span class="secno">3</span>What the KL divergence is measured on</h2>
+
+  <p>The 248k-token vocabulary is projected to a <b>512-slot alphabet</b>: the 511 tokens with
+  the highest mean terminal mass across sample fibers, plus an <code>OTHER</code> slot that
+  absorbs the whole tail. Every window's label is the teacher's softmax squashed onto these
+  slots. That is the distribution <em>P</em> below — the thing the student has to match.</p>
+
+  <div class="fig">
+    <div id="s3-slots"></div>
+    <div class="caption">The real slot alphabet, from <code>model_sparse2_lsh.npz</code>:
+    mean terminal mass μ per slot (log scale, top 40 shown). Half of all terminal mass lands in
+    <code>OTHER</code> — the teacher is often confident about a token that is not among the top
+    511. The remaining slots are the familiar suspects: <code>␣the</code>, <code>,</code>,
+    <code>.</code>, <code>␣and</code>…</div>
+  </div>
+
+  <p>The student never sees tokens. It sees \( K \) parity features \( \varphi(x)\in\{\pm1\}^K \)
+  — the certified characters — and fits one weight per (character, slot):</p>
+
+  <div class="eq">$$ \mathrm{logits}(x) = \varphi(x)\,W + b,\qquad
+  \mathrm{KL} \;=\; \frac{\sum_r n_r \sum_{v} P_{rv}\,\log\!\big(P_{rv}/Q_{rv}\big)}{\sum_r n_r}, $$</div>
+
+  <p>with \( Q = \mathrm{softmax}(\mathrm{logits}) \), rows weighted by their collapse counts
+  \( n_r \). Three honesty devices matter as much as the formula: the bias \( b \) is
+  initialized at the <b>log-unigram</b>, so an empty feature set scores exactly the unigram
+  floor (1.6304) and any KL below it is real conditional signal; the train/val/test split is
+  <b>fiber-disjoint</b>, so memorizing a fiber's prefix cannot leak; and the fit keeps the
+  <b>best-validation iterate</b>, so a model never ends worse than its initialization —
+  which is why “val_kl == unigram_kl” reads as <em>found nothing</em>, a bug signal, not a
+  result.</p>
+
+  <h3>KL playground</h3>
+  <p>KL is asymmetric and locally quadratic — drag the student's bars and watch which slots
+  bill you. The “unigram student” preset is the real μ over the top 12 slots: this is the
+  floor every model in the arc is measured against.</p>
+
+  <div class="fig"><div id="s3-klplay"></div></div>
+
+  <div class="code-note">slot alphabet: <code>make_data</code> (:909); fit:
+  <code>fit_softmax_slots</code> (:629, Adam + cosine + best-val); metric:
+  <code>eval_slots</code> (:696). Unigram floor = intercept-only fit (steps=1).</div>
+</section>
+
+<!-- ============================================================ S4 -->
+<section id="s4">
+  <h2><span class="secno">4</span>Making 248,077 tokens binary: sign-LSH</h2>
+
+  <p>The GL machinery is boolean, but the alphabet is q-ary with q ≈ 2<sup>18</sup>. The bridge
+  is a <b>locality-sensitive</b> binary code: take the teacher's own input embeddings
+  \( e_i \in \mathbb R^{d} \), mean-center them, and slice the cloud with 128 random Gaussian
+  hyperplanes:</p>
+
+  <div class="eq">$$ \mathrm{code}_j(i) \;=\; \mathbb 1\big[\langle e_i-\bar e,\; g_j\rangle > 0\big],
+  \qquad \Pr_j\big[\mathrm{code}_j(i)\ne\mathrm{code}_j(i')\big] \;=\; \frac{\theta(e_i,e_{i'})}{\pi}. $$</div>
+
+  <p>Tokens whose embeddings point the same way share most bits (5 tie-break bits separate
+  byte-identical embedding rows, hence B = 133). Each bit is therefore a <em>semantic
+  dichotomy shared by the entire vocabulary</em> — one side of one hyperplane. That is why a
+  single degree-1 character can carry signal: “newest token is on the animal-ish side of
+  hyperplane 17” generalizes across every token on that side. The control code
+  (<span class="legend-dot" style="background:var(--ctrl)"></span><b>ctrl</b>) has the same
+  number of bits and the same uniqueness, but each bit is a random half of the vocabulary —
+  identical capacity, zero geometry. The entire encoding effect in this experiment is the gap
+  between those two columns.</p>
+
+  <h3>A: hyperplanes in 2D</h3>
+  <p>The same construction, small enough to see. Click two points to compare their codes —
+  the Hamming distance concentrates on angle/π, so cluster-mates collide in code space.</p>
+  <div class="fig"><div id="s4-plane"></div></div>
+
+  <h3>B: the real codes — nearest neighbors in Hamming space</h3>
+  <p>Now the actual 133-bit table over the actual vocabulary. Pick a probe token: under LSH its
+  nearest codes are its semantic family; under ctrl, whatever random tokens happen to sit at
+  the binomial mode near distance 66. This single figure is most of the reason LSH beats
+  random codes by 0.097–0.18 nats everywhere in the arc.</p>
+  <div class="fig"><div id="s4-nn"></div></div>
+
+  <div class="fig">
+    <div id="s4-hist"></div>
+    <div class="caption">Hamming distance distributions over the real vocab (normalized).
+    Random token pairs sit at the binomial bulk for both encodings; string-related pairs
+    (case variants, plurals, ±leading-space — 20k mined from the vocab) shift far left
+    <em>only under LSH</em>. Locality is real and it is exclusive to the LSH table.</div>
+  </div>
+
+  <div class="fig">
+    <div id="s4-strips"></div>
+    <div class="caption">Raw 133-bit LSH codes. Red cells mark bits that differ from
+    <code>␣dog</code>'s code — few for <code>␣Dog</code> and <code>␣cat</code>, ~half for an
+    unrelated token.</div>
+  </div>
+
+  <div class="code-note"><code>build_lsh_codes</code> (:90, doubling 64→128 + tie-breaks),
+  <code>control_codes</code> (:115), <code>token_id_codes</code> (:122). Wider is not better:
+  517-bit codes extract <em>nothing</em> where 133-bit codes extract −0.139 (README finding 4).</div>
+</section>
+
+<!-- ============================================================ S5 -->
+<section id="s5">
+  <h2><span class="secno">5</span>Finding heavy characters I: the exact spectrum</h2>
+
+  <p>Below degree ~3, <em>don't search — enumerate</em>. All 8,113 degree-1 coefficients are
+  one GEMM: \( \widehat F = \frac{1}{m} S^\top A_c \) with \( S \) the ±1 sign matrix. Anchored
+  degree-2 is one more GEMM per certified anchor (multiply \( S \) elementwise by the anchor
+  column, transform again). This is exact — no τ, no frontier, no sampling — and it is what
+  produced the shipped model: 220 anchors and the top 1,000 pairs, all with
+  \( \lVert\hat f\rVert_2 \ge 0.01 \).</p>
+
+  <div class="fig">
+    <div id="s5-anchormap"></div>
+    <div class="caption">All 220 certified degree-1 characters of the real model. x = which
+    token (0 = newest), y = which LSH bit, area = fitted weight norm ‖W-row‖. The marginal
+    histogram is the story: 128 / 53 / 21 / 16 / 1 / 1 — conditional signal concentrates
+    hard at the prediction site.</div>
+  </div>
+
+  <div class="fig">
+    <div id="s5-pairmap"></div>
+    <div class="caption">The 1,000 certified degree-2 pairs. Every pair has one endpoint in
+    the newest token block; the other endpoint reaches back — 794 stay within the newest
+    token (bit×bit interactions), the tail hooks up to 57 tokens deep. Arc height ∝ weight
+    norm.</div>
+  </div>
+
+  <div class="cards" id="s5-cards"></div>
+
+  <p>The degree-2 spectrum is where the encodings truly separate: LSH has <b>485,000</b>
+  certified pairs (27% of those checked) vs ctrl's 19,800 (1.4%) — a <b>25×</b>
+  low-degree-concentration gap. Both encodings converge as degree grows; LSH's edge is
+  needing <em>less degree</em> for the same function.</p>
+
+  <div class="code-note"><code>spectrum_deg1</code> (:1899), <code>spectrum_deg2</code>
+  (:1967), <code>fit_sparse2</code> (:2024, strict 3-way fiber split, TEST untouched).</div>
+</section>
+
+<!-- ============================================================ S6 -->
+<section id="s6">
+  <h2><span class="secno">6</span>Finding heavy characters II: the GL tree and the paired estimator</h2>
+
+  <p>Enumeration dies combinatorially at higher degree; the Goldreich–Levin tree survives by
+  searching <em>prefixes</em> of masks. At level \( k \) the first \( k \) bits of the mask are
+  decided and the rest are marginalized by grouping rows on their un-split suffix values
+  \( z \). The bucket weight of a prefix \( S \) is the exact Parseval mass of all its
+  completions:</p>
+
+  <div class="eq">$$ W_k(S) \;=\; \frac{2^{\,n-k}}{m^2}\sum_{t}\sum_{z}
+  \Big(\sum_{x\in z}\chi_S(x)\,A[x,t]\Big)^{\!2},
+  \qquad \text{keep the child iff } W_k(S)\ \ge\ \tau^2/4 , $$</div>
+
+  <p>with the final level an exact leaf test. τ is the <em>only</em> statistical dial;
+  <code>max_width</code> exists purely as a blow-up abort. The subtlety that cost several runs:
+  this group-by <em>square</em> keeps the diagonal \( \sum_x\lVert f(x)\rVert^2 \), an
+  S-independent mass that ties every bucket wherever suffix groups are near-singletons. The
+  paper's estimator removes it by <b>pairing</b>: cells are (fiber × un-split value), only
+  off-diagonal within-cell products count, and singleton cells cancel exactly —</p>
+
+  <div class="eq">$$ \psi_k(a) \;=\; \frac{Q_k(a) - \sum_x\lVert f(x)\rVert^2}{n_{\text{pairs}}},
+  \qquad Q_k(a) \;=\; \sum_{\text{cells}}\Big\lVert\sum_{x\in\text{cell}} f(x)\,\chi_a(x)\Big\rVert^2 . $$</div>
+
+  <h3>Walk the tree yourself</h3>
+  <p>A 10-bit toy with planted characters. Step through the levels and watch the frontier:
+  at early levels (suffix groups all singletons) <em>every child has identical weight</em> —
+  the amber “tie band” — and a width-capped frontier tie-breaks arbitrarily. That is frontier
+  burial, the failure that produced the bogus “noise ceiling 0.006” before enumeration found
+  217 real characters. Then flip the estimator toggle with peaked fibers on, and watch the
+  group-by square lift <em>every</em> bucket while paired ψ stays pinned to the truth.</p>
+
+  <div class="fig"><div id="s6-tree"></div></div>
+
+  <h3>The failure gallery</h3>
+  <p>Each of these cost a run; each is now test-pinned. They are worth knowing because every
+  one <em>looks like</em> a scientific result (“no signal”) and is actually an estimator
+  artifact.</p>
+
+  <div class="gallery">
+    <div class="fail"><b>Frontier burial</b>
+    In the singleton-suffix region all 2<sup>k</sup> prefixes provably tie, the bounded
+    frontier tie-breaks arbitrarily, and each deg-1 leaf gets exactly one chance to be carried.
+    Read as “noise ceiling 0.006, 1/√m”.
+    <span class="fix">Fix: enumerate deg-1/2 exactly; tree only for degree ≥ 3.</span></div>
+
+    <div class="fail"><b>Tie-saturation / point-mass inflation</b>
+    Deep 399-bit descent: peaked fibers make χ<sub>S</sub>(i)χ<sub>S</sub>(j) = 1 for
+    <em>all</em> S, a per-fiber constant that floods the width-512 frontier with ψ ≈ 0.0235
+    high-degree masks. Fit floors at <em>exactly</em> unigram (1.8287).
+    <span class="fix">Fix: floor-at-unigram is a bug signal; clean subtraction removes the
+    same-token block.</span></div>
+
+    <div class="fail"><b>Uncentered bias characters</b>
+    Raw targets admit characters with huge ‖f̂‖ but f̂ ∥ μ — zero conditional content (the
+    idbits artifact).
+    <span class="fix">Fix: search the centered residual A − n·μ; let the intercept carry the
+    unigram.</span></div>
+
+    <div class="fail"><b>Fiber memorization</b>
+    Full-context deg-1 students read prefix bits as fiber IDs and memorize; fiber-disjoint
+    validation floors them at unigram.
+    <span class="fix">Fix: filled-span features only, or staged val-gated blocks
+    (<code>fit_staged</code>: accepts exactly the last 3–4 tokens, KL 1.1232).</span></div>
+  </div>
+
+  <div class="code-note"><code>dataset_gl_tau</code> (:516, group-by W + on-data dedup +
+  bounded ordered frontier), <code>dataset_gl_csamp</code> (:222, cells = fiber × un-split
+  value, no-evidence levels carry both children), <code>_iter_suffix_gids</code> (:179,
+  suffix groups refined incrementally).</div>
+</section>
+
+<!-- ============================================================ S7 -->
+<section id="s7">
+  <h2><span class="secno">7</span>The collision-free fix: forked-cache pairs</h2>
+
+  <p>The flat-table paired estimator needs two fills that <em>collide</em> on every un-split
+  coordinate — rare exactly where the search is deep. The oracle removes luck from the
+  construction: forward each fiber's prefix (plus older fills, a shared stub) <b>once</b>,
+  fork the transformer cache G ways, and resample only the split token onward. Every one of
+  the G(G−1) within-fiber ordered pairs is now valid <em>by construction</em>:</p>
+
+  <div class="eq">$$ \psi(b) \;=\; \frac{1}{n_{\text{pairs}}}\sum_{z}
+  \Big( \big\lVert \textstyle\sum_{i\in z}\chi_b(i)\,F_i \big\rVert^2
+  \;-\; \textstyle\sum_{i\in z}\lVert F_i\rVert^2 \Big), $$</div>
+
+  <p>unbiased for the conditional weight \( \mathbb E_z\lvert\mathbb E[F\chi_b\,|\,z]\rvert^2 \).
+  The <code>clean=True</code> variant additionally subtracts the same-token block — pairs whose
+  split token is identical satisfy χ<sub>b</sub>(i)χ<sub>b</sub>(j)=1 for <em>every</em> b, a
+  per-fiber floor that cannot change rankings but floods any fixed certification bar.</p>
+
+  <div class="fig">
+    <div id="s7-fork"></div>
+    <div class="caption">One fiber: the shared stub is forwarded once
+    (<code>Cache.reorder_cache</code> forks KV <em>and</em> Qwen3.5's linear-attention
+    conv/recurrent state), then G = 16 branches resample the split token. A fail-loud
+    self-check asserts branch 0 matches a fresh forward (max slot err ~6e-3).</div>
+  </div>
+
+  <div class="fig">
+    <div id="s7-bars"></div>
+    <div class="caption">The paper-native estimator reproduces both the recovery and the
+    encoding gap where the flat tree floored: held-out KL after fitting the certified split-token
+    bits, fill-3 frame, M1500 G16.</div>
+  </div>
+
+  <div class="fig">
+    <div id="s7-decay"></div>
+    <div class="caption">Sweep of the split position: deg-1 gain vs unigram at the newest /
+    middle / oldest filled token (LSH −0.368 / −0.059 / ≈0 nats). Signal decays with distance
+    from the prediction; LSH is ~2× ctrl wherever there is signal, and the oracle correctly
+    reports ≈0 where there is none.
+    Clean certification: LSH certifies all 133 bits of the newest token; ctrl only ~67 (its
+    “signal” was mostly the point-mass floor).</div>
+  </div>
+
+  <div class="code-note"><code>make_oracle_data</code> (:1053, shared stub + fork),
+  <code>_fork_and_label</code> (:785, reorder_cache beam trick), <code>oracle_deg1_psi</code>
+  (:352, clean=True), <code>forked_gl_tree</code> (:425 — the same idea grown into a native
+  any-degree tree).</div>
+</section>
+
+<!-- ============================================================ S8 -->
+<section id="s8">
+  <h2><span class="secno">8</span>The recovered model, running in your browser</h2>
+
+  <p>This is the actual shipped artifact — <code>model_sparse2_lsh.npz</code>, 220 + 1,000
+  characters, 625k parameters, 2&nbsp;MB — evaluated in JavaScript. Pick a prompt, then click
+  any of the 61 window tokens to swap it and watch the prediction move. The unigram / deg-1 /
+  deg-1+2 toggles show what each layer of the Fourier series buys. Click a predicted slot to
+  see <em>which characters</em> pushed it up or down: every feature is legible — “bit 17 of
+  the newest token”, “bit 4 × bit 88 three tokens back”.</p>
+
+  <div class="fig"><div id="s8-pred"></div></div>
+
+  <div class="code-note"><code>demo.py::predict</code> — the exact recipe this page ports
+  (window[::-1] bits, φ = [s[anchors], s[pair_i]·s[pair_j]], logits = b + φW). The green badge
+  means this page's numbers match <code>demo.py</code> on prompt 0 to &lt;1e-3.</div>
+</section>
+
+<!-- ============================================================ S9 -->
+<section id="s9">
+  <h2><span class="secno">9</span>The “ceiling” at degree 2 — and what it actually was</h2>
+
+  <p>The arc's first conclusion (README finding 0b): the ladder terminates at degree 2 —
+  1,000 certified triples exist (top norm 0.0604, heavier than any pair!) yet val-gated
+  incremental fitting pins their weights at exactly zero, and a flat joint refit
+  <em>degrades</em> test KL 1.103 → 1.192. Redundant-but-heavy is real: triples are products
+  of already-captured characters, informationally spanned.</p>
+
+  <p><b>The revision (2026-07-14):</b> the 1.10 “ceiling” itself was not an information limit.
+  The deg-1+2 baseline has <b>TRAIN KL 0.79 vs TEST 1.10</b> at M8000 — a 0.32-nat
+  generalization gap — and test KL falls ≈ <b>0.175 nats per doubling of fibers</b>
+  (1.453 @ M2000 → 1.103 @ M8000). The val gate was rejecting degree-3 because it
+  <em>overfits at this M</em>, mislabeling “overfit at small data” as “spanned”. The lever is
+  <b>data, not degree</b>: a fixed FineWeb test set, a disjoint fresh training stream, the
+  same GL basis, an ungated L2-regularized fit, and scale M until TEST ≤ 1.0.</p>
+
+  <div class="cards" id="s9-cards"></div>
+
+  <p>One more boundary worth remembering: the encoding geometry matters only in
+  <em>bottlenecked</em> students. Give a transformer the same masks through an embedding table
+  and LSH vs random codes is a wash (21.2% vs 20.9% top-1) — the 0.18-nat effect lives
+  entirely in models forced to read the code bits directly. That is the regime this whole
+  page is about.</p>
+
+  <div class="code-note"><code>fit_sparse3</code> (:2115), <code>gl_tree_refit</code> (:1282 —
+  the TRAIN-KL reconstruction probe that exposed the gap), README findings 0b / 7a / 7b / 7c.</div>
+</section>
+
+<!-- ============================================================ S10 -->
+<section id="s10">
+  <h2><span class="secno">10</span>The degree distribution — measured without fitting anything</h2>
+
+  <p>Everything above finds low-degree structure by <em>building</em> it: enumerate characters,
+  certify them, fit a student. This section measures where the function's variance lives across
+  degrees <em>directly</em> — no basis, no code table, no fit. The probe: fork the teacher's
+  cache at the token <b>b</b> positions back from the prediction, resample <em>that one token</em>
+  g&nbsp;=&nbsp;16 times from the teacher's own conditional (the real suffix is teacher-forced
+  back in), and record how much the 512-slot terminal distribution moves. That within-fiber
+  variance is the <b>sensitivity</b> of coordinate b, and Parseval turns coordinates into
+  degrees: a degree-k character is counted by exactly k coordinates, so</p>
+
+  <div class="eq">$$ \mathrm{Sens}_b \;=\; \sum_{S\,:\,S\text{ touches }b}\lVert\hat f(S)\rVert^2,
+  \qquad \bar S \;=\; \sum_b \mathrm{Sens}_b \;=\; \sum_{k\ge1} k\,\overline W^{\,k},
+  \qquad d_{\mathrm{eff}} \;=\; \frac{\bar S}{\mathrm{Var}}
+  \;=\; \frac{\sum_k k\,\overline W^{\,k}}{\sum_k \overline W^{\,k}} , $$</div>
+
+  <p>where \( \overline W^{\,k} \) is the total spectral mass at degree k. Total sensitivity is
+  <em>degree-weighted</em> spectral mass, so the ratio \( d_{\mathrm{eff}} \) is the
+  variance-weighted <b>average degree</b> of the function — the center of mass of the degree
+  distribution — obtained purely from single-token perturbations.</p>
+
+  <div class="fig">
+    <div id="s10-profile"></div>
+    <div class="caption">The measured profile (M=1000 real FineWeb spans, ±1 s.e., both axes
+    log-ish). Resampling the last token moves the output 120× more than resampling a token 15
+    back. The annotations give the running share of total sensitivity: half of everything the
+    model reads, it reads from the final token.</div>
+  </div>
+
+  <div class="cards" id="s10-cards"></div>
+
+  <div class="fig">
+    <div id="s10-degree"></div>
+    <div class="caption">What the mean pins down. Bars: the degree distribution implied if mass
+    sits on degrees {1, 2} — the recovery ladder's verdict (§9: certified triples get weight
+    exactly 0) — which forces a 96 / 4 split. Line: the assumption-free Markov envelope
+    \( \overline W^{\,>d}/\mathrm{Var} \le d_{\mathrm{eff}}/d \): no matter how adversarial the
+    spectrum, only 10% of variance can live above degree 10.</div>
+  </div>
+
+  <h3>The degree bound, live</h3>
+  <p>The learning theorem needs tail mass \( \le \varepsilon/4 \) above the cutoff degree;
+  Markov delivers it at \( d \ge 4\bar S/\varepsilon \). Drag the target error: the worst-case
+  cutoff moves as 1/ε, while the <em>observed</em> spectrum (§5, §9) already satisfies every
+  target at degree 2 — the gap between the envelope and the dot is how far this function is
+  from adversarial.</p>
+
+  <div class="fig"><div id="s10-bound"></div></div>
+
+  <div class="code-note"><code>sensitivity</code> stage (qary_lsh_dataset_gl.py: fork at
+  back-offset b via <code>_resample_and_label</code>, per-fiber unbiased variance via
+  <code>_sens_from_groups</code>, degree arithmetic via <code>_sens_report</code>; estimator
+  brute-force-anchored in tests). Run: M=1000, g=16, conditional resampling, $0.40 of A10G.
+  A rerun with uniform resampling over the slot alphabet (the theorem's exact measure) is
+  near-identical — d_eff 1.03 vs 1.04 — the verdict is measure-robust.
+  Paper: sections/prelims.typ prop:dataset-sensitivity + thm:learning-low-degree;
+  results in sections/experiments.typ <code>&lt;sec:sensitivity&gt;</code>.</div>
+</section>
+
+<footer>
+  Built from <code>experiments/canonical/</code> artifacts on 2026-07-14 ·
+  data exported by <code>vis/export_data.py</code> ·
+  serve with <code>python -m http.server</code> from <code>vis/</code> (also works over file://).
+</footer>
+
+</main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+
+<script src="data/meta.js"></script>
+<script src="data/sens.js"></script>
+<script src="data/slots.js"></script>
+<script src="data/model.js"></script>
+<script src="data/tokens.js"></script>
+<script src="data/prompts.js"></script>
+
+<script src="js/util.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/widget_walsh.js"></script>
+<script src="js/widget_kl.js"></script>
+<script src="js/widget_lsh.js"></script>
+<script src="js/widget_gltree.js"></script>
+<script src="js/widget_predictor.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

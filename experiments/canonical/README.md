@@ -21,6 +21,14 @@ volume `fda-cache` with a self-enforced cost ledger (`cost.json`).
   incremental suffix-group refinement, fp32 buckets. Frontiers/norms persisted: changing τ
   is a re-filter, not a re-descent.
 
+## Visualize
+
+`vis/` is a self-contained explainer website (what the Fourier transform is applied to, the
+KL objective, sign-LSH vs controls, the GL tree / paired-ψ estimators as an interactive toy,
+and the recovered sparse model running live in-browser, self-checked against `demo.py`):
+`cd vis && python -m http.server 8000`. Regenerate its data with
+`uv run python vis/export_data.py`; test with `node vis/test_node.js`. See `vis/README.md`.
+
 ## Run
 
 ```bash
@@ -30,7 +38,33 @@ uv run modal run --detach qary_lsh_dataset_gl.py --stage data --fill-len 61 --m-
 uv run modal run --detach qary_lsh_dataset_gl.py --stage search --tau 0.02 --fill-len 61 \
     --m-fibers 8000 --max-width 64 --encoding parallel
 uv run modal run --detach qary_lsh_dataset_gl.py --stage fit-deg1 --fill-len 61 --m-fibers 8000
+uv run modal run --detach qary_lsh_dataset_gl.py --stage sensitivity --m-fibers 1000 --g 16
 ```
+
+## Degree bounds via sensitivity (2026-07-14; see sections/experiments.typ `<sec:sensitivity>`)
+
+The fit-free probe of `thm:learning-low-degree`: fork the teacher's cache at back-offset `b`,
+resample that one token g=16 times from the teacher's own conditional, teacher-force the real
+suffix, and take the unbiased within-fiber variance of the terminal slot distribution
+(`_resample_and_label` + `_sens_from_groups`, brute-force-anchored in tests; every forked
+evaluation self-checked against a fresh forward). M=1000 FineWeb spans, $0.40 of A10G:
+Sens_0 = 0.143 decaying power-law to ~3e-4 by b≥47; interpolated total S̄ = 0.306 vs total slot
+variance 0.294 → **effective degree d_eff = S̄/Var = 1.04**, independently confirming the ladder's
+degree-1-dominant / terminates-at-degree-2 verdict. Theorem bound d ≥ 4S̄/ε: 8.3 / 16.7 / 41.7 at
+ε_rel = 0.5 / 0.25 / 0.1 (loose Markov envelope; the measurable S̄ is the sharp object). The last
+token moves 49% of the function's variance; the last four carry 71% of total sensitivity.
+Artifacts: `sensitivity_{conditional,uniform}_fineweb_M1000.{json,npz}` on the volume; W&B
+runs `sens-{conditional,uniform}-fineweb-M1000`. The `--resample uniform` rerun (paper-exact
+uniform μ over the slot alphabet) is near-identical — Sens_0 = 0.131 vs 0.143, d_eff = 1.03
+vs 1.04 — so the low-degree verdict is robust to the resampling measure.
+
+Honesty range (tail-treatment + statistical): S̄ depends on how the strided tail is densified —
+linear interp 0.306 (d_eff 1.04), power-law tail 0.305 (1.04), pessimistic flat-hold 0.317
+(1.08); statistical se on d_eff ±0.026. So d_eff ∈ [1.03, 1.08] → **degree-1 share 92–97%** if
+mass sits on {1,2} (the ladder's verdict). The mean alone caps any deeper tail regardless of
+support: mass at degree ≥ K is ≤ (d_eff−1)/(K−1), i.e. ≤ 2–4% at K=3, ≤ 1.3–2.6% at K=4 —
+and the ladder shows what deg-3 structure exists (1k certified triples, top norm 0.06) is
+spanned by deg-1+2 (zero incremental TEST KL).
 
 ## Results (2026-07-13; see sections/experiments.typ `<sec:whlsh-canonical>`)
 
