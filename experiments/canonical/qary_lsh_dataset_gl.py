@@ -1103,8 +1103,11 @@ def _table_path(fill_len, m_fibers, r, tag=""):
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
 def make_data(m_fibers: int = M_FIBERS, r: int = R_FILLS, seed: int = 0,
               fill_len: int = W_WIN - K_FIXED, corpus: str = "fineweb",
-              skip: int = 0, tag: str = ""):
+              skip: int = 0, tag: str = "", chunk_lo: int = 0, chunk_hi: int = 0):
     """Fibers from a corpus + AR fills + slot-projected teacher labels -> one npz.
+    chunk_lo/chunk_hi restrict which fiber range this call generates (fan-out:
+    disjoint workers share one shard_dir); a partial range returns after saving
+    its shards without concatenating the table.
     fill_len = how many context tokens the model fills (the searchable span);
     the remaining CTX - fill_len tokens are real dataset conditioning.
     corpus in {fineweb, edu}; skip discards leading spans so train never reuses
@@ -1131,20 +1134,24 @@ def make_data(m_fibers: int = M_FIBERS, r: int = R_FILLS, seed: int = 0,
     shard_dir = f"{ROOT}/shards_f{fill_len}_M{m_fibers}_R{r}{'_' + tag if tag else ''}"
     os.makedirs(shard_dir, exist_ok=True)
     chunk = 500
-    G_parts, P_parts = [], []
-    for lo in range(0, m_fibers, chunk):
+    hi = chunk_hi if chunk_hi else m_fibers
+    for lo in range(chunk_lo, hi, chunk):
         sp = f"{shard_dir}/s{lo}.npz"
         if os.path.exists(sp):
-            z = np.load(sp)
-            G_parts.append(z["G"]); P_parts.append(z["P"])
             continue
         Gc, Pc = _fill_and_label(model, PRE[lo:lo + chunk], fill_len, r, q,
                                  slot_ids, batch=128, seed=seed + lo)   # 4x saturation
         np.savez_compressed(sp + ".tmp.npz", G=Gc, P=Pc)
         os.replace(sp + ".tmp.npz", sp)
         vol.commit()
-        G_parts.append(Gc); P_parts.append(Pc)
-        print(f"[shard] {min(lo + chunk, m_fibers)}/{m_fibers} fibers", flush=True)
+        print(f"[shard] {min(lo + chunk, m_fibers)}/{m_fibers} fibers "
+              f"(worker {chunk_lo}:{hi})", flush=True)
+    if chunk_lo != 0 or (chunk_hi and chunk_hi < m_fibers):
+        return f"shards {chunk_lo}:{hi} of M{m_fibers} done"          # partial fan-out worker
+    G_parts, P_parts = [], []                                        # full run -> concat all
+    for lo in range(0, m_fibers, chunk):
+        z = np.load(f"{shard_dir}/s{lo}.npz")
+        G_parts.append(z["G"]); P_parts.append(z["P"])
     G = np.concatenate(G_parts)
     P = np.concatenate(P_parts)
     fiber_id = np.repeat(np.arange(m_fibers), r)
@@ -1158,6 +1165,36 @@ def make_data(m_fibers: int = M_FIBERS, r: int = R_FILLS, seed: int = 0,
     _record("data", started, {"m_fibers": m_fibers, "r": r})
     print(f"saved {out}", flush=True)
     return out
+
+
+@app.function(image=image, volumes={"/cache": vol}, timeout=14400, memory=8192)
+def gen_data(m_fibers: int = 16000, r: int = 2, fill_len: int = 61,
+             corpus: str = "edu", skip: int = 0, tag: str = "edu_tr",
+             n_shards: int = 8, seed: int = 0):
+    """FAN-OUT generation: N GPU workers fill disjoint fiber ranges into one
+    shared shard_dir in parallel (~linear speedup, hours->minutes), then a final
+    call concatenates the table.  Bytewise identical to a serial make_data --
+    PRE and slot_ids are deterministic given (corpus, skip, m_fibers, seed)."""
+    import os
+    vol.reload()
+    out = _table_path(fill_len, m_fibers, r, tag)
+    if os.path.exists(out):
+        return out
+    chunk = 500
+    n_chunks = (m_fibers + chunk - 1) // chunk
+    per = (n_chunks + n_shards - 1) // n_shards                       # chunks per worker
+    handles = []
+    for w in range(n_shards):
+        lo = w * per * chunk
+        hi = min((w + 1) * per * chunk, m_fibers)
+        if lo >= m_fibers:
+            break
+        handles.append(make_data.spawn(m_fibers, r, seed, fill_len, corpus, skip,
+                                       tag, lo, hi))
+    print(f"[gen-data] {len(handles)} workers x ~{per*chunk} fibers", flush=True)
+    for h in handles:
+        print(h.get(), flush=True)
+    return make_data.remote(m_fibers, r, seed, fill_len, corpus, skip, tag)   # concat
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
@@ -2855,6 +2892,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
                                 encoding if encoding != "all" else "lsh"))
     if stage == "relabel":
         print(relabel_hidden.remote(m_fibers, fill_len, r, span))
+    if stage == "gen-data":                                          # fan-out pre-generation
+        gen_data.remote(3000, r, fill_len, "edu", 0, "edu_test", 4)
+        print(gen_data.remote(m_fibers, r, fill_len, "edu", 9000, "edu_tr", 8))
     if stage == "stream-top1":
         print(stream_top1.remote(m_fibers, 3000, fill_len, r, target))
     if stage == "wandb-ping":
