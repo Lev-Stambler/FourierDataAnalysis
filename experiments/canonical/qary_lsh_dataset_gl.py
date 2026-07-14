@@ -56,6 +56,8 @@ M_FIBERS = 4000
 R_FILLS = 8
 V_SLOTS = 512
 B0, B_CAP = 64, 128  # LSH projection doubling range
+# strided back-offsets for the sensitivity profile (0 = last context token)
+SENS_POSITIONS = [0, 1, 2, 3, 4, 5, 6, 7, 11, 15, 23, 31, 47, 63, 95, 124]
 
 ROOT = "/cache/canonical/qary_lsh_gl"
 A10_PER_SECOND = 0.000306
@@ -743,6 +745,92 @@ def eval_slots(Wm, b, F, P, n):
     return {"kl": kl, "top1": top1}
 
 
+def fit_regression(F, Y, n, wd=1e-3, device=None):
+    """Weighted ridge regression Y ~ F @ W + b, closed form (no OTHER slot, no
+    softmax): solve (Fa^T diag(n) Fa + wd I) Wa = Fa^T diag(n) Y with Fa = [F | 1]
+    and the bias row unpenalized.  Returns {W (p, d), b (d,)}."""
+    import torch
+    dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    F = torch.as_tensor(np.asarray(F), dtype=torch.float64, device=dev)
+    Y = torch.as_tensor(np.asarray(Y), dtype=torch.float64, device=dev)
+    w = torch.as_tensor(np.asarray(n), dtype=torch.float64, device=dev)
+    D, p = F.shape
+    Fa = torch.cat([F, torch.ones((D, 1), dtype=torch.float64, device=dev)], dim=1)
+    Fw = Fa * w[:, None]
+    G = Fa.t() @ Fw
+    reg = wd * torch.eye(p + 1, dtype=torch.float64, device=dev)
+    reg[-1, -1] = 0.0                                             # never penalize the bias
+    Wa = torch.linalg.solve(G + reg, Fa.t() @ (w[:, None] * Y))
+    return {"W": Wa[:-1].to(torch.float32).cpu().numpy(),
+            "b": Wa[-1].to(torch.float32).cpu().numpy()}
+
+
+def unembed_top1(H, Wu, device=None):
+    """Full-vocab argmax token of each hidden vector H (D, d) under the frozen
+    unembedding Wu (q, d): argmax over q of H @ Wu^T.  No slots, no OTHER."""
+    import torch
+    dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    Ht = torch.as_tensor(np.asarray(H), dtype=torch.float32, device=dev)
+    Wt = torch.as_tensor(np.asarray(Wu), dtype=torch.float32, device=dev)
+    out = np.empty(len(Ht), dtype=np.int64)
+    for lo in range(0, len(Ht), 4096):                            # chunk the (D, q) logits
+        out[lo:lo + 4096] = (Ht[lo:lo + 4096] @ Wt.t()).argmax(1).cpu().numpy()
+    return out
+
+
+def code_decode(C, codes):
+    """Decode predicted B-bit codes C (D, B) to the token whose LSH code has the
+    smallest Hamming distance (codes (q, B) unique).  Exact-match hits the
+    packed lookup; the rest fall back to nearest bit-count."""
+    codes = np.asarray(codes, dtype=np.uint8)
+    hard = (np.asarray(C) > 0.5).astype(np.uint8)
+    packed_codes = np.packbits(codes, axis=1)
+    lut = {packed_codes[t].tobytes(): t for t in range(len(packed_codes))}  # code -> token
+    packed_hard = np.packbits(hard, axis=1)
+    out = np.array([lut.get(packed_hard[i].tobytes(), -1) for i in range(len(hard))],
+                   dtype=np.int64)
+    for i in np.flatnonzero(out < 0):                             # nearest by Hamming
+        out[i] = int((codes ^ hard[i]).sum(1).argmin())
+    return out
+
+
+def weighted_agreement(pred, tstar, n):
+    """Fiber-count-weighted top-1 agreement between predicted and teacher tokens."""
+    pred = np.asarray(pred); tstar = np.asarray(tstar); n = np.asarray(n, dtype=np.float64)
+    return float((n * (pred == tstar)).sum() / n.sum())
+
+
+# ------------------------------------------- sensitivity -> degree bounds core
+
+def _sens_from_groups(F):
+    """Per-fiber unbiased sensitivity estimates from g iid resamples of ONE
+    coordinate: F (M, g, V) slot dists -> (M,) float64 sample variances
+    (ddof=1) per slot, summed over slots.  Mean over fibers estimates
+    Sens_b = E_{x_{-b}}[Var_{a~nu_b}(f(x^{b<-a}))]."""
+    F = np.asarray(F, dtype=np.float64)
+    mu = F.mean(axis=1, keepdims=True)
+    return ((F - mu) ** 2).sum(axis=(1, 2)) / (F.shape[1] - 1)
+
+
+def _sens_report(positions, sens, var_tot, eps_rels=(0.5, 0.25, 0.1)):
+    """Degree bounds from a measured sensitivity profile (thm:learning-low-
+    degree: d >= 4*S/eps).  S_measured sums the measured back-offsets (a lower
+    bound); S_interp densifies the strided profile by linear interpolation
+    over [0, max(positions)].  Reported per RELATIVE eps: eps = eps_rel *
+    var_tot, so d(eps_rel) = 4 * d_eff / eps_rel with d_eff = S / var_tot."""
+    o = np.argsort(positions)
+    pos = np.asarray(positions, dtype=np.int64)[o]
+    s = np.asarray(sens, dtype=np.float64)[o]
+    S_meas = float(s.sum())
+    S_int = float(np.interp(np.arange(pos.max() + 1), pos, s).sum())
+    out = {"positions": pos.tolist(), "sens": s.tolist(), "var_tot": float(var_tot),
+           "S_measured": S_meas, "S_interp": S_int,
+           "d_eff_measured": S_meas / var_tot, "d_eff_interp": S_int / var_tot}
+    for tag, S in (("measured", S_meas), ("interp", S_int)):
+        out[f"d_eps_{tag}"] = {str(e): 4.0 * S / (e * var_tot) for e in eps_rels}
+    return out
+
+
 # ------------------------------------------------------------------- model side
 
 def _load_teacher(device="cuda"):
@@ -883,6 +971,67 @@ def _fork_and_label(model, PRE_ext, w, G_branches, q, slot_ids, batch_fibers=48,
         if (lo // batch_fibers) % 10 == 0:
             print(f"[fork] {min(lo + bf, M)}/{M} fibers x{G_branches}", flush=True)
     return Gt, P
+
+
+def _slot_project(term, slot_t):
+    """Slot-projected rows of a full-vocab softmax; slot 0 = leftover mass."""
+    picked = term[:, slot_t].cpu().numpy()
+    P = np.empty((len(picked), len(slot_t) + 1), dtype=np.float32)
+    P[:, 1:] = picked
+    P[:, 0] = np.maximum(1.0 - picked.sum(1), 0.0)
+    return P
+
+
+def _resample_and_label(model, spans, b, g, q, slot_ids, resample="conditional",
+                        batch_fibers=16, seed=0, selfcheck=True):
+    """Sensitivity kernel: substitute the token at back-offset ``b`` (position
+    L-1-b) with g iid draws from nu_b, teacher-force the REAL suffix, and read
+    the terminal slot distribution.  nu_b is the model's own conditional at
+    the fork point (resample="conditional") or uniform over the real slot
+    tokens ("uniform").  Cache is forked via reorder_cache exactly as in
+    ``_fork_and_label``; the fixed suffix is fed in ONE multi-token forward
+    and self-checked against a fresh full forward per position.
+    spans (M, L) int64 -> F (M, g, V) float32."""
+    import torch
+    M, L = spans.shape
+    cut = L - 1 - b                      # substituted position; prefix = [:cut]
+    rng = torch.Generator(device="cuda").manual_seed(seed)
+    slot_t = torch.tensor(slot_ids[1:], dtype=torch.long, device="cuda")
+    F = np.empty((M, g, len(slot_ids)), dtype=np.float32)
+    for lo in range(0, M, batch_fibers):
+        sp = torch.tensor(spans[lo:lo + batch_fibers], dtype=torch.long,
+                          device="cuda")
+        bf = sp.shape[0]
+        with torch.inference_mode():
+            out = model(input_ids=sp[:, :cut], use_cache=True, return_dict=True,
+                        logits_to_keep=1)
+            past, logits = out.past_key_values, out.logits[:, -1, :]
+            if resample == "conditional":
+                probs = torch.softmax(logits[:, :q].float(), dim=-1)
+                nxt = torch.multinomial(probs, g, replacement=True, generator=rng)
+            else:
+                nxt = slot_t[torch.randint(len(slot_t), (bf, g), generator=rng,
+                                           device="cuda")]
+            beam = torch.arange(bf, device="cuda").repeat_interleave(g)
+            past.reorder_cache(beam)                                 # (bf*g, ...)
+            step = nxt.reshape(-1, 1)
+            if b > 0:                    # fixed real suffix, one multi-token pass
+                step = torch.cat([step, sp[:, cut + 1:].repeat_interleave(g, 0)], 1)
+            out = model(input_ids=step, past_key_values=past, use_cache=True,
+                        return_dict=True, logits_to_keep=1)
+            term = torch.softmax(out.logits[:, -1, :q].float(), dim=-1)
+            if selfcheck and lo == 0:
+                seq = sp[0].clone(); seq[cut] = nxt[0, 0]
+                ref = model(input_ids=seq[None], return_dict=True,
+                            logits_to_keep=1).logits[0, -1, :q]
+                err = float((torch.softmax(ref.float(), -1)[slot_t]
+                             - term[0, slot_t]).abs().max())
+                assert err < 1e-2, f"fork/suffix mismatch at b={b} (max err {err})"
+                print(f"[sens] b={b} self-check ok ({err:.2e})", flush=True)
+        F[lo:lo + bf] = _slot_project(term, slot_t).reshape(bf, g, -1)
+        if (lo // batch_fibers) % 10 == 0:
+            print(f"[sens] b={b} {min(lo + bf, M)}/{M} fibers x{g}", flush=True)
+    return F
 
 
 # ------------------------------------------------------------------ modal stages
@@ -1414,6 +1563,99 @@ def stream_fit(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
         run.finish()
     _write_json(f"{ROOT}/summary_streamfit_{encoding}_M{m_train}.json", out)
     _record("stream-fit", started, {"m_train": m_train})
+    return out
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600,
+              memory=32768, secrets=WANDB_SECRET)
+def sensitivity(m_fibers: int = 1000, g: int = 16, resample: str = "conditional",
+                corpus: str = "fineweb", positions: str = "", seed: int = 0,
+                batch_fibers: int = 16, fill_len: int = 61):
+    """DEGREE BOUNDS VIA SENSITIVITY (prelims.typ): measure the per-position
+    sensitivity profile Sens_b of f = the teacher's terminal slot distribution
+    over REAL corpus spans by resampling one token at back-offset b (suffix
+    teacher-forced), sum to total sensitivity S, and report the implied degree
+    bound d(eps) = 4*S/eps against the fitted degree ladder."""
+    import glob, os, time
+    import torch
+    vol.reload()
+    pos = sorted(int(p) for p in positions.split(",")) if positions else SENS_POSITIONS
+    assert resample in ("conditional", "uniform")
+    assert 0 <= min(pos) and max(pos) <= CTX - 2
+    _budget("sensitivity", 2.0)
+    started = time.time()
+    model, tok, q = _load_teacher()
+    spans = _stream_spans(tok, n_spans=m_fibers, corpus=CORPORA[corpus])
+    # slot alphabet: reuse an existing fiber table's for comparability, else
+    # recompute with the make_data recipe (top mass of the mean terminal dist)
+    hits = sorted(glob.glob(f"{ROOT}/glds_ctx{CTX}_f{fill_len}_M*_R{R_FILLS}.npz"))
+    if hits:
+        slot_ids = np.load(hits[-1])["slot_ids"]
+        print(f"[sens] slot_ids from {hits[-1]}", flush=True)
+    else:
+        sample = torch.tensor(spans[:256], dtype=torch.long, device="cuda")
+        mass = np.zeros(q)
+        for lo in range(0, len(sample), 32):
+            mass += _terminal_probs(model, sample[lo:lo + 32], q).sum(0).cpu().numpy()
+        slot_ids = np.concatenate([[-1], np.argsort(-mass)[: V_SLOTS - 1]]).astype(np.int64)
+    # baseline pass on unmodified spans: P0 anchors Var_tot (sum over slots,
+    # matching the Sens reduction)
+    slot_t = torch.tensor(slot_ids[1:], dtype=torch.long, device="cuda")
+    sp_all = torch.tensor(spans, dtype=torch.long, device="cuda")
+    P0 = np.empty((m_fibers, len(slot_ids)), dtype=np.float32)
+    for lo in range(0, m_fibers, 32):
+        P0[lo:lo + 32] = _slot_project(_terminal_probs(model, sp_all[lo:lo + 32], q),
+                                       slot_t)
+    var_tot = float(P0.astype(np.float64).var(0, ddof=1).sum())
+    print(f"[sens] var_tot {var_tot:.5f} over {m_fibers} spans", flush=True)
+    run = _wandb_run(f"sens-{resample}-{corpus}-M{m_fibers}",
+                     {"model": MODEL_ID, "corpus": corpus, "resample": resample,
+                      "m_fibers": m_fibers, "g": g, "positions": pos})
+    shard_dir = f"{ROOT}/sens_shards_{resample}_{corpus}_M{m_fibers}_g{g}"
+    os.makedirs(shard_dir, exist_ok=True)
+    sens = np.empty(len(pos)); se = np.empty(len(pos))
+    sens_fiber = np.empty((len(pos), m_fibers))
+    cum = 0.0
+    for i, b in enumerate(pos):
+        sp = f"{shard_dir}/b{b}.npz"
+        if os.path.exists(sp):
+            sf = np.load(sp)["sens_fiber"]
+        else:
+            F = _resample_and_label(model, spans, b, g, q, slot_ids, resample,
+                                    batch_fibers, seed=seed + 13 * b)
+            sf = _sens_from_groups(F)
+            np.savez_compressed(sp + ".tmp.npz", sens_fiber=sf)
+            os.replace(sp + ".tmp.npz", sp)
+            vol.commit()
+        sens_fiber[i], sens[i] = sf, sf.mean()
+        se[i] = sf.std(ddof=1) / math.sqrt(len(sf))
+        cum += sens[i]
+        print(f"[sens] b={b} Sens={sens[i]:.5f} +- {se[i]:.5f} cum={cum:.5f}",
+              flush=True)
+        if run is not None:
+            run.log({"back_offset": b, "sens_b": sens[i], "sens_se": se[i],
+                     "sens_cum": cum})
+    report = _sens_report(pos, sens, var_tot)
+    report["se"] = se[np.argsort(pos)].tolist()
+    out = dict({"model": MODEL_ID, "corpus": corpus, "resample": resample,
+                "m_fibers": m_fibers, "g": g}, **report)
+    out["comparison"] = {
+        "note": "d counts TOKEN coordinates, same granularity as the ladder's "
+                "per-token degree; ladder KLs are nats, S/var_tot are slot-L2",
+        "fineweb_deg12_TEST_kl": {"m2000": 1.4530, "m8000": 1.1034},
+        "gl_tree_refit": _read_json(f"{ROOT}/summary_gltree_refit_lsh_f{fill_len}.json", {}),
+    }
+    np.savez_compressed(f"{ROOT}/sensitivity_{resample}_{corpus}_M{m_fibers}.npz",
+                        positions=np.asarray(pos), sens=sens, se=se,
+                        sens_fiber=sens_fiber, P0=P0, var_tot=var_tot,
+                        slot_ids=slot_ids)
+    _write_json(f"{ROOT}/sensitivity_{resample}_{corpus}_M{m_fibers}.json", out)
+    if run is not None:
+        run.summary.update({k: v for k, v in out.items() if k != "comparison"})
+        run.finish()
+    _record("sensitivity", started, {"m_fibers": m_fibers, "g": g,
+                                     "resample": resample})
+    print("[sens] " + json.dumps(out), flush=True)
     return out
 
 
@@ -2415,7 +2657,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          steps: int = 600,
          train_path: str = "/cache/qwen35_argl/train_n20000.pt",
          interactions: int = 0, top_pairs: int = 1000,
-         g: int = 24, p_back: int = 0, depth: int = 6):
+         g: int = 24, p_back: int = 0, depth: int = 6,
+         resample: str = "conditional", corpus: str = "fineweb",
+         positions: str = ""):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -2457,6 +2701,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
                                 encoding if encoding != "all" else "lsh"))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
+    if stage == "sensitivity":
+        print(sensitivity.remote(m_fibers=m_fibers, g=g, resample=resample,
+                                 corpus=corpus, positions=positions))
     if stage == "oracle-sweep":
         # native deg-1 at EVERY filled token position (0=newest .. fill_len-1),
         # one container per level; the fast reorder_cache fork keeps each cheap

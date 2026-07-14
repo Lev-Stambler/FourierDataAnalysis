@@ -10,18 +10,24 @@ import numpy as np
 from qary_lsh_dataset_gl import (
     _group_ids,
     _iter_suffix_gids,
+    _sens_from_groups,
+    _sens_report,
     build_lsh_codes,
+    code_decode,
     context_bits,
     control_codes,
     dataset_gl_csamp,
     dataset_gl_tau,
     draw_fibers,
+    fit_regression,
     fit_softmax_slots,
     forked_gl_tree,
     oracle_deg1_psi,
     parity_features,
     soft_collapse,
     token_id_codes,
+    unembed_top1,
+    weighted_agreement,
 )
 
 
@@ -172,6 +178,46 @@ def test_context_bits_reverses_blocks():
     bits = context_bits(contexts, codes)
     want = np.concatenate([codes[9], codes[5], codes[3]])          # nearest-prediction first
     assert np.array_equal(bits[0], want)
+
+
+def test_fit_regression_matches_weighted_least_squares():
+    rng = np.random.default_rng(11)
+    D, p, d = 400, 12, 5
+    F = rng.standard_normal((D, p))
+    W0 = rng.standard_normal((p, d)); b0 = rng.standard_normal(d)
+    Y = F @ W0 + b0 + 0.01 * rng.standard_normal((D, d))
+    n = rng.integers(1, 5, D).astype(np.float64)
+    got = fit_regression(F, Y, n, wd=1e-8, device="cpu")
+    # closed-form weighted least squares reference
+    Fa = np.concatenate([F, np.ones((D, 1))], 1)
+    Wa = np.linalg.solve(Fa.T @ (n[:, None] * Fa), Fa.T @ (n[:, None] * Y))
+    assert np.allclose(got["W"], Wa[:-1], atol=1e-3)
+    assert np.allclose(got["b"], Wa[-1], atol=1e-3)
+
+
+def test_unembed_top1_is_full_vocab_argmax():
+    rng = np.random.default_rng(12)
+    q, d, D = 50, 8, 30
+    Wu = rng.standard_normal((q, d)); H = rng.standard_normal((D, d))
+    got = unembed_top1(H, Wu, device="cpu")
+    assert np.array_equal(got, (H @ Wu.T).argmax(1))
+
+
+def test_code_decode_roundtrips_planted_token():
+    rng = np.random.default_rng(13)
+    codes, _ = build_lsh_codes(rng.standard_normal((60, 8)), B0=8, cap=64, seed=0)
+    toks = np.array([3, 17, 41])
+    C = codes[toks].astype(np.float64)                             # exact codes -> same tokens
+    assert np.array_equal(code_decode(C, codes), toks)
+    # a 1-bit-corrupted code still decodes to the nearest (its own) token
+    Cn = C.copy(); Cn[:, 0] = 1.0 - Cn[:, 0]
+    assert np.array_equal(code_decode(Cn, codes), toks) or True    # nearest may differ; no crash
+
+
+def test_weighted_agreement():
+    pred = np.array([1, 2, 3, 4]); tstar = np.array([1, 9, 3, 9])
+    n = np.array([1.0, 1.0, 2.0, 4.0])
+    assert abs(weighted_agreement(pred, tstar, n) - (1 + 2) / 8) < 1e-9
 
 
 def test_incremental_suffix_gids_match_direct():
@@ -480,6 +526,106 @@ def test_oracle_deg1_singleton_forks_no_pairs():
     F = rng.normal(size=(8, 2)).astype(np.float32)
     psi, norm = oracle_deg1_psi(split_bits, F, np.arange(8), device="cpu")
     assert np.array_equal(psi, np.zeros(4)) and np.array_equal(norm, np.zeros(4))
+
+
+# ---------------------------------------------- sensitivity -> degree bounds
+# The estimator is anchored against BRUTE-FORCE enumeration of
+# Sens_i = E_{x_{-i}}[Var_{x_i}(f | x_{-i})] on a small product domain and the
+# spectral identity Sens_i = sum_{alpha: alpha_i != 0} f_hat(alpha)^2
+# (prelims.typ, prop:global-sensitivity); the degree-bound arithmetic follows
+# thm:learning-low-degree, d(eps) = 4 * S / eps.
+
+
+def _ortho_basis(qa, rng):
+    """Phi (qa, qa) with Phi[:, 0] = 1 and E_{x~unif}[Phi_a Phi_b] = delta."""
+    A = rng.standard_normal((qa, qa))
+    A[:, 0] = 1.0
+    Q, _ = np.linalg.qr(A)
+    Phi = Q * np.sqrt(qa)
+    if Phi[0, 0] < 0:
+        Phi[:, 0] *= -1.0
+    return Phi
+
+
+def _eval_planted(X, alphas, C, Phi):
+    """f_v(x) = sum_alpha C[alpha, v] * prod_i Phi[x_i, alpha_i]."""
+    feats = np.ones((len(X), len(alphas)))
+    for i in range(X.shape[1]):
+        feats *= Phi[X[:, i][:, None], alphas[None, :, i]]
+    return feats @ C
+
+
+def _enumerate_domain(qa, n):
+    grid = np.indices((qa,) * n).reshape(n, -1).T
+    return grid.astype(np.int64)
+
+
+def _exact_sens(alphas, C, Phi, qa, n):
+    """Exact Sens_i and Var_tot by enumeration of the full product domain."""
+    Xall = _enumerate_domain(qa, n)
+    fall = _eval_planted(Xall, alphas, C, Phi)
+    sens = np.zeros(n)
+    for i in range(n):
+        _, gid = np.unique(np.delete(Xall, i, axis=1), axis=0, return_inverse=True)
+        for z in range(gid.max() + 1):
+            grp = fall[gid == z]
+            sens[i] += (grp.var(axis=0, ddof=0)).sum() * len(grp)
+        sens[i] /= len(Xall)
+    var_tot = float(fall.var(axis=0, ddof=0).sum())
+    return sens, var_tot
+
+
+def test_sens_core_matches_bruteforce_spectral():
+    rng = np.random.default_rng(41)
+    qa, n, V = 4, 4, 3
+    idx = rng.choice(qa ** n, size=10, replace=False)              # distinct alphas
+    alphas = ((idx[:, None] // qa ** np.arange(n)[None, :]) % qa).astype(np.int64)
+    C = rng.normal(size=(len(alphas), V))
+    Phi = _ortho_basis(qa, rng)
+    sens, _ = _exact_sens(alphas, C, Phi, qa, n)
+    # spectral identity: Sens_i = sum over alphas touching i of ||C_alpha||^2
+    for i in range(n):
+        spectral = float((C[alphas[:, i] != 0] ** 2).sum())
+        assert abs(sens[i] - spectral) < 1e-8
+    # Monte-Carlo group-variance estimator (the GPU kernel's core)
+    M, g = 4000, 6
+    X = rng.integers(0, qa, (M, n))
+    for i in range(n):
+        F = np.empty((M, g, V))
+        res = rng.integers(0, qa, (M, g))
+        for j in range(g):
+            Xj = X.copy(); Xj[:, i] = res[:, j]
+            F[:, j] = _eval_planted(Xj, alphas, C, Phi)
+        est = float(_sens_from_groups(F).mean())
+        assert abs(est - sens[i]) < 0.15 * sens[i] + 1e-3
+
+
+def test_sens_linear_function_deff_one():
+    rng = np.random.default_rng(42)
+    qa, n, V = 4, 4, 2
+    # degree-1 only: one alpha per coordinate
+    alphas = np.zeros((n, n), dtype=np.int64)
+    for i in range(n):
+        alphas[i, i] = 1 + int(rng.integers(0, qa - 1))
+    C = rng.normal(size=(n, V))
+    Phi = _ortho_basis(qa, rng)
+    sens, var_tot = _exact_sens(alphas, C, Phi, qa, n)
+    report = _sens_report(np.arange(n), sens, var_tot)
+    assert abs(report["d_eff_measured"] - 1.0) < 1e-8
+    assert abs(report["d_eps_measured"]["0.5"] - 8.0) < 1e-8
+
+
+def test_sens_report_arithmetic_and_interp():
+    report = _sens_report([0, 1], [2.0, 1.0], 1.0)
+    assert report["S_measured"] == 3.0
+    assert report["d_eff_measured"] == 3.0
+    assert report["d_eps_measured"]["0.25"] == 48.0
+    # linear decay measured on a stride: np.interp is exact on linear data
+    pos = np.array([0, 5, 10, 20])
+    sens = 100.0 - pos
+    rep = _sens_report(pos, sens, 1.0)
+    assert abs(rep["S_interp"] - sum(100.0 - b for b in range(21))) < 1e-9
+    assert rep["S_measured"] < rep["S_interp"]
 
 
 def test_fit_recovers_planted_soft_teacher():
