@@ -900,7 +900,8 @@ def learn_fourier_masks(bits, Hs, w, vm, profile=(512, 512, 256), lam=0.1,
     history = [(0, best)]
     for t in range(steps):
         T = temp[0] + (temp[1] - temp[0]) * t / max(steps - 1, 1)
-        bi = tr[torch.randint(len(tr), (min(batch, len(tr)),), generator=gen)]
+        bi = tr[torch.randint(len(tr), (min(batch, len(tr)),),
+                              generator=gen).to(device)]
         F = _ste_features(X[bi], logits, T)
         pred = F @ W + b
         mse = (wt[bi][:, None] * (pred - Y[bi]) ** 2).sum() / (wt[bi].sum() * dY)
@@ -963,7 +964,8 @@ def fit_mlp_hidden(bits, Hs, w, vm, bits_te, hidden=2048, steps=3000, lr=1e-3,
     best = val_mse()
     best_state = {k: v.detach().clone() for k, v in net.state_dict().items()}
     for t in range(steps):
-        bi = tr[torch.randint(len(tr), (min(batch, len(tr)),), generator=gen)]
+        bi = tr[torch.randint(len(tr), (min(batch, len(tr)),),
+                              generator=gen).to(device)]
         loss = (wt[bi][:, None] * (net(X[bi]) - Y[bi]) ** 2).sum() / (wt[bi].sum() * dY)
         opt.zero_grad(set_to_none=True)
         loss.backward()
