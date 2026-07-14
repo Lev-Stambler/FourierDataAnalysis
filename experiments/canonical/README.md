@@ -66,6 +66,36 @@ mass plateaus across all 128 positions. For the top-1 program the lever is conte
 window degree. Artifacts: `sensitivity_top1_conditional_fineweb_M1000.{json,npz}`; W&B run
 `sens-top1-conditional-fineweb-M1000`.
 
+## Learned Fourier features — TOP-1 target (2026-07-14, stage `dl-fourier`)
+
+LEARN the parities instead of GL-searching them: an explicit degree profile (512 deg-1 +
+512 deg-2 + 256 deg-3) of straight-through-selected bit products, linear head on the
+standardized hidden target, activation-decorrelation diversity term (`learn_fourier_masks`;
+STE forward is exactly the hard parity of the argmax picks, test-pinned). Evaluated 4 ways
+per encoding on held-out full-vocab top-1 (M16k×R8 = 128k contexts, fill61, sanity 0.977):
+
+| encoding | e2e | **ridge-refit** | random same-profile | MLP ceiling |
+|---|---|---|---|---|
+| lsh  | 0.152 | **0.160** | 0.096 | 0.167 |
+| ctrl | 0.136 | **0.142** | 0.075 | 0.135 |
+
+- **Gradient descent beats the GL tree on the same data**: lsh 0.160 vs the tree's 0.141
+  (and edges the deg-1 top-512 anchors' 0.158, now with 1,275 multi-degree chars).
+  Learning buys 1.7× over random masks of the SAME degree profile (0.160 vs 0.096).
+- **The learned parities nearly saturate the bits**: an unconstrained 2×2048 GELU MLP on
+  the identical inputs reaches only 0.167 — the sparse interpretable model is within 4%
+  relative of ANYTHING representable from these 4,087 bits at this data size. ≥0.9 top-1
+  is therefore a context-coverage/data problem (cf. sensitivity: d_eff ≈ 5.4, flip mass
+  across all 128 positions), not a feature-learning problem.
+- **The encoding gap survives the strongest learner**: lsh > ctrl for the learned parities
+  (+13% rel) AND for the fully-trained MLP (0.167 vs 0.135, +24%) — on ctrl codes the MLP
+  overfits (val_mse 0.96 vs lsh 0.86) and even loses to the ctrl parity model.
+- Degree discipline held: 1 of 1,280 features collapsed degree (duplicate pick); dedupe
+  removed ~5. Artifacts: `dlfourier_masks_{lsh,ctrl}_M16000_K512_512_256.npz`,
+  `summary_dlfourier_M16000_K512_512_256.json`; W&B `dlfourier-{lsh,ctrl}-M16000-K512+512+256`.
+- Launch: `setsid nohup uv run modal run --detach qary_lsh_dataset_gl.py --stage dl-fourier
+  --fill-len 61 --m-fibers 16000 --r 8 --k1 512 --k2 512 --k3 256 --lam 0.1 --steps 3000 &`
+
 ## Results (2026-07-13; see sections/experiments.typ `<sec:whlsh-canonical>`)
 
 0. **SPARSE RECOVERY WORKS, TWO DEGREES DEEP — clean-test verified** (`spectrum-deg1`,
