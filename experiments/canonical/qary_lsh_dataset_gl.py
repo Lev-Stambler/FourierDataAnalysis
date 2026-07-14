@@ -782,19 +782,17 @@ def unembed_top1(H, Wu, device=None):
     return out
 
 
-def code_decode(C, codes):
-    """Decode predicted B-bit codes C (D, B) to the token whose LSH code has the
-    smallest Hamming distance (codes (q, B) unique).  Exact-match hits the
-    packed lookup; the rest fall back to nearest bit-count."""
-    codes = np.asarray(codes, dtype=np.uint8)
-    hard = (np.asarray(C) > 0.5).astype(np.uint8)
-    packed_codes = np.packbits(codes, axis=1)
-    lut = {packed_codes[t].tobytes(): t for t in range(len(packed_codes))}  # code -> token
-    packed_hard = np.packbits(hard, axis=1)
-    out = np.array([lut.get(packed_hard[i].tobytes(), -1) for i in range(len(hard))],
-                   dtype=np.int64)
-    for i in np.flatnonzero(out < 0):                             # nearest by Hamming
-        out[i] = int((codes ^ hard[i]).sum(1).argmin())
+def code_decode(C, codes, device=None):
+    """Decode predicted B-bit codes C (D, B) to the nearest-Hamming token
+    (codes (q, B)).  Hamming(hard, code) = (B - signs.dot)/2, so nearest token =
+    argmax of the sign-correlation -- one chunked GPU matmul, no Python loop."""
+    import torch
+    dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    sp = torch.as_tensor(2.0 * (np.asarray(C) > 0.5) - 1.0, dtype=torch.float32, device=dev)
+    sc = torch.as_tensor(2.0 * np.asarray(codes, dtype=np.float32) - 1.0, device=dev)
+    out = np.empty(len(sp), dtype=np.int64)
+    for lo in range(0, len(sp), 4096):
+        out[lo:lo + 4096] = (sp[lo:lo + 4096] @ sc.t()).argmax(1).cpu().numpy()
     return out
 
 
