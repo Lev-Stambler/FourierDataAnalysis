@@ -88,6 +88,21 @@ def _wandb_run(name, config):
         return None
 
 
+@app.function(image=image, volumes={"/cache": vol}, timeout=300, secrets=WANDB_SECRET)
+def wandb_ping():
+    """Create the W&B project now and print its URL/entity (before the long
+    run logs at ~2h).  Seeds the known FineWeb deg-1+2 scaling points."""
+    import wandb
+    run = wandb.init(project="fda-canonical-qary-lsh", name="scaling-ref",
+                     config={"note": "reference FineWeb deg1+2 scaling"}, reinit=True)
+    for m, tr, te in [(2000, 0.5202, 1.4530), (8000, 0.7865, 1.1034)]:
+        run.log({"m_train": m, "TRAIN_kl": tr, "TEST_kl": te})
+    url = run.url
+    run.finish()
+    print(f"[wandb] project URL: {url}", flush=True)
+    return url
+
+
 # ------------------------------------------------------------------ code tables
 
 def _tie_break(codes):
@@ -2440,6 +2455,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "stream-fit":
         print(stream_fit.remote(m_fibers, 3000, fill_len, R_FILLS, 3e-4,
                                 encoding if encoding != "all" else "lsh"))
+    if stage == "wandb-ping":
+        print(wandb_ping.remote())
     if stage == "oracle-sweep":
         # native deg-1 at EVERY filled token position (0=newest .. fill_len-1),
         # one container per level; the fast reorder_cache fork keeps each cheap
