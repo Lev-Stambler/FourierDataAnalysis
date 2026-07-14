@@ -11,7 +11,9 @@ from qary_lsh_dataset_gl import (
     _group_ids,
     _iter_suffix_gids,
     _sens_from_groups,
+    _sens_from_top1,
     _sens_report,
+    _top1_variance,
     build_lsh_codes,
     code_decode,
     context_bits,
@@ -520,6 +522,30 @@ def test_forked_gl_tree_empty_when_no_signal():
     assert len(nonempty) == 0
 
 
+def test_forked_gl_tree_multidim_hidden_target():
+    # hidden-state-like MULTI-DIM target (8-d): deg-2 char {a,b} heavy in one dim,
+    # its prefix {a} heavy in another -> the tree recovers both across degrees,
+    # proving forked_gl_tree works on a non-slot vector target (the real top-1 run)
+    rng = np.random.default_rng(33)
+    B, depth, n_fib, G, d = 2, 2, 60, 12, 8
+    a, b = 0, 2                                                    # block0-bit0, block1-bit0
+    base = rng.integers(0, 2, (n_fib, depth * B)).astype(np.uint8)
+    levels = []
+    for j in range(depth):
+        fib = np.repeat(np.arange(n_fib), G)
+        full = base[fib].copy()
+        full[:, :(j + 1) * B] = rng.integers(0, 2, (len(fib), (j + 1) * B)).astype(np.uint8)
+        sa = 1.0 - 2.0 * full[:, a]; sb = 1.0 - 2.0 * full[:, b]
+        F = np.zeros((len(fib), d), np.float32)
+        F[:, 2] = 0.7 * sa                                        # deg-1 {a} in dim 2
+        if j >= 1:
+            F[:, 5] = 0.7 * sa * sb                               # deg-2 {a,b} in dim 5
+        levels.append((full[:, :(j + 1) * B], F, fib))
+    got = forked_gl_tree(levels, B=B, tau=0.35, max_width=64, device="cpu")
+    masks = {tuple(np.flatnonzero(m).tolist()) for m in got["masks"]}
+    assert (a,) in masks and (a, b) in masks
+
+
 def test_oracle_deg1_singleton_forks_no_pairs():
     rng = np.random.default_rng(23)
     split_bits = rng.integers(0, 2, (8, 4)).astype(np.uint8)
@@ -613,6 +639,26 @@ def test_sens_linear_function_deff_one():
     report = _sens_report(np.arange(n), sens, var_tot)
     assert abs(report["d_eff_measured"] - 1.0) < 1e-8
     assert abs(report["d_eps_measured"]["0.5"] - 8.0) < 1e-8
+
+
+def test_sens_top1_matches_onehot_expansion():
+    # the top-1 (full-vocab argmax) sensitivity core must equal the generic
+    # group-variance estimator applied to the explicit one-hot vectors
+    rng = np.random.default_rng(43)
+    M, g, V = 200, 6, 9
+    T = rng.integers(0, V, (M, g))
+    onehot = np.zeros((M, g, V))
+    onehot[np.arange(M)[:, None], np.arange(g)[None, :], T] = 1.0
+    assert np.allclose(_sens_from_top1(T), _sens_from_groups(onehot), atol=1e-12)
+    # interpretations: all-same rows -> 0; all-distinct rows -> g/(g-1)*(1-1/g)=1
+    same = np.full((3, g), 7)
+    assert np.allclose(_sens_from_top1(same), 0.0)
+    distinct = np.tile(np.arange(g), (3, 1))
+    assert np.allclose(_sens_from_top1(distinct), 1.0)
+    # baseline variance: same estimator across fibers, one draw each
+    T0 = rng.integers(0, V, 500)
+    oh0 = np.zeros((1, 500, V)); oh0[0, np.arange(500), T0] = 1.0
+    assert abs(_top1_variance(T0) - float(_sens_from_groups(oh0)[0])) < 1e-12
 
 
 def test_sens_report_arithmetic_and_interp():

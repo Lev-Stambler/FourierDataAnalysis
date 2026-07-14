@@ -814,6 +814,29 @@ def _sens_from_groups(F):
     return ((F - mu) ** 2).sum(axis=(1, 2)) / (F.shape[1] - 1)
 
 
+def _sens_from_top1(T):
+    """Top-1 sensitivity core (FULL-VOCAB argmax -- deliberately NO slot
+    projection anywhere in the sensitivity arc; see stream_top1).  T (M, g)
+    int argmax ids from g iid resamples of one coordinate -> (M,) float64,
+    the ddof-1 group variance of the ONE-HOT top-1 function:
+    g/(g-1) * (1 - sum_t phat_t^2) -- the unbiased probability that two
+    independent resamples flip the teacher's top-1 token."""
+    T = np.asarray(T)
+    g = T.shape[1]
+    eq = (T[:, :, None] == T[:, None, :]).sum(axis=(1, 2))
+    return (g / (g - 1)) * (1.0 - eq / float(g * g))
+
+
+def _top1_variance(T0):
+    """Total variance of the one-hot top-1 function across fibers (same
+    estimator as _sens_from_top1, one draw per fiber): the bias-corrected
+    probability that two random contexts disagree on the top-1 token."""
+    T0 = np.asarray(T0).ravel()
+    M = len(T0)
+    counts = np.bincount(T0)
+    return (M / (M - 1)) * (1.0 - float((counts.astype(np.float64) ** 2).sum()) / (M * M))
+
+
 def _sens_report(positions, sens, var_tot, eps_rels=(0.5, 0.25, 0.1)):
     """Degree bounds from a measured sensitivity profile (thm:learning-low-
     degree: d >= 4*S/eps).  S_measured sums the measured back-offsets (a lower
@@ -949,13 +972,22 @@ def _fork_and_label(model, PRE_ext, w, G_branches, q, slot_ids, batch_fibers=48,
     tokens from the cached state via the official ``Cache.batch_repeat_interleave``.
     ~G x less prefix compute than re-forwarding PRE_ext per branch (the whole
     point of a fork).  Rows come out fiber-major, branch-minor -- matching
-    ``np.repeat(arange(M), G_branches)``.  Returns (G_toks (M*G, w), P (M*G, V))."""
+    ``np.repeat(arange(M), G_branches)``.  Returns (G_toks (M*G, w), P (M*G, V),
+    H (M*G, d_model) fp16) -- H is the teacher pre-LM-head hidden at the
+    prediction point, grabbed free via a hook on the terminal forward."""
     import torch
     rng = torch.Generator(device="cuda").manual_seed(seed)
     M = len(PRE_ext)
     Gt = np.empty((M * G_branches, w), dtype=np.int64)
     P = np.empty((M * G_branches, len(slot_ids)), dtype=np.float32)
     slot_t = torch.tensor(slot_ids[1:], dtype=torch.long, device="cuda")
+    lm = model.get_output_embeddings()
+    grab = {}
+
+    def _hook(_m, inp, _out):
+        grab["h"] = inp[0].detach()
+    handle = lm.register_forward_hook(_hook)
+    H = None
     for lo in range(0, M, batch_fibers):
         pre = torch.tensor(PRE_ext[lo:lo + batch_fibers], dtype=torch.long,
                            device="cuda")
@@ -979,7 +1011,12 @@ def _fork_and_label(model, PRE_ext, w, G_branches, q, slot_ids, batch_fibers=48,
                             return_dict=True, logits_to_keep=1)
                 past, logits = out.past_key_values, out.logits[:, -1, :]
             term = torch.softmax(logits[:, :q].float(), dim=-1)
+            hb = grab["h"]                                                # capture BEFORE
+            hb = (hb[:, -1, :] if hb.dim() == 3 else hb).float()         # the self-check
         toks = torch.cat(made, dim=1).cpu().numpy()                      # (bf*G, w)
+        if H is None:
+            H = np.empty((M * G_branches, hb.shape[1]), dtype=np.float16)
+        H[lo * G_branches:lo * G_branches + bf * G_branches] = hb.cpu().numpy().astype(np.float16)
         if selfcheck and lo == 0:
             # fail loudly if the forked cache does not reproduce a fresh forward:
             # branch 0 of fiber 0 must match re-forwarding [PRE_ext[0], its fills]
@@ -999,34 +1036,27 @@ def _fork_and_label(model, PRE_ext, w, G_branches, q, slot_ids, batch_fibers=48,
         P[base:base + bf * G_branches, 0] = np.maximum(1.0 - picked.sum(1), 0.0)
         if (lo // batch_fibers) % 10 == 0:
             print(f"[fork] {min(lo + bf, M)}/{M} fibers x{G_branches}", flush=True)
-    return Gt, P
+    handle.remove()
+    return Gt, P, H
 
 
-def _slot_project(term, slot_t):
-    """Slot-projected rows of a full-vocab softmax; slot 0 = leftover mass."""
-    picked = term[:, slot_t].cpu().numpy()
-    P = np.empty((len(picked), len(slot_t) + 1), dtype=np.float32)
-    P[:, 1:] = picked
-    P[:, 0] = np.maximum(1.0 - picked.sum(1), 0.0)
-    return P
-
-
-def _resample_and_label(model, spans, b, g, q, slot_ids, resample="conditional",
+def _resample_and_label(model, spans, b, g, q, resample="conditional",
                         batch_fibers=16, seed=0, selfcheck=True):
     """Sensitivity kernel: substitute the token at back-offset ``b`` (position
     L-1-b) with g iid draws from nu_b, teacher-force the REAL suffix, and read
-    the terminal slot distribution.  nu_b is the model's own conditional at
-    the fork point (resample="conditional") or uniform over the real slot
-    tokens ("uniform").  Cache is forked via reorder_cache exactly as in
+    the teacher's FULL-VOCAB top-1 token.  NO 512-slot projection here -- the
+    arc moved to full-vocab top-1 agreement (stream_top1); do not reintroduce
+    slot projections in the sensitivity path.  nu_b is the model's own
+    conditional at the fork point (resample="conditional") or uniform over the
+    full vocabulary ("uniform").  Cache forked via reorder_cache exactly as in
     ``_fork_and_label``; the fixed suffix is fed in ONE multi-token forward
     and self-checked against a fresh full forward per position.
-    spans (M, L) int64 -> F (M, g, V) float32."""
+    spans (M, L) int64 -> T (M, g) int64 argmax ids."""
     import torch
     M, L = spans.shape
     cut = L - 1 - b                      # substituted position; prefix = [:cut]
     rng = torch.Generator(device="cuda").manual_seed(seed)
-    slot_t = torch.tensor(slot_ids[1:], dtype=torch.long, device="cuda")
-    F = np.empty((M, g, len(slot_ids)), dtype=np.float32)
+    T = np.empty((M, g), dtype=np.int64)
     for lo in range(0, M, batch_fibers):
         sp = torch.tensor(spans[lo:lo + batch_fibers], dtype=torch.long,
                           device="cuda")
@@ -1039,8 +1069,7 @@ def _resample_and_label(model, spans, b, g, q, slot_ids, resample="conditional",
                 probs = torch.softmax(logits[:, :q].float(), dim=-1)
                 nxt = torch.multinomial(probs, g, replacement=True, generator=rng)
             else:
-                nxt = slot_t[torch.randint(len(slot_t), (bf, g), generator=rng,
-                                           device="cuda")]
+                nxt = torch.randint(q, (bf, g), generator=rng, device="cuda")
             beam = torch.arange(bf, device="cuda").repeat_interleave(g)
             past.reorder_cache(beam)                                 # (bf*g, ...)
             step = nxt.reshape(-1, 1)
@@ -1048,19 +1077,19 @@ def _resample_and_label(model, spans, b, g, q, slot_ids, resample="conditional",
                 step = torch.cat([step, sp[:, cut + 1:].repeat_interleave(g, 0)], 1)
             out = model(input_ids=step, past_key_values=past, use_cache=True,
                         return_dict=True, logits_to_keep=1)
-            term = torch.softmax(out.logits[:, -1, :q].float(), dim=-1)
+            term = out.logits[:, -1, :q]
             if selfcheck and lo == 0:
                 seq = sp[0].clone(); seq[cut] = nxt[0, 0]
                 ref = model(input_ids=seq[None], return_dict=True,
                             logits_to_keep=1).logits[0, -1, :q]
-                err = float((torch.softmax(ref.float(), -1)[slot_t]
-                             - term[0, slot_t]).abs().max())
+                err = float((torch.softmax(ref.float(), -1)
+                             - torch.softmax(term[0].float(), -1)).abs().max())
                 assert err < 1e-2, f"fork/suffix mismatch at b={b} (max err {err})"
                 print(f"[sens] b={b} self-check ok ({err:.2e})", flush=True)
-        F[lo:lo + bf] = _slot_project(term, slot_t).reshape(bf, g, -1)
+        T[lo:lo + bf] = term.argmax(-1).reshape(bf, g).cpu().numpy()
         if (lo // batch_fibers) % 10 == 0:
             print(f"[sens] b={b} {min(lo + bf, M)}/{M} fibers x{g}", flush=True)
-    return F
+    return T
 
 
 # ------------------------------------------------------------------ modal stages
@@ -1358,20 +1387,27 @@ def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
     # FORK the cache when the model's cache supports it (~g x less prefix
     # compute); Qwen3.5's LinearAttentionLayer cache lacks batch_repeat_interleave,
     # so fall back to the correct (if g x costlier) re-forward.
+    fiber_gid = np.repeat(np.arange(m_fibers), g)
     try:
-        G_toks, P = _fork_and_label(model, PRE_ext, w, g, q, slot_ids,
-                                    batch_fibers=32, seed=seed + 7)
+        G_toks, P, H = _fork_and_label(model, PRE_ext, w, g, q, slot_ids,
+                                       batch_fibers=32, seed=seed + 7)
     except AttributeError as e:
         print(f"[fork] unsupported cache ({e}); re-forwarding per branch", flush=True)
         G_toks, P = _fill_and_label(model, PRE_ext, w, g, q, slot_ids,
                                     batch=128, seed=seed + 7)
+        ctx = np.concatenate([PRE_ext[fiber_gid], G_toks], axis=1).astype(np.int64)
+        dm = model.get_output_embeddings().weight.shape[1]
+        H = np.empty((len(ctx), dm), np.float16)
+        for lo in range(0, len(ctx), 128):
+            hb, _ = _capture_hidden(model, torch.tensor(ctx[lo:lo + 128],
+                                    dtype=torch.long, device="cuda"), q)
+            H[lo:lo + 128] = hb.cpu().numpy().astype(np.float16)
     split_tok = G_toks[:, 0].astype(np.int64)                     # the split coordinate
-    fiber_gid = np.repeat(np.arange(m_fibers), g)
     os.makedirs(ROOT, exist_ok=True)
     # gtoks = ALL resampled tokens (generation order, oldest-resampled first);
-    # the tree needs the full newest p_back+1 tokens, not just the split
+    # H = teacher pre-head hidden per fork row (the GL target for the top-1 run)
     np.savez_compressed(out.replace(".npz", ".tmp.npz"), split_tok=split_tok, P=P,
-                        gtoks=G_toks.astype(np.int64),
+                        gtoks=G_toks.astype(np.int64), H=H,
                         fiber_gid=fiber_gid, slot_ids=slot_ids, q=q)
     os.replace(out.replace(".npz", ".tmp.npz"), out)
     vol.commit()
@@ -1380,10 +1416,12 @@ def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
     return out
 
 
-def _load_fork_levels(fill_len, m_fibers, g, depth, codes):
+def _load_fork_levels(fill_len, m_fibers, g, depth, codes, target="slots"):
     """Assemble the tree's per-level fork bit-data from cached oracle tables:
     level j = fork that resampled the newest j+1 tokens (p_back=j).  Returns
-    a list of (bits (m, (j+1)*B) newest-first, F (m,V) centered, gid (m,))."""
+    a list of (bits (m, (j+1)*B) newest-first, F (m,V) centered, gid (m,)).
+    target="hidden" -> F is the centered teacher pre-head hidden state H (the
+    real Dataset-GL target for top-1); "slots" -> the legacy centered 512-slot P."""
     B = codes.shape[1]
     levels = []
     for j in range(depth):
@@ -1391,8 +1429,8 @@ def _load_fork_levels(fill_len, m_fibers, g, depth, codes):
         gt = d["gtoks"]                                            # (m, j+1) gen order
         toks_newest_first = gt[:, ::-1]                            # block0 = newest token
         bits = np.asarray(codes, np.uint8)[toks_newest_first].reshape(len(gt), -1)
-        P = d["P"]
-        F = (P - P.astype(np.float64).mean(0)[None, :]).astype(np.float32)
+        Y = d["H"].astype(np.float64) if target == "hidden" else d["P"].astype(np.float64)
+        F = (Y - Y.mean(0)[None, :]).astype(np.float32)
         levels.append((bits, F, d["fiber_gid"]))
     return levels
 
@@ -1769,13 +1807,14 @@ def stream_fit(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
 def sensitivity(m_fibers: int = 1000, g: int = 16, resample: str = "conditional",
                 corpus: str = "fineweb", positions: str = "", seed: int = 0,
                 batch_fibers: int = 16, fill_len: int = 61):
-    """DEGREE BOUNDS VIA SENSITIVITY (prelims.typ): measure the per-position
-    sensitivity profile Sens_b of f = the teacher's terminal slot distribution
-    over REAL corpus spans by resampling one token at back-offset b (suffix
-    teacher-forced), sum to total sensitivity S, and report the implied degree
-    bound d(eps) = 4*S/eps against the fitted degree ladder."""
-    import glob, os, time
-    import torch
+    """DEGREE BOUNDS VIA SENSITIVITY (prelims.typ) for the FULL-VOCAB TOP-1
+    target -- the 512-slot projection is deliberately ABSENT from this stage
+    (the arc moved to top-1 agreement, see stream_top1; do NOT reintroduce
+    slot projections here).  f(x) = one-hot of the teacher's argmax token;
+    Sens_b = P(two conditional resamples of the token b back flip the top-1);
+    Var = P(two random contexts disagree on the top-1).  Degree bound
+    d(eps) = 4*S/eps as before -- the identity is target-agnostic."""
+    import os, time
     vol.reload()
     pos = sorted(int(p) for p in positions.split(",")) if positions else SENS_POSITIONS
     assert resample in ("conditional", "uniform")
@@ -1784,32 +1823,20 @@ def sensitivity(m_fibers: int = 1000, g: int = 16, resample: str = "conditional"
     started = time.time()
     model, tok, q = _load_teacher()
     spans = _stream_spans(tok, n_spans=m_fibers, corpus=CORPORA[corpus])
-    # slot alphabet: reuse an existing fiber table's for comparability, else
-    # recompute with the make_data recipe (top mass of the mean terminal dist)
-    hits = sorted(glob.glob(f"{ROOT}/glds_ctx{CTX}_f{fill_len}_M*_R{R_FILLS}.npz"))
-    if hits:
-        slot_ids = np.load(hits[-1])["slot_ids"]
-        print(f"[sens] slot_ids from {hits[-1]}", flush=True)
-    else:
-        sample = torch.tensor(spans[:256], dtype=torch.long, device="cuda")
-        mass = np.zeros(q)
-        for lo in range(0, len(sample), 32):
-            mass += _terminal_probs(model, sample[lo:lo + 32], q).sum(0).cpu().numpy()
-        slot_ids = np.concatenate([[-1], np.argsort(-mass)[: V_SLOTS - 1]]).astype(np.int64)
-    # baseline pass on unmodified spans: P0 anchors Var_tot (sum over slots,
-    # matching the Sens reduction)
-    slot_t = torch.tensor(slot_ids[1:], dtype=torch.long, device="cuda")
+    # baseline pass on unmodified spans: fiber-level top-1 anchors Var_tot
+    import torch
     sp_all = torch.tensor(spans, dtype=torch.long, device="cuda")
-    P0 = np.empty((m_fibers, len(slot_ids)), dtype=np.float32)
+    T0 = np.empty(m_fibers, dtype=np.int64)
     for lo in range(0, m_fibers, 32):
-        P0[lo:lo + 32] = _slot_project(_terminal_probs(model, sp_all[lo:lo + 32], q),
-                                       slot_t)
-    var_tot = float(P0.astype(np.float64).var(0, ddof=1).sum())
-    print(f"[sens] var_tot {var_tot:.5f} over {m_fibers} spans", flush=True)
-    run = _wandb_run(f"sens-{resample}-{corpus}-M{m_fibers}",
+        T0[lo:lo + 32] = _terminal_probs(model, sp_all[lo:lo + 32], q) \
+            .argmax(-1).cpu().numpy()
+    var_tot = _top1_variance(T0)
+    print(f"[sens] top-1 var_tot {var_tot:.5f} over {m_fibers} spans", flush=True)
+    run = _wandb_run(f"sens-top1-{resample}-{corpus}-M{m_fibers}",
                      {"model": MODEL_ID, "corpus": corpus, "resample": resample,
-                      "m_fibers": m_fibers, "g": g, "positions": pos})
-    shard_dir = f"{ROOT}/sens_shards_{resample}_{corpus}_M{m_fibers}_g{g}"
+                      "target": "top1", "m_fibers": m_fibers, "g": g,
+                      "positions": pos})
+    shard_dir = f"{ROOT}/sens_top1_shards_{resample}_{corpus}_M{m_fibers}_g{g}"
     os.makedirs(shard_dir, exist_ok=True)
     sens = np.empty(len(pos)); se = np.empty(len(pos))
     sens_fiber = np.empty((len(pos), m_fibers))
@@ -1819,9 +1846,9 @@ def sensitivity(m_fibers: int = 1000, g: int = 16, resample: str = "conditional"
         if os.path.exists(sp):
             sf = np.load(sp)["sens_fiber"]
         else:
-            F = _resample_and_label(model, spans, b, g, q, slot_ids, resample,
+            T = _resample_and_label(model, spans, b, g, q, resample,
                                     batch_fibers, seed=seed + 13 * b)
-            sf = _sens_from_groups(F)
+            sf = _sens_from_top1(T)
             np.savez_compressed(sp + ".tmp.npz", sens_fiber=sf)
             os.replace(sp + ".tmp.npz", sp)
             vol.commit()
@@ -1836,25 +1863,127 @@ def sensitivity(m_fibers: int = 1000, g: int = 16, resample: str = "conditional"
     report = _sens_report(pos, sens, var_tot)
     report["se"] = se[np.argsort(pos)].tolist()
     out = dict({"model": MODEL_ID, "corpus": corpus, "resample": resample,
-                "m_fibers": m_fibers, "g": g}, **report)
+                "target": "top1", "m_fibers": m_fibers, "g": g}, **report)
     out["comparison"] = {
-        "note": "d counts TOKEN coordinates, same granularity as the ladder's "
-                "per-token degree; ladder KLs are nats, S/var_tot are slot-L2",
-        "fineweb_deg12_TEST_kl": {"m2000": 1.4530, "m8000": 1.1034},
-        "gl_tree_refit": _read_json(f"{ROOT}/summary_gltree_refit_lsh_f{fill_len}.json", {}),
-    }
-    np.savez_compressed(f"{ROOT}/sensitivity_{resample}_{corpus}_M{m_fibers}.npz",
+        "note": "d counts TOKEN coordinates; Sens_b = P(resampling token b "
+                "flips the teacher's full-vocab top-1), Var = P(two contexts "
+                "disagree on top-1) -- the top-1 agreement target's units"}
+    np.savez_compressed(f"{ROOT}/sensitivity_top1_{resample}_{corpus}_M{m_fibers}.npz",
                         positions=np.asarray(pos), sens=sens, se=se,
-                        sens_fiber=sens_fiber, P0=P0, var_tot=var_tot,
-                        slot_ids=slot_ids)
-    _write_json(f"{ROOT}/sensitivity_{resample}_{corpus}_M{m_fibers}.json", out)
+                        sens_fiber=sens_fiber, T0=T0, var_tot=var_tot)
+    _write_json(f"{ROOT}/sensitivity_top1_{resample}_{corpus}_M{m_fibers}.json", out)
     if run is not None:
         run.summary.update({k: v for k, v in out.items() if k != "comparison"})
         run.finish()
     _record("sensitivity", started, {"m_fibers": m_fibers, "g": g,
-                                     "resample": resample})
+                                     "resample": resample, "target": "top1"})
     print("[sens] " + json.dumps(out), flush=True)
     return out
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200,
+              memory=32768, secrets=WANDB_SECRET)
+def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
+                 fill_len: int = 61, tau: float = 0.02, max_width: int = 128,
+                 flat_m: int = 16000, flat_r: int = 8):
+    """THE ACTUAL Dataset GL for full-vocab top-1: forked_gl_tree on the teacher
+    HIDDEN-state target recovers heavy multi-degree Walsh characters (per
+    encoding), then ALL of them are fit on the flat table -> unembed -> top-1.
+    NO deg-1 correlation shortcut, NO projection, NO per-degree feature cap.
+    Intermittent W&B logging per tree level AND per fit degree of how much of
+    the target we account for: TEST top-1, R2 (hidden variance explained), and
+    the fraction of recovered Fourier (psi) mass."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("gl-tree-top1", 6.0)
+    started = time.time()
+    for j in range(depth):                                            # H-fork levels
+        p = _oracle_table_path(fill_len, m_fibers, g, j)
+        if not os.path.exists(p) or "H" not in np.load(p).files:
+            make_oracle_data.local(m_fibers, g, j, fill_len)
+    te_tbl = make_data.local(3000, flat_r, 0, fill_len, "edu", 0, "edu_test")
+    tr_tbl = make_data.local(flat_m, flat_r, 0, fill_len, "edu", 9000, "edu_tr")
+    te_lbl = relabel_hidden.local(3000, fill_len, flat_r, "edu_test")
+    tr_lbl = relabel_hidden.local(flat_m, fill_len, flat_r, "edu_tr")
+    Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    ztab = dict(np.load(f"{ROOT}/codes.npz"))
+
+    def collapse(tbl, lbl):
+        d = np.load(tbl); L = np.load(lbl)
+        ctx = np.concatenate([d["PRE"][d["fiber_id"]], d["G"]], axis=1)
+        rows, inv, cnt = np.unique(ctx, axis=0, return_inverse=True, return_counts=True)
+        Hs = np.zeros((len(rows), L["H"].shape[1]), np.float64)
+        np.add.at(Hs, inv, L["H"].astype(np.float64))
+        tg = np.empty(len(rows), np.int64); tg[inv] = L["tstar"]
+        return rows, Hs, cnt.astype(np.float64), tg
+    c_tr, H_tr, n_tr, t_tr = collapse(tr_tbl, tr_lbl)
+    c_te, H_te, n_te, t_te = collapse(te_tbl, te_lbl)
+    meanH_tr, meanH_te = H_tr / n_tr[:, None], H_te / n_te[:, None]
+    rng = np.random.default_rng(0); vm = rng.random(len(n_tr)) < 0.15
+
+    def r2_hidden(Hpred, Htrue, n):                                   # frac of H variance explained
+        mu = (Htrue * n[:, None]).sum(0) / n.sum()
+        ss_res = float((n[:, None] * (Htrue - Hpred) ** 2).sum())
+        ss_tot = float((n[:, None] * (Htrue - mu[None, :]) ** 2).sum())
+        return 1.0 - ss_res / ss_tot
+
+    summary = {"depth": depth, "tau": tau, "encodings": {}}
+    for name in ("lsh", "ctrl"):
+        codes = ztab[name]; B = codes.shape[1]; nb = depth * B
+        levels = _load_fork_levels(fill_len, m_fibers, g, depth, codes, target="hidden")
+        tree = forked_gl_tree(levels, B, tau, max_width=max_width,
+                              progress=lambda j, D, kept: print(
+                                  f"[gltree:{name}] level {j+1}/{D} kept {len(kept)}",
+                                  flush=True))
+        masks, psi = tree["masks"], tree["psi"]
+        deg = np.array([int(m.reshape(depth, B).any(1).sum()) for m in masks]) \
+            if len(masks) else np.zeros(0, int)
+        print(f"[gltree:{name}] {len(masks)} chars, deg hist "
+              f"{np.bincount(deg, minlength=depth+1).tolist()}", flush=True)
+        bt = context_bits(c_tr, codes)[:, :nb]; bte = context_bits(c_te, codes)[:, :nb]
+        sane = weighted_agreement(unembed_top1(meanH_te, Wu), t_te, n_te)
+        run = _wandb_run(f"gltree-{name}-hidden-d{depth}",
+                         {"encoding": name, "depth": depth, "tau": tau,
+                          "n_chars": int(len(masks)), "sanity": sane})
+        psitot = float(psi.sum()) if len(psi) else 1.0
+        ladder = []
+        for D in range(1, depth + 1):                                # intermittent per degree
+            keep = deg <= D
+            if not keep.any():
+                continue
+            md = masks[keep]
+            Ftr = parity_features(bt, md); Fte = parity_features(bte, md)
+            best = None
+            for wd in (10.0, 100.0, 1000.0):
+                fit = fit_regression(Ftr[~vm], meanH_tr[~vm], n_tr[~vm], wd=wd)
+                acc = weighted_agreement(
+                    unembed_top1(Ftr[vm] @ fit["W"] + fit["b"], Wu), t_tr[vm], n_tr[vm])
+                if best is None or acc > best[0]:
+                    best = (acc, wd)
+            wd = best[1]
+            fit = fit_regression(Ftr, meanH_tr, n_tr, wd=wd)
+            Hpred = Fte @ fit["W"] + fit["b"]
+            rec = {"degree": D, "n_chars": int(keep.sum()),
+                   "TEST_top1": weighted_agreement(unembed_top1(Hpred, Wu), t_te, n_te),
+                   "R2_hidden": r2_hidden(Hpred, meanH_te, n_te),
+                   "psi_frac": float(psi[keep].sum() / psitot), "wd": wd}
+            ladder.append(rec)
+            print(f"[gltree:{name}] deg<={D} ({rec['n_chars']} chars) "
+                  f"top1 {rec['TEST_top1']:.4f} R2 {rec['R2_hidden']:.4f} "
+                  f"psi {rec['psi_frac']:.3f} (sanity {sane:.3f})", flush=True)
+            if run is not None:
+                run.log(rec)
+        if run is not None:
+            run.summary.update({"final_top1": ladder[-1]["TEST_top1"] if ladder else 0.0,
+                                "sanity": sane}); run.finish()
+        summary["encodings"][name] = {"n_chars": int(len(masks)), "sanity": sane,
+                                      "ladder": ladder}
+        torch.cuda.empty_cache()
+    _write_json(f"{ROOT}/summary_gltree_top1_d{depth}.json", summary)
+    _record("gl-tree-top1", started, {"depth": depth})
+    print(json.dumps(summary), flush=True)
+    return summary
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
@@ -2902,6 +3031,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "gen-data":                                          # fan-out pre-generation
         gen_data.remote(3000, r, fill_len, "edu", 0, "edu_test", 4)
         print(gen_data.remote(m_fibers, r, fill_len, "edu", 9000, "edu_tr", 8))
+    if stage == "gl-tree-top1":                                       # the ACTUAL Dataset GL
+        print(gl_tree_top1.remote(m_fibers, g, depth, fill_len, tau, max_width))
     if stage == "stream-top1":
         print(stream_top1.remote(m_fibers, 3000, fill_len, r, target))
     if stage == "wandb-ping":
