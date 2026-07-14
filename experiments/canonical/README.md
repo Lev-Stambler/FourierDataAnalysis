@@ -58,6 +58,18 @@ uv run modal run --detach qary_lsh_dataset_gl.py --stage fit-deg1 --fill-len 61 
    bucket weights are provably equal, the width-bounded frontier tie-breaks arbitrarily,
    and each single-bit leaf gets exactly one chance to be carried. Evaluate the complete
    deg-1 basis exactly; use the tree only for degree ≥ 2 (the campaign's add_deg1 lesson).
+1b. **The burial is the ESTIMATOR's, not dataset GL's** (`dataset_gl_csamp`, stage `csamp`):
+   the group-by-SQUARE keeps the diagonal Σ‖f‖² — an S-independent mass that ties every
+   bucket. The paper's paired estimator (lem:qary-kv-estimator) shares the real context
+   AND the un-split continuation between the two draws and excludes the diagonal; on a
+   flat table a valid pair is two fills of one fiber agreeing on every un-split coordinate
+   (value-matched = cache-forked, by the AR factorization). Singleton cells cancel exactly,
+   so there is no noise mass — but the flat file's evidence is its per-level collision
+   profile (returned as `pair_profile`; near zero at early levels for fill61, real for
+   fill3). Pairing on the fiber alone (independent L_k) is the "cancellation-prone pooled
+   quantity" the theory excludes — test-pinned counterexample in the suite. The
+   no-collisions-needed version is the ONLINE oracle (fork the KV cache at the split
+   boundary), not yet implemented.
 2. **The degree-1 aggregate is decisively encoding-dependent** (M=8000, held-out slot KL
    vs unigram 1.6303): LSH **1.4915 (−0.139 nats)**, id-bits 1.5975 (−0.033), random codes
    1.6303 (exactly zero — never improves on init).

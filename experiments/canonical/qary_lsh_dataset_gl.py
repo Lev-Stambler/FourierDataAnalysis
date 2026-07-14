@@ -276,8 +276,12 @@ def dataset_gl_csamp(bits, F_rows, fiber_gid, tau, max_width=512, device=None,
         dm = float((Fm.double() ** 2).sum().item())
         gid_t = torch.tensor(mcell.astype(np.int64), dtype=torch.long,
                              device=device)
+        # small blocks + per-call cache reset: the collision-row count changes
+        # every level, and caching variable multi-GB transients OOM-thrashes
         Q = _bucket_Q(chi[:, rows_t].contiguous(), Fm, gid_t,
-                      int(mcell.max()) + 1).cpu().numpy()
+                      int(mcell.max()) + 1, mem_budget=2.0e8).cpu().numpy()
+        del Fm, gid_t, rows_t
+        torch.cuda.empty_cache()
         return (Q - dm) / npairs
 
     thresh = tau * tau / 4.0
