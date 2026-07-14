@@ -73,14 +73,28 @@ uv run modal run --detach qary_lsh_dataset_gl.py --stage fit-deg1 --fill-len 61 
    S-independent mass), burying the true deg-1 signal; the fit floors EXACTLY at unigram
    (val_kl = unigram_kl = 1.8287, "found nothing"). Lesson (Lev): floor-at-unigram is a bug
    signal, not a finding — the deep bit-tree is the wrong tool below deg ~3 (3rd confirmation).
-1d. **The collision-FREE fix — the ONLINE ORACLE** (`oracle_deg1_psi`, stages `oracle-data`/
-   `oracle`): fork the rollout by fixing the real prefix + older filled tokens as a shared
-   STUB drawn once per fiber, then resample the split token G times. Every fiber then has
-   G(G−1) guaranteed pairs (no waiting for flat-file collisions), and per-token deg-1 avoids
-   the deep-tree tie-saturation entirely. Prints a KL LADDER (top-K leaves → held-out KL vs
-   unigram) so progress toward the goal is visible live. Runs at fork level `p_back` (0 =
-   newest token; use a SHORTER context / smaller fill so the split token has real entropy —
-   a token peaked given long context re-triggers the point-mass tie).
+1d. **The collision-FREE fix — the ONLINE ORACLE, VALIDATED POSITIVE** (`oracle_deg1_psi`,
+   stages `oracle-data`/`oracle`/`oracle-sweep`): fork the rollout by fixing the real prefix +
+   older filled tokens as a shared STUB drawn once per fiber, then resample the split token G
+   times. Every fiber then has G(G−1) guaranteed pairs (no waiting for flat-file collisions),
+   and per-token deg-1 avoids the deep-tree tie-saturation entirely. Prints a KL LADDER (top-K
+   leaves → held-out KL) so progress is visible live. **fill3, newest token, M1500 G16,
+   fiber-disjoint held-out**: LSH sparse KL **1.4859 (−0.368 nats vs unigram 1.8544)** vs ctrl
+   1.6675 (−0.187) vs idbits 1.6857 (−0.169) — LSH−ctrl gap **0.182 nats, identical to the exact
+   enumeration frame**. The paper's native estimator reproduces both the recovery and the LSH
+   advantage where the flat tree floored. **p_back sweep** (deg-1 at every filled position): gain
+   decays with distance from the prediction — LSH −0.368/−0.059/≈0 at newest/middle/oldest, LSH
+   ~2× the random-code gain at every position with signal, ≈0 for all encodings at the oldest
+   (the oracle reports null where there is none). **Clean estimator** (`clean=True`) subtracts the
+   b-independent same-token collision floor (a peaked fiber makes χ_S(i)χ_S(j)=1 for all single
+   bits) → LSH certifies all 133 bits, random codes only ~67: LSH's deg-1 content is real,
+   random's is mostly floor.
+1e. **Efficient cache fork**: `_fork_and_label` forwards each prefix ONCE and branches G via
+   `Cache.reorder_cache(beam_idx)` — NOT `batch_repeat_interleave` (KV-only); reorder_cache
+   dispatches to Qwen3.5's `LinearAttentionCacheLayerMixin` (conv+recurrent states) too. A
+   fail-loud self-check asserts a forked branch matches a fresh forward (passed, max slot err
+   ~6e-3). Ops fixed this run: batch 32→128 (A10G starvation), `logits_to_keep=1` (the 8.07GB =
+   batch×seq×248k-vocab full-logits OOM).
 2. **The degree-1 aggregate is decisively encoding-dependent** (M=8000, held-out slot KL
    vs unigram 1.6303): LSH **1.4915 (−0.139 nats)**, id-bits 1.5975 (−0.033), random codes
    1.6303 (exactly zero — never improves on init).

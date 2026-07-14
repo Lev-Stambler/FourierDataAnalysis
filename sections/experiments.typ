@@ -505,7 +505,30 @@ Two results, measured on identical fibers, targets, and fits:
   by forking the rollout cache at the split boundary on demand: its difficulty is measured by the
   weighted collision profile $R_k$ and the live width, never by accidental duplicates in a flat
   file.  The exact per-degree enumeration used below needs no pairs at all and is the cheap
-  estimator at low degree; the forked-cache pair tree is the general native method.  Done this
+  estimator at low degree; the forked-cache pair tree is the general native method.
+
+  We implemented that native estimator directly and it clears the floor the offline tree could
+  not.  For a chosen split token we fix the real prefix *and* the older generated tokens as a
+  shared stub -- one rollout per fiber -- then resample the split token $g=16$ times; every fiber
+  then supplies $g(g-1)$ genuine within-fork pairs with no reliance on accidental collisions
+  (the fork is the teacher's KV/recurrent cache, replicated across branches).  On the newest
+  filled token the paired degree-one estimate, fit fiber-disjoint against a strictly held-out
+  split, gives KL $1.486$ for the LSH codes ($-0.368$ nats under the unigram floor $1.854$)
+  against $1.668$ for random codes ($-0.187$) and $1.686$ for token-id bits -- an encoding gap
+  of $0.182$ nats, the *same* gap the exact enumeration reports, now produced by the paper's own
+  paired oracle where the flat-file tree floored at the unigram.  Sweeping the split token from
+  the newest position backward, the recoverable degree-one mass decays monotonically with
+  distance from the prediction -- LSH gains $-0.368$, $-0.059$, $approx 0$ nats at the newest,
+  middle, and oldest of three filled tokens -- with LSH roughly doubling the random-code gain at
+  every position that carries signal and every encoding correctly reading $approx 0$ where none
+  does; this is the character-level confirmation that the heavy degree-one structure lives on the
+  token nearest the prediction.  A subtlety the paired weight forces: a peaked fiber makes
+  $chi_S (x) chi_S (x') = 1$ for every single-bit $S$ whenever two draws share the split token, so
+  the token-collision mass is a per-fiber constant that shifts all buckets equally -- harmless to
+  the ranking but flooding any fixed certification bar.  Subtracting the same-token block leaves
+  only the discriminating cross-token pairs, and under that clean weight the LSH code certifies
+  every one of its $133$ bit-characters while the random code certifies barely half ($67$): the
+  LSH degree-one content is real signal, the random code's is mostly the collision floor.  Done this
   way, the recovery-then-build program works end to end, verified on a strictly untouched test
   split: a model of the $approx 220$ exactly certified LSH characters plus the $1000$ heaviest
   exactly certified pairs reaches test KL $1.103$ against the unigram floor $1.630$ -- surpassing
