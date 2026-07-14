@@ -79,9 +79,12 @@ per encoding on held-out full-vocab top-1 (M16k×R8 = 128k contexts, fill61, san
 | lsh  | 0.152 | **0.160** | 0.096 | 0.167 |
 | ctrl | 0.136 | **0.142** | 0.075 | 0.135 |
 
-- **Gradient descent beats the GL tree on the same data**: lsh 0.160 vs the tree's 0.141
-  (and edges the deg-1 top-512 anchors' 0.158, now with 1,275 multi-degree chars).
-  Learning buys 1.7× over random masks of the SAME degree profile (0.160 vs 0.096).
+- **NO conclusion vs Dataset GL from these numbers**: the tree's 0.141 masks were
+  DISCOVERED on the forked m1500×g16 data (~24k fork rows); these masks were learned
+  directly on the 128k flat contexts — the comparison confounds algorithm with
+  discovery-data budget (and the 0.160 ≈ the 512 deg-1 anchors' 0.158 on the same data).
+  What IS supported: learning buys 1.7× over random masks of the SAME degree profile
+  on the SAME data (0.160 vs 0.096).
 - **The learned parities nearly saturate the bits**: an unconstrained 2×2048 GELU MLP on
   the identical inputs reaches only 0.167 — the sparse interpretable model is within 4%
   relative of ANYTHING representable from these 4,087 bits at this data size. ≥0.9 top-1
