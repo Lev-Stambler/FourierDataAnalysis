@@ -1082,10 +1082,17 @@ def _resample_and_label(model, spans, b, g, q, resample="conditional",
                 seq = sp[0].clone(); seq[cut] = nxt[0, 0]
                 ref = model(input_ids=seq[None], return_dict=True,
                             logits_to_keep=1).logits[0, -1, :q]
+                same_top = int(ref.argmax(-1)) == int(term[0].argmax(-1))
                 err = float((torch.softmax(ref.float(), -1)
                              - torch.softmax(term[0].float(), -1)).abs().max())
-                assert err < 1e-2, f"fork/suffix mismatch at b={b} (max err {err})"
-                print(f"[sens] b={b} self-check ok ({err:.2e})", flush=True)
+                # max-abs over all 248k vocab entries at a 256-row branch batch
+                # carries ~1e-2 of bf16 tiling noise (the old 512-slot check
+                # maxed over 485x fewer values); what the top-1 readout needs
+                # is the ARGMAX surviving the fork, checked exactly
+                assert same_top and err < 3e-2, \
+                    f"fork mismatch at b={b} (argmax_same={same_top}, err {err})"
+                print(f"[sens] b={b} self-check ok (argmax match, {err:.2e})",
+                      flush=True)
         T[lo:lo + bf] = term.argmax(-1).reshape(bf, g).cpu().numpy()
         if (lo // batch_fibers) % 10 == 0:
             print(f"[sens] b={b} {min(lo + bf, M)}/{M} fibers x{g}", flush=True)

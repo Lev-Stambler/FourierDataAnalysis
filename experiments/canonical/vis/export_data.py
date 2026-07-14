@@ -97,14 +97,15 @@ META = {
 # ------------------------------------------------------------------- sens.js
 # Degree bounds via sensitivity (sensitivity stage, 2026-07-14): the measured
 # per-position profile + degree arithmetic, straight from the run's JSON.
+# FULL-VOCAB TOP-1 target only -- no 512-slot projection in this arc.
 
 def export_sens():
-    with open(demo._fetch("sensitivity_conditional_fineweb_M1000.json")) as fh:
+    with open(demo._fetch("sensitivity_top1_conditional_fineweb_M1000.json")) as fh:
         sens = json.load(fh)
     keep = {k: sens[k] for k in (
         "positions", "sens", "se", "var_tot", "S_measured", "S_interp",
         "d_eff_measured", "d_eff_interp", "d_eps_measured", "d_eps_interp",
-        "m_fibers", "g", "resample", "corpus", "model")}
+        "m_fibers", "g", "resample", "corpus", "model", "target")}
     _write_js("sens", keep)
 
 
