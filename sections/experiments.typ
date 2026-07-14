@@ -641,4 +641,10 @@ estimate from below), and degree here counts token coordinates -- the same granu
 ladder's per-token blocks.  The first caveat turns out to be immaterial: rerunning the identical
 protocol with the theorem's uniform $mu$ over the $511$-token slot alphabet gives a
 near-identical profile ($"Sens"_0 = 0.131$ vs $0.143$) and $d_"eff" = 1.03$ vs $1.04$ -- the
-low-degree verdict is robust to the resampling measure.
+low-degree verdict is robust to the resampling measure.  Varying the tail treatment (linear
+interpolation, a fitted power law, or a pessimistic flat-hold on the strided positions) and the
+statistical error place $d_"eff"$ in $[1.03, 1.08]$; since mass at degree $>= K$ contributes at
+least $K - 1$ of excess mean, the mean alone caps the deep tail at
+$(d_"eff" - 1) \/ (K - 1)$ -- at most $2$--$4%$ of the variance at degree $>= 3$, independent
+of any support assumption, with the ladder showing that what degree-$3$ structure exists is
+spanned by degrees one and two.
