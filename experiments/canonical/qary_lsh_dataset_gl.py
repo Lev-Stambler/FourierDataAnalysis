@@ -219,6 +219,126 @@ def _bucket_Q(chi, A_t, gid_t, ng, mem_budget=8.0e8, cls_chunk=128):
     return Q
 
 
+def dataset_gl_csamp(bits, F_rows, fiber_gid, tau, max_width=512, device=None,
+                     n_search=None):
+    """Offline realization of the paper's PAIRED CSAMP bucket
+    (ar_categorical_gl.typ, lem:qary-kv-estimator): both draws of a pair share
+    the real context Z AND the un-split continuation L_k, so a cell is
+    (fiber x un-split bit VALUES) and only OFF-DIAGONAL within-cell products
+    count.  By the autoregressive factorization, two independent fills
+    conditioned on agreeing over the un-split coordinates have i.i.d. split
+    parts, so value-matched pairs are distributionally identical to the
+    cache-forked pairs of the theorem.
+
+        psi_k(a) = (Q_k(a) - sum_x ||f(x)||^2) / n_pairs_k,
+        Q_k(a)   = sum_cells |sum_{x in cell} f(x) chi_a(x)|^2,
+
+    unbiased for the pair-weighted conditional weight E|v_{k,a}(Z, L_k)|^2;
+    keep iff psi >= tau^2/4 (the paper's N_k rule).  Singleton cells cancel
+    exactly against the diagonal, so unlike the group-by SQUARE there is no
+    S-independent noise mass.  The flat file's price is the empirical
+    collision profile: a level with zero matched pairs carries no evidence,
+    so both children are kept there (recorded in ``no_evidence_levels``) and
+    certification comes from the evidenced levels.  Pairing on the fiber
+    alone (independent L_k) estimates the cancellation-prone pooled quantity
+    the theory explicitly excludes and is exact only at the terminal level;
+    this function never does that.
+
+    bits: (m, n) uint8 PER-FILL rows (not collapsed) in newest-token-first
+    order; F_rows: (m, V) centered per-fill targets; fiber_gid: (m,) fiber of
+    each row.  Returns dict(status, masks, widths, psi_top, pair_profile,
+    no_evidence_levels, saturated_levels).
+    """
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    bits = np.asarray(bits, dtype=np.uint8)
+    m, n = bits.shape
+    n_search = n if n_search is None else min(n_search, n)
+    F_t = torch.tensor(np.asarray(F_rows, dtype=np.float32), device=device)
+    fib = np.unique(np.asarray(fiber_gid), return_inverse=True)[1].astype(np.int64)
+    fmax = int(fib.max()) + 1
+    fc = np.bincount(fib, minlength=fmax).astype(np.float64)
+    if float((fc * (fc - 1)).sum()) <= 0:                # cells refine fibers
+        return dict(status="no-pairs", masks=np.zeros((0, n), np.uint8),
+                    widths=[], psi_top=[], pair_profile=[],
+                    no_evidence_levels=[], saturated_levels=[])
+    signs = torch.tensor(1.0 - 2.0 * bits[:, :n_search].astype(np.float32),
+                         device=device)
+
+    def _pair_psi(chi, cell, cc, npairs):
+        """(Q - diag)/npairs restricted to collision cells: a singleton cell's
+        Q equals its own diagonal, so dropping it is exact and removes most of
+        the memory traffic at early levels."""
+        multi = np.flatnonzero(cc[cell] > 1)
+        _, mcell = np.unique(cell[multi], return_inverse=True)
+        rows_t = torch.tensor(multi, dtype=torch.long, device=device)
+        Fm = F_t[rows_t]
+        dm = float((Fm.double() ** 2).sum().item())
+        gid_t = torch.tensor(mcell.astype(np.int64), dtype=torch.long,
+                             device=device)
+        Q = _bucket_Q(chi[:, rows_t].contiguous(), Fm, gid_t,
+                      int(mcell.max()) + 1).cpu().numpy()
+        return (Q - dm) / npairs
+
+    thresh = tau * tau / 4.0
+    live_masks = np.zeros((1, n), dtype=np.uint8)
+    live_chi = torch.ones((1, m), dtype=torch.float32, device=device)
+    widths, pair_profile, no_evidence, saturated = [], [], [], []
+    terminal = None
+    for k, (sgid, _) in zip(range(n_search), _iter_suffix_gids(bits)):
+        # cell = (fiber, un-split VALUE): the shared (Z, L_k) of a paper pair
+        _, cell = np.unique(sgid * fmax + fib, return_inverse=True)
+        cell = cell.astype(np.int64)
+        ncell = int(cell.max()) + 1
+        cc = np.bincount(cell, minlength=ncell).astype(np.float64)
+        npairs = float((cc * (cc - 1)).sum())
+        pair_profile.append(npairs)
+        chi_add = live_chi * signs[:, k][None, :]
+        chi_all = torch.cat([live_chi, chi_add], dim=0)
+        masks_add = live_masks.copy()
+        masks_add[:, k] = 1
+        masks_all = np.concatenate([live_masks, masks_add])
+        if npairs > 0:
+            psi = _pair_psi(chi_all, cell, cc, npairs)
+            keep = np.flatnonzero(psi >= thresh)
+        else:
+            no_evidence.append(k)                        # no verdict: carry both
+            psi = np.zeros(len(masks_all))
+            keep = np.arange(len(masks_all))
+        if len(keep):
+            cols = ((1.0 - chi_all[torch.tensor(keep, device=device)]) / 2.0)
+            packed = np.packbits(cols.to(torch.uint8).cpu().numpy(), axis=1)
+            view = np.ascontiguousarray(packed).view(
+                [("", packed.dtype)] * packed.shape[1]).ravel()
+            _, first = np.unique(view, return_index=True)
+            keep = keep[np.sort(first)]
+        if len(keep) > max_width:
+            saturated.append(k)
+            keep = keep[np.argpartition(-psi[keep], max_width)[:max_width]]
+        live_masks = masks_all[keep]
+        live_chi = chi_all[torch.tensor(keep, device=device)]
+        widths.append(int(len(live_masks)))
+        if len(live_masks) == 0:
+            break
+        if k == n_search - 1:
+            terminal = (cell, cc, npairs)
+        if (k + 1) % 500 == 0:
+            print(f"[csamp] level {k + 1}/{n_search} width={len(live_masks)} "
+                  f"pairs={npairs:.0f}", flush=True)
+    masks = live_masks[live_masks.any(axis=1)]
+    psi_top = []
+    if len(masks) and terminal is not None and terminal[2] > 0:
+        cell, cc, npairs = terminal
+        chi = torch.tensor(parity_features(bits, masks).T.copy(), device=device)
+        psi_f = _pair_psi(chi, cell, cc, npairs)
+        order = np.argsort(-psi_f)
+        masks = masks[order]
+        psi_top = [float(x) for x in psi_f[order][:10]]
+    return dict(status="ok", masks=masks.astype(np.uint8), widths=widths,
+                psi_top=psi_top, pair_profile=pair_profile,
+                no_evidence_levels=no_evidence, saturated_levels=saturated)
+
+
 def dataset_gl_tau(bits, A, tau, norm_m, max_width=512, device=None, n_search=None):
     """Exact-W csamp GL tree over bit arrays: keep children with W >= tau^2/4,
     ORDERED with a bounded frontier (the campaign's fast ordered search).
@@ -644,6 +764,78 @@ def search(tau: float, m_fibers: int = M_FIBERS, r: int = R_FILLS, val_frac: flo
     print(json.dumps({n: {k: e.get(k) for k in ("status", "n_characters", "val_kl",
                                                 "unigram_val_kl", "eval")}
                       for n, e in summary["encodings"].items()}, indent=2), flush=True)
+    return summary
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
+def search_csamp(tau: float, m_fibers: int = M_FIBERS, r: int = R_FILLS,
+                 val_frac: float = 0.15, fill_len: int = W_WIN - K_FIXED,
+                 max_width: int = 512, encoding: str = "all"):
+    """The paper-native PAIRED CSAMP tree on the fiber table: PER-FILL rows,
+    cells = (fiber x un-split value), diagonal excluded.  Reports the
+    empirical collision profile alongside the recovered characters, then fits
+    and evaluates them exactly like the group-by search stage."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("csamp", 1.5)
+    started = time.time()
+    data = np.load(_table_path(fill_len, m_fibers, r))
+    P, fiber_id = data["P"], data["fiber_id"]
+    fill_len = data["G"].shape[1]
+    contexts = np.concatenate([data["PRE"][fiber_id], data["G"]], axis=1)
+    z = np.load(f"{ROOT}/codes.npz")
+    tables = {"lsh": z["lsh"], "ctrl": z["ctrl"], "idbits": z["idbits"]}
+    if encoding != "all":
+        tables = {encoding: tables[encoding]}
+    rng = np.random.default_rng(0)
+    val_fibers = rng.random(fiber_id.max() + 1) < val_frac
+    va_rows = val_fibers[fiber_id]
+    # centered PER-FILL targets: the estimator needs the individual pair draws
+    mu = P[~va_rows].astype(np.float64).mean(0)
+    F = (P[~va_rows] - mu[None, :]).astype(np.float32)
+    fib_tr = fiber_id[~va_rows]
+    summary = {"tau": tau, "estimator": "paired-csamp", "m_rows": int(len(F)),
+               "encodings": {}}
+    for name, codes in tables.items():
+        bits_tr = context_bits(contexts[~va_rows], codes)
+        t0 = time.time()
+        got = dataset_gl_csamp(bits_tr, F, fib_tr, tau, max_width=max_width,
+                               n_search=fill_len * codes.shape[1])
+        prof = got["pair_profile"]
+        entry = {"status": got["status"], "widths": got["widths"],
+                 "psi_top": got["psi_top"],
+                 "n_characters": int(len(got["masks"])),
+                 "pair_profile_min": (float(min(prof)) if prof else 0.0),
+                 "pair_profile_terminal": (float(prof[-1]) if prof else 0.0),
+                 "n_no_evidence_levels": len(got["no_evidence_levels"]),
+                 "n_saturated_levels": len(got["saturated_levels"]),
+                 "search_seconds": time.time() - t0}
+        if got["status"] == "ok" and len(got["masks"]):
+            masks = got["masks"]
+            np.savez_compressed(
+                f"{ROOT}/csamp_masks_f{fill_len}_{name}_tau{tau}.npz",
+                masks=masks, pair_profile=np.asarray(prof))
+            ctx_tr, A_tr, n_tr, _ = soft_collapse(contexts[~va_rows], P[~va_rows])
+            ctx_va, A_va, n_va, _ = soft_collapse(contexts[va_rows], P[va_rows])
+            bt, bv = context_bits(ctx_tr, codes), context_bits(ctx_va, codes)
+            fit = fit_softmax_slots(parity_features(bt, masks), A_tr / n_tr[:, None],
+                                    n_tr, parity_features(bv, masks),
+                                    A_va / n_va[:, None], n_va)
+            entry["val_kl"] = fit["val_kl"]
+            entry["eval"] = eval_slots(fit["W"], fit["b"], parity_features(bv, masks),
+                                       A_va / n_va[:, None], n_va)
+            base = fit_softmax_slots(np.zeros((len(ctx_tr), 0), np.float32),
+                                     A_tr / n_tr[:, None], n_tr,
+                                     np.zeros((len(ctx_va), 0), np.float32),
+                                     A_va / n_va[:, None], n_va, steps=1)
+            entry["unigram_val_kl"] = base["val_kl"]
+        summary["encodings"][name] = entry
+        print(name, json.dumps({k: v for k, v in entry.items() if k != "widths"}),
+              flush=True)
+        torch.cuda.empty_cache()
+    _write_json(f"{ROOT}/summary_csamp_f{fill_len}_tau{tau}.json", summary)
+    _record("csamp", started, {"tau": tau})
     return summary
 
 
@@ -1369,6 +1561,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
                                only=encoding if encoding != "all" else "lsh,ctrl",
                                patience=patience, steps=steps,
                                interactions=interactions)
+    if stage == "csamp":
+        search_csamp.remote(tau, m_fibers, r, 0.15, fill_len, max_width, encoding)
     if stage in ("search", "all"):
         if encoding == "parallel":
             # one container per encoding; summaries land as separate files

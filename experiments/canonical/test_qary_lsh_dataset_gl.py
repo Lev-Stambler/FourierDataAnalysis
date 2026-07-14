@@ -13,6 +13,7 @@ from qary_lsh_dataset_gl import (
     build_lsh_codes,
     context_bits,
     control_codes,
+    dataset_gl_csamp,
     dataset_gl_tau,
     draw_fibers,
     fit_softmax_slots,
@@ -195,6 +196,130 @@ def test_full_domain_recovers_prefix_token_character():
     got = dataset_gl_tau(bits, A, tau=1.0, norm_m=len(bits), device="cpu")
     want = np.zeros(n, np.uint8); want[target_bit] = 1
     assert {tuple(mk) for mk in got["masks"]} == {tuple(want)}
+
+
+# ---------------------------------------------- the paired-CSAMP estimator
+# The paper's pair shares the real context Z AND the un-split continuation
+# L_k (ar_categorical_gl.typ, lem:qary-kv-estimator): on a flat table a valid
+# pair is two rows in the same fiber that AGREE on every un-split coordinate,
+# and the diagonal (x = x') is excluded.  These tests anchor the tree against
+# direct enumeration of that estimator -- not against any other code path.
+
+
+def _pair_cells(bits, fib, split_k):
+    key = np.column_stack([fib[:, None], bits[:, split_k:]])
+    _, cell = np.unique(key, axis=0, return_inverse=True)
+    return cell
+
+
+def _brute_pair_psi(bits, F, fib, masks, split_k):
+    """psi = (sum_cells |sum chi F|^2 - sum ||F||^2) / n_pairs, or None if the
+    level has no matched pairs."""
+    cell = _pair_cells(bits, fib, split_k)
+    cc = np.bincount(cell).astype(np.float64)
+    npairs = float((cc * (cc - 1)).sum())
+    if npairs <= 0:
+        return None, 0.0
+    chi = _chi(bits, masks)
+    Q = np.zeros(len(masks))
+    for t in range(F.shape[1]):
+        G = np.zeros((int(cell.max()) + 1, len(masks)))
+        np.add.at(G, cell, chi * F[:, t][:, None])
+        Q += (G * G).sum(0)
+    diag = float((F.astype(np.float64) ** 2).sum())
+    return (Q - diag) / npairs, npairs
+
+
+def _brute_csamp(bits, F, fib, tau):
+    n = bits.shape[1]
+    thresh = tau * tau / 4.0
+    live = np.zeros((1, n), np.uint8)
+    widths, profile = [], []
+    for k in range(n):
+        add = live.copy(); add[:, k] = 1
+        cand = np.concatenate([live, add])
+        psi, npairs = _brute_pair_psi(bits, F, fib, cand, k + 1)
+        profile.append(npairs)
+        live = cand if psi is None else cand[psi >= thresh]
+        widths.append(len(live))
+        if len(live) == 0:
+            break
+    return {tuple(mk) for mk in live if any(mk)}, widths, profile
+
+
+def _fiber_table(rng, n_fibers, r, n, flip=0.15):
+    """Per-fill rows with heavy suffix collisions: each fiber has a base
+    pattern and every fill flips bits independently with prob ``flip``."""
+    base = rng.integers(0, 2, (n_fibers, n)).astype(np.uint8)
+    fib = np.repeat(np.arange(n_fibers), r)
+    bits = base[fib] ^ (rng.random((n_fibers * r, n)) < flip).astype(np.uint8)
+    return bits, fib
+
+
+def test_csamp_matches_bruteforce_everywhere():
+    rng = np.random.default_rng(11)
+    bits, fib = _fiber_table(rng, n_fibers=24, r=8, n=8)
+    F = rng.normal(size=(len(bits), 2)).astype(np.float32)
+    # tau strictly inside the widest gap of the attainable psi order
+    # statistics, so no comparison is a knife edge in fp32
+    vals = []
+    for kk in range(1, 9):
+        pre = _all_masks(kk)
+        masks = np.zeros((len(pre), 8), np.uint8); masks[:, :kk] = pre
+        psi, _ = _brute_pair_psi(bits, F, fib, masks, kk)
+        vals.append(psi)
+    vals = np.unique(np.concatenate(vals))
+    top = vals[vals > 0][-30:]
+    i = int(np.argmax(np.diff(top)))
+    tau = float(2.0 * np.sqrt(0.5 * (top[i] + top[i + 1])))
+    want_masks, want_widths, want_profile = _brute_csamp(bits, F, fib, tau)
+    got = dataset_gl_csamp(bits, F, fib, tau, max_width=10_000, device="cpu")
+    assert got["status"] == "ok"
+    assert got["widths"] == want_widths
+    assert got["pair_profile"] == want_profile
+    assert {tuple(mk) for mk in got["masks"]} == want_masks
+
+
+def test_csamp_finds_within_fiber_character_at_every_level():
+    # f = chi_{bit 4} with ALL bits i.i.d. uniform within fiber: pairing on the
+    # fiber alone gives psi(prefix) ~ 0 at every level before bit 4 (the
+    # cancellation-prone pooled quantity), while matched un-split values keep
+    # psi(path) = 1 exactly -- the tree must walk straight to {4}.
+    rng = np.random.default_rng(12)
+    n = 6
+    bits = rng.integers(0, 2, (60 * 16, n)).astype(np.uint8)
+    fib = np.repeat(np.arange(60), 16)
+    F = (1.0 - 2.0 * bits[:, 4]).astype(np.float32)[:, None]
+    got = dataset_gl_csamp(bits, F, fib, tau=1.0, max_width=10_000, device="cpu")
+    want = np.zeros(n, np.uint8); want[4] = 1
+    assert got["status"] == "ok"
+    assert {tuple(mk) for mk in got["masks"]} == {tuple(want)}
+    assert got["no_evidence_levels"] == []
+    assert got["psi_top"] and abs(got["psi_top"][0] - 1.0) < 0.05
+
+
+def test_csamp_zero_pair_levels_carry_the_frontier():
+    # Distinct un-split values everywhere at level 0 -> no matched pairs -> no
+    # verdict: both children must be carried and the level recorded.
+    n = 5
+    pat = ((np.arange(12)[:, None] >> np.arange(4)) & 1).astype(np.uint8)
+    bits = np.zeros((12, n), np.uint8)
+    bits[:, 1:] = pat                                              # unique suffixes
+    bits[:, 0] = np.arange(12) % 2
+    fib = np.repeat(np.arange(6), 2)
+    F = np.ones((12, 1), np.float32)
+    got = dataset_gl_csamp(bits, F, fib, tau=0.5, max_width=10_000, device="cpu")
+    assert got["pair_profile"][0] == 0
+    assert 0 in got["no_evidence_levels"]
+    assert got["widths"][0] == 2
+
+
+def test_csamp_singleton_fibers_report_no_pairs():
+    rng = np.random.default_rng(13)
+    bits = rng.integers(0, 2, (16, 4)).astype(np.uint8)
+    F = rng.normal(size=(16, 1)).astype(np.float32)
+    got = dataset_gl_csamp(bits, F, np.arange(16), tau=0.1, device="cpu")
+    assert got["status"] == "no-pairs" and len(got["masks"]) == 0
 
 
 def test_fit_recovers_planted_soft_teacher():
