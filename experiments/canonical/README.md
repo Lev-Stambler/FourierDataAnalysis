@@ -61,15 +61,26 @@ uv run modal run --detach qary_lsh_dataset_gl.py --stage fit-deg1 --fill-len 61 
 1b. **The burial is the ESTIMATOR's, not dataset GL's** (`dataset_gl_csamp`, stage `csamp`):
    the group-by-SQUARE keeps the diagonal Σ‖f‖² — an S-independent mass that ties every
    bucket. The paper's paired estimator (lem:qary-kv-estimator) shares the real context
-   AND the un-split continuation between the two draws and excludes the diagonal; on a
+   AND the un-split continuation L_k between the two draws and excludes the diagonal; on a
    flat table a valid pair is two fills of one fiber agreeing on every un-split coordinate
-   (value-matched = cache-forked, by the AR factorization). Singleton cells cancel exactly,
-   so there is no noise mass — but the flat file's evidence is its per-level collision
-   profile (returned as `pair_profile`; near zero at early levels for fill61, real for
-   fill3). Pairing on the fiber alone (independent L_k) is the "cancellation-prone pooled
-   quantity" the theory excludes — test-pinned counterexample in the suite. The
-   no-collisions-needed version is the ONLINE oracle (fork the KV cache at the split
-   boundary), not yet implemented.
+   (value-matched = cache-forked, by the AR factorization). Fiber-only pairing (independent
+   L_k) is the "cancellation-prone pooled quantity" the theory excludes — test-pinned
+   counterexample in the suite.
+1c. **But the offline flat-file bit-tree STILL floors at unigram** (empirical, fill3 tau=0.1,
+   M4000): it is NOT collision-starved (min 7782 pairs/level) — it TIE-SATURATES. The deep
+   399-bit descent fills the width-512 frontier with high-degree masks whose paired ψ are all
+   ~0.0235 (point-mass inflation: peaked fibers make χ_S(i)χ_S(j)=1 for all S, a per-fiber
+   S-independent mass), burying the true deg-1 signal; the fit floors EXACTLY at unigram
+   (val_kl = unigram_kl = 1.8287, "found nothing"). Lesson (Lev): floor-at-unigram is a bug
+   signal, not a finding — the deep bit-tree is the wrong tool below deg ~3 (3rd confirmation).
+1d. **The collision-FREE fix — the ONLINE ORACLE** (`oracle_deg1_psi`, stages `oracle-data`/
+   `oracle`): fork the rollout by fixing the real prefix + older filled tokens as a shared
+   STUB drawn once per fiber, then resample the split token G times. Every fiber then has
+   G(G−1) guaranteed pairs (no waiting for flat-file collisions), and per-token deg-1 avoids
+   the deep-tree tie-saturation entirely. Prints a KL LADDER (top-K leaves → held-out KL vs
+   unigram) so progress toward the goal is visible live. Runs at fork level `p_back` (0 =
+   newest token; use a SHORTER context / smaller fill so the split token has real entropy —
+   a token peaked given long context re-triggers the point-mass tie).
 2. **The degree-1 aggregate is decisively encoding-dependent** (M=8000, held-out slot KL
    vs unigram 1.6303): LSH **1.4915 (−0.139 nats)**, id-bits 1.5975 (−0.033), random codes
    1.6303 (exactly zero — never improves on init).
