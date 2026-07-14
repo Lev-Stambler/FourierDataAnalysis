@@ -1192,51 +1192,79 @@ def gl_tree(m_fibers: int = 2000, g: int = 16, depth: int = 6,
         hist = np.bincount(deg, minlength=depth + 1).tolist()
         print(f"[tree:{name}] {len(masks)} chars, degree hist {hist}, "
               f"{time.time()-t0:.0f}s", flush=True)
-        # STAGED-BY-DEGREE fit on the flat table: deg-1 base, then add each
-        # higher degree as a val-gated block (avoids the flat-fit overfit)
-        nb = depth * B
-        bt = context_bits(ctx_tr, codes)[:, :nb]
-        bv = context_bits(ctx_va, codes)[:, :nb]
-        bte = context_bits(ctx_te, codes)[:, :nb]
+        # HONEST test of "beyond deg-2": build the FULL deg-1+2 enumeration
+        # baseline (all fill_len tokens -- the 1.103 recipe), then add the
+        # tree's deg>=3 characters (which enumeration cannot reach) as
+        # val-gated blocks.  Does TEST KL drop below the deg-1+2 ceiling?
+        nb_full, ndep = fill_len * B, depth * B
+        bt = context_bits(ctx_tr, codes)
+        bv = context_bits(ctx_va, codes)
+        bte = context_bits(ctx_te, codes)
+        Mtr = int(tr.sum())
+        A_c = torch.tensor((A_tr - n_tr[:, None] * mu[None, :]).astype(np.float32),
+                           device="cuda")
+        Ffull = torch.tensor(1.0 - 2.0 * bt[:, :nb_full].astype(np.float32), device="cuda")
+        d1n = ((Ffull.T @ A_c) / Mtr).double().pow(2).sum(1).sqrt().cpu().numpy()
+        anchors = np.flatnonzero(d1n >= 0.01)
+        pairs = {}
+        for i in anchors:
+            ni = ((Ffull * Ffull[:, [i]]).T @ A_c / Mtr).double().pow(2).sum(1) \
+                .sqrt().cpu().numpy()
+            ni[i] = 0.0
+            for j in np.argsort(-ni)[:max(20, 2000 // max(len(anchors), 1) + 1)]:
+                if ni[j] >= 0.01:
+                    key = (min(int(i), int(j)), max(int(i), int(j)))
+                    pairs[key] = max(pairs.get(key, 0.0), float(ni[j]))
+        top = sorted(pairs.items(), key=lambda kv: -kv[1])[:1000]
+        ii = np.array([k[0] for k, _ in top] or [0])
+        jj = np.array([k[1] for k, _ in top] or [0])
+        del Ffull; torch.cuda.empty_cache()
+
+        def base_feat(bits):
+            S = 1.0 - 2.0 * bits[:, :nb_full].astype(np.float32)
+            return np.concatenate([S[:, anchors], S[:, ii] * S[:, jj]], axis=1)
         uni = slot_kl(torch.tensor(np.tile(np.log(np.clip(mu, 1e-12, None)),
                       (len(Pte), 1)), device="cuda", dtype=torch.float32), Pte, n_te)
-        d1 = masks[deg == 1] if len(masks) else masks
-        fit1 = fit_softmax_slots(parity_features(bt, d1), Ptr, n_tr,
-                                 parity_features(bv, d1), Pva, n_va, steps=3000, lr=0.01)
-        W1 = torch.tensor(fit1["W"], device="cuda"); b1 = torch.tensor(fit1["b"], device="cuda")
-        off_tr = torch.tensor(parity_features(bt, d1), device="cuda") @ W1 + b1
-        off_va = torch.tensor(parity_features(bv, d1), device="cuda") @ W1 + b1
-        off_te = torch.tensor(parity_features(bte, d1), device="cuda") @ W1 + b1
-        ladder = [{"degree": 1, "n": int((deg == 1).sum()),
-                   "val_kl": slot_kl(off_va, Pva, n_va),
-                   "test_kl": slot_kl(off_te, Pte, n_te)}]
-        print(f"[fit:{name}] deg1 ({ladder[-1]['n']}) test {ladder[-1]['test_kl']:.4f} "
-              f"(uni {uni:.4f})", flush=True)
-        for dd in range(2, depth + 1):
+        fitB = fit_softmax_slots(base_feat(bt), Ptr, n_tr, base_feat(bv), Pva, n_va,
+                                 steps=3000, lr=0.01)
+        Wb = torch.tensor(fitB["W"], device="cuda"); bb = torch.tensor(fitB["b"], device="cuda")
+        off_tr = torch.tensor(base_feat(bt), device="cuda") @ Wb + bb
+        off_va = torch.tensor(base_feat(bv), device="cuda") @ Wb + bb
+        off_te = torch.tensor(base_feat(bte), device="cuda") @ Wb + bb
+        base_test = slot_kl(off_te, Pte, n_te)
+        ladder = [{"stage": "deg1+2 baseline", "n": int(len(anchors) + len(top)),
+                   "val_kl": slot_kl(off_va, Pva, n_va), "test_kl": base_test}]
+        print(f"[fit:{name}] deg1+2 baseline ({len(anchors)}+{len(top)}) "
+              f"test {base_test:.4f} (uni {uni:.4f})", flush=True)
+        # add the TREE's deg>=3 characters (over the newest depth tokens)
+        for dd in range(3, depth + 1):
             md = masks[deg == dd]
             if not len(md):
                 continue
-            Wd, vk, improved = _fit_block(
-                parity_features(bt, md), off_tr.cpu().numpy(), Ptr, n_tr,
-                parity_features(bv, md), off_va.cpu().numpy(), Pva, n_va,
-                steps=1500, lr=0.01)
+            Ftr = parity_features(bt[:, :ndep], md)
+            Fva = parity_features(bv[:, :ndep], md)
+            Wd, vk, improved = _fit_block(Ftr, off_tr.cpu().numpy(), Ptr, n_tr,
+                                          Fva, off_va.cpu().numpy(), Pva, n_va,
+                                          steps=1500, lr=0.01)
             if improved:
                 Wt = torch.tensor(Wd, device="cuda")
-                off_tr = off_tr + torch.tensor(parity_features(bt, md), device="cuda") @ Wt
-                off_va = off_va + torch.tensor(parity_features(bv, md), device="cuda") @ Wt
-                off_te = off_te + torch.tensor(parity_features(bte, md), device="cuda") @ Wt
-            ladder.append({"degree": dd, "n": int(len(md)), "improved": bool(improved),
-                           "val_kl": slot_kl(off_va, Pva, n_va),
+                off_tr = off_tr + torch.tensor(Ftr, device="cuda") @ Wt
+                off_va = off_va + torch.tensor(Fva, device="cuda") @ Wt
+                off_te = off_te + torch.tensor(parity_features(bte[:, :ndep], md),
+                                               device="cuda") @ Wt
+            ladder.append({"stage": f"+deg{dd}", "n": int(len(md)),
+                           "improved": bool(improved), "val_kl": slot_kl(off_va, Pva, n_va),
                            "test_kl": slot_kl(off_te, Pte, n_te)})
             print(f"[fit:{name}] +deg{dd} ({len(md)}, kept={improved}) "
                   f"test {ladder[-1]['test_kl']:.4f}", flush=True)
         summary["encodings"][name] = {
             "n_chars": int(len(masks)), "degree_hist": hist,
-            "TEST_unigram_kl": uni, "final_TEST_kl": ladder[-1]["test_kl"],
+            "TEST_unigram_kl": uni, "baseline_deg12_TEST_kl": base_test,
+            "final_TEST_kl": ladder[-1]["test_kl"],
             "ladder": ladder, "per_level_kept": tree["per_level_kept"]}
         print(name, json.dumps({k: summary["encodings"][name][k]
-              for k in ("n_chars", "degree_hist", "final_TEST_kl",
-                        "TEST_unigram_kl")}), flush=True)
+              for k in ("n_chars", "degree_hist", "baseline_deg12_TEST_kl",
+                        "final_TEST_kl", "TEST_unigram_kl")}), flush=True)
         torch.cuda.empty_cache()
     _write_json(f"{ROOT}/summary_gltree_f{fill_len}_d{depth}_tau{tau}.json", summary)
     _record("gl-tree", started, {"tau": tau, "depth": depth})
