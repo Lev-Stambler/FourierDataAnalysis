@@ -1139,7 +1139,7 @@ def make_data(m_fibers: int = M_FIBERS, r: int = R_FILLS, seed: int = 0,
             G_parts.append(z["G"]); P_parts.append(z["P"])
             continue
         Gc, Pc = _fill_and_label(model, PRE[lo:lo + chunk], fill_len, r, q,
-                                 slot_ids, seed=seed + lo)
+                                 slot_ids, batch=128, seed=seed + lo)   # 4x saturation
         np.savez_compressed(sp + ".tmp.npz", G=Gc, P=Pc)
         os.replace(sp + ".tmp.npz", sp)
         vol.commit()
@@ -2851,12 +2851,12 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         gl_tree_refit.remote(fill_len, depth, m_fibers, 0.15, top_pairs, 400,
                              encoding if encoding != "all" else "lsh")
     if stage == "stream-fit":
-        print(stream_fit.remote(m_fibers, 3000, fill_len, R_FILLS, 3e-4,
+        print(stream_fit.remote(m_fibers, 3000, fill_len, r, 3e-4,
                                 encoding if encoding != "all" else "lsh"))
     if stage == "relabel":
-        print(relabel_hidden.remote(m_fibers, fill_len, R_FILLS, span))
+        print(relabel_hidden.remote(m_fibers, fill_len, r, span))
     if stage == "stream-top1":
-        print(stream_top1.remote(m_fibers, 3000, fill_len, R_FILLS, target))
+        print(stream_top1.remote(m_fibers, 3000, fill_len, r, target))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":
