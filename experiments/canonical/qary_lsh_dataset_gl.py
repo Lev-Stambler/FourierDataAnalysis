@@ -47,6 +47,8 @@ import modal
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B-Base"
 FINEWEB = ("HuggingFaceFW/fineweb", "CC-MAIN-2024-10")
+FINEWEB_EDU = ("HuggingFaceFW/fineweb-edu", "CC-MAIN-2024-10")
+CORPORA = {"fineweb": FINEWEB, "edu": FINEWEB_EDU}
 CTX = 128            # real span length; fiber prefix = span[: CTX - (W - K)]
 W_WIN = 6            # window tokens (fixed string s = first K, model fills W-K)
 K_FIXED = 3
@@ -57,7 +59,7 @@ B0, B_CAP = 64, 128  # LSH projection doubling range
 
 ROOT = "/cache/canonical/qary_lsh_gl"
 A10_PER_SECOND = 0.000306
-BUDGET = 14.0   # raised from 8 for the full-span (fill 61) searches
+BUDGET = 30.0   # raised for the FineWeb-Edu data-scaling run to KL <= 1.0
 
 app = modal.App("canonical-qary-lsh-gl")
 vol = modal.Volume.from_name("fda-cache", create_if_missing=True)
@@ -627,10 +629,12 @@ def parity_features(bits, masks):
 
 
 def fit_softmax_slots(F_tr, P_tr, n_tr, F_va, P_va, n_va, steps=2000, lr=0.05,
-                      device=None, seed=0):
+                      device=None, seed=0, weight_decay=0.0):
     """Convex weighted soft-CE fit of slot logits = F @ W + b.  Adam + cosine
     decay + grad clip; bias initialized at the train log-unigram; best-val
-    iterate kept (the model never ends worse than its initialization)."""
+    iterate kept (the model never ends worse than its initialization).
+    weight_decay = L2 on W (the real-thing regularizer that lets us drop the
+    feature gate and still generalize)."""
     import torch
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -644,7 +648,8 @@ def fit_softmax_slots(F_tr, P_tr, n_tr, F_va, P_va, n_va, steps=2000, lr=0.05,
     unigram = (P_tr * w_tr[:, None]).sum(0) / w_tr.sum()
     b = torch.log(unigram.clamp_min(1e-12)).clone().requires_grad_(True)
     Wm = torch.zeros((F_tr.shape[1], V), device=device, requires_grad=True)
-    opt = torch.optim.Adam([Wm, b], lr=lr)
+    opt = torch.optim.Adam([{"params": [Wm], "weight_decay": weight_decay},
+                            {"params": [b], "weight_decay": 0.0}], lr=lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps)
 
     def val_kl():
@@ -719,17 +724,23 @@ def _load_teacher(device="cuda"):
     return model, tok, q
 
 
-def _stream_spans(tok, n_spans, span_len=CTX, max_docs=2_000_000):
+def _stream_spans(tok, n_spans, span_len=CTX, max_docs=8_000_000, corpus=FINEWEB,
+                  skip=0):
+    """Stream distinct spans from a corpus.  ``skip`` discards the first ``skip``
+    qualifying spans so a later training draw never reuses the held-out test
+    spans (continual fresh sampling; each doc seen at most once)."""
     from datasets import load_dataset
-    ds = load_dataset(FINEWEB[0], name=FINEWEB[1], split="train", streaming=True)
-    spans = []
+    ds = load_dataset(corpus[0], name=corpus[1], split="train", streaming=True)
+    spans, seen = [], 0
     for i, row in enumerate(ds):
         text = row.get("text") or ""
         ids = np.asarray(tok(text, add_special_tokens=False)["input_ids"], dtype=np.int64)
         if len(ids) >= span_len:
-            digest = hashlib.sha256(("span:" + text).encode("utf-8", "ignore")).digest()
-            start = int.from_bytes(digest[:8], "big") % (len(ids) - span_len + 1)
-            spans.append(ids[start:start + span_len])
+            seen += 1
+            if seen > skip:
+                digest = hashlib.sha256(("span:" + text).encode("utf-8", "ignore")).digest()
+                start = int.from_bytes(digest[:8], "big") % (len(ids) - span_len + 1)
+                spans.append(ids[start:start + span_len])
         if len(spans) >= n_spans or i + 1 >= max_docs:
             break
     if len(spans) < n_spans:
@@ -878,27 +889,31 @@ def _record(stage, started, extra=None):
     vol.commit()
 
 
-def _table_path(fill_len, m_fibers, r):
+def _table_path(fill_len, m_fibers, r, tag=""):
+    t = f"_{tag}" if tag else ""
     if fill_len == W_WIN - K_FIXED:
-        return f"{ROOT}/glds_w{W_WIN}_k{K_FIXED}_M{m_fibers}_R{r}.npz"
-    return f"{ROOT}/glds_ctx{CTX}_f{fill_len}_M{m_fibers}_R{r}.npz"
+        return f"{ROOT}/glds_w{W_WIN}_k{K_FIXED}_M{m_fibers}_R{r}{t}.npz"
+    return f"{ROOT}/glds_ctx{CTX}_f{fill_len}_M{m_fibers}_R{r}{t}.npz"
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
 def make_data(m_fibers: int = M_FIBERS, r: int = R_FILLS, seed: int = 0,
-              fill_len: int = W_WIN - K_FIXED):
-    """Fibers from FineWeb + AR fills + slot-projected teacher labels -> one npz.
+              fill_len: int = W_WIN - K_FIXED, corpus: str = "fineweb",
+              skip: int = 0, tag: str = ""):
+    """Fibers from a corpus + AR fills + slot-projected teacher labels -> one npz.
     fill_len = how many context tokens the model fills (the searchable span);
-    the remaining CTX - fill_len tokens are real dataset conditioning."""
+    the remaining CTX - fill_len tokens are real dataset conditioning.
+    corpus in {fineweb, edu}; skip discards leading spans so train never reuses
+    the held-out test spans; tag namespaces the cache file."""
     import os, time
     vol.reload()
-    out = _table_path(fill_len, m_fibers, r)
+    out = _table_path(fill_len, m_fibers, r, tag)
     if os.path.exists(out):
         return out
-    _budget("data", 3.0)
+    _budget("data", 8.0)
     started = time.time()
     model, tok, q = _load_teacher()
-    spans = _stream_spans(tok, n_spans=3 * m_fibers)
+    spans = _stream_spans(tok, n_spans=3 * m_fibers, corpus=CORPORA[corpus], skip=skip)
     PRE = draw_fibers(spans, w=fill_len + K_FIXED, M=m_fibers, seed=seed)
     # slot alphabet from the mean terminal distribution over a fiber sample
     import torch
@@ -909,7 +924,7 @@ def make_data(m_fibers: int = M_FIBERS, r: int = R_FILLS, seed: int = 0,
     slot_ids = np.concatenate([[-1], np.argsort(-mass)[: V_SLOTS - 1]]).astype(np.int64)
     # sharded fills: preemption restarts resume from the last saved shard
     # (PRE and slot_ids are deterministic given the stream + seed)
-    shard_dir = f"{ROOT}/shards_f{fill_len}_M{m_fibers}_R{r}"
+    shard_dir = f"{ROOT}/shards_f{fill_len}_M{m_fibers}_R{r}{'_' + tag if tag else ''}"
     os.makedirs(shard_dir, exist_ok=True)
     chunk = 500
     G_parts, P_parts = [], []
@@ -1276,6 +1291,91 @@ def gl_tree(m_fibers: int = 2000, g: int = 16, depth: int = 6,
     _write_json(f"{ROOT}/summary_gltree_f{fill_len}_d{depth}_tau{tau}.json", summary)
     _record("gl-tree", started, {"tau": tau, "depth": depth})
     return summary
+
+
+def _deg12_basis(bits_full, A_c, Mtr, device="cuda", thresh=0.01, max_pairs=1000):
+    """The GL deg-1+2 basis: certified deg-1 anchors (exact marginal norm >=
+    thresh) + the top deg-2 pairs among them.  Returns (anchors, ii, jj)."""
+    import torch
+    Ff = torch.tensor(1.0 - 2.0 * bits_full.astype(np.float32), device=device)
+    A = torch.tensor(A_c.astype(np.float32), device=device)
+    d1n = ((Ff.T @ A) / Mtr).double().pow(2).sum(1).sqrt().cpu().numpy()
+    anchors = np.flatnonzero(d1n >= thresh)
+    pairs = {}
+    for i in anchors:
+        ni = ((Ff * Ff[:, [i]]).T @ A / Mtr).double().pow(2).sum(1).sqrt().cpu().numpy()
+        ni[i] = 0.0
+        for j in np.argsort(-ni)[:max(20, 2000 // max(len(anchors), 1) + 1)]:
+            if ni[j] >= thresh:
+                k = (min(int(i), int(j)), max(int(i), int(j)))
+                pairs[k] = max(pairs.get(k, 0.0), float(ni[j]))
+    top = sorted(pairs.items(), key=lambda kv: -kv[1])[:max_pairs]
+    ii = np.array([k[0] for k, _ in top] or [0]); jj = np.array([k[1] for k, _ in top] or [0])
+    del Ff, A; torch.cuda.empty_cache()
+    return anchors, ii, jj
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200, memory=32768)
+def stream_fit(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
+               r: int = 8, wd: float = 3e-4, encoding: str = "lsh"):
+    """THE REAL THING (Lev's protocol): a fixed FineWeb-Edu test set set aside
+    once, a DISJOINT fresh training stream (each doc seen at most once), the GL
+    deg-1+2 basis, and an UNGATED L2-regularized fit -- no feature gate.  Scale
+    m_train until held-out TEST KL <= 1.0."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("stream-fit", 12.0)
+    started = time.time()
+    te_path = make_data.local(m_test, r, 0, fill_len, "edu", 0, "edu_test")
+    tr_path = make_data.local(m_train, r, 0, fill_len, "edu", 3 * m_test, "edu_tr")
+    codes = dict(np.load(f"{ROOT}/codes.npz"))[encoding]
+    B = codes.shape[1]
+
+    def collapse(path):
+        d = np.load(path)
+        ctx = np.concatenate([d["PRE"][d["fiber_id"]], d["G"]], axis=1)
+        c, A, n, _ = soft_collapse(ctx, d["P"])
+        return c, A, n
+    c_te, A_te, n_te = collapse(te_path)
+    c_all, A_all, n_all = collapse(tr_path)
+    fl = np.load(tr_path)["G"].shape[1]
+    # small val split OFF THE TRAIN STREAM for early stopping (test stays pure)
+    rng = np.random.default_rng(0)
+    vm = rng.random(len(n_all)) < 0.15
+    c_tr, A_tr, n_tr = c_all[~vm], A_all[~vm], n_all[~vm]
+    c_va, A_va, n_va = c_all[vm], A_all[vm], n_all[vm]
+    mu = A_tr.sum(0) / n_tr.sum(); Mtr = float(n_tr.sum())
+    nb_full = fl * B
+    bt, bv, bte = (context_bits(c_tr, codes), context_bits(c_va, codes),
+                   context_bits(c_te, codes))
+    Ptr = A_tr / n_tr[:, None]; Pva = A_va / n_va[:, None]; Pte = A_te / n_te[:, None]
+    A_c = A_tr - n_tr[:, None] * mu[None, :]
+    anchors, ii, jj = _deg12_basis(bt[:, :nb_full], A_c, Mtr)
+
+    def feat(bits):
+        S = 1.0 - 2.0 * bits[:, :nb_full].astype(np.float32)
+        return np.concatenate([S[:, anchors], S[:, ii] * S[:, jj]], axis=1)
+
+    def slot_kl(off, Pn, n):
+        lq = off - torch.logsumexp(off, 1, keepdim=True)
+        lp = torch.tensor(np.log(np.clip(Pn, 1e-12, None)), device=off.device)
+        return float((torch.tensor(n[:, None] * Pn, device=off.device) * (lp - lq)).sum()
+                     / float(n.sum()))
+    fit = fit_softmax_slots(feat(bt), Ptr, n_tr, feat(bv), Pva, n_va,
+                            steps=4000, lr=0.01, weight_decay=wd)
+    W = torch.tensor(fit["W"], device="cuda"); b = torch.tensor(fit["b"], device="cuda")
+    train_kl = slot_kl(torch.tensor(feat(bt), device="cuda") @ W + b, Ptr, n_tr)
+    test_kl = slot_kl(torch.tensor(feat(bte), device="cuda") @ W + b, Pte, n_te)
+    uni = slot_kl(torch.tensor(np.tile(np.log(np.clip(mu, 1e-12, None)), (len(Pte), 1)),
+                  device="cuda", dtype=torch.float32), Pte, n_te)
+    out = {"corpus": "fineweb-edu", "encoding": encoding, "m_train": m_train,
+           "m_test": m_test, "wd": wd, "n_features": int(len(anchors) + len(jj)),
+           "TRAIN_kl": train_kl, "TEST_kl": test_kl, "TEST_unigram_kl": uni}
+    print("[stream-fit] " + json.dumps(out), flush=True)
+    _write_json(f"{ROOT}/summary_streamfit_{encoding}_M{m_train}.json", out)
+    _record("stream-fit", started, {"m_train": m_train})
+    return out
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
@@ -2313,6 +2413,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "gl-tree-refit":
         gl_tree_refit.remote(fill_len, depth, m_fibers, 0.15, top_pairs, 400,
                              encoding if encoding != "all" else "lsh")
+    if stage == "stream-fit":
+        print(stream_fit.remote(m_fibers, 3000, fill_len, R_FILLS, 3e-4,
+                                encoding if encoding != "all" else "lsh"))
     if stage == "oracle-sweep":
         # native deg-1 at EVERY filled token position (0=newest .. fill_len-1),
         # one container per level; the fast reorder_cache fork keeps each cheap
