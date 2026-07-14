@@ -942,10 +942,18 @@ def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
     stub_len = fill_len - 1 - p_back
     assert 0 <= stub_len < fill_len, f"p_back {p_back} out of range for fill {fill_len}"
     model, tok, q = _load_teacher()
-    src = np.load(_table_path(fill_len, m_fibers, r=R_FILLS))       # reuse the fibers/slots
+    # reuse the fibers/slots from whichever fiber table for this fill_len exists
+    # (the oracle only needs PRE + slot_ids; slice to m_fibers)
+    src = None
+    for cand in (m_fibers, 8000, 4000, 2000):
+        p = _table_path(fill_len, cand, r=R_FILLS)
+        if os.path.exists(p):
+            src = np.load(p); break
+    if src is None:
+        raise RuntimeError(f"no fiber table for fill_len={fill_len}")
     PRE, slot_ids = src["PRE"], src["slot_ids"]
     if len(PRE) < m_fibers:
-        raise RuntimeError(f"only {len(PRE)} fibers cached")
+        raise RuntimeError(f"only {len(PRE)} fibers cached, need {m_fibers}")
     PRE = PRE[:m_fibers]
     if stub_len > 0:                                               # shared stub, one draw
         stub, _ = _fill_and_label(model, PRE, stub_len, 1, q, slot_ids,
