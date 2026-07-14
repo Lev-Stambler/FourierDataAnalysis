@@ -455,61 +455,65 @@
 
 <!-- ============================================================ S10 -->
 <section id="s10">
-  <h2><span class="secno">10</span>The degree distribution — measured without fitting anything</h2>
+  <h2><span class="secno">10</span>The degree distribution of the top-1 — measured without fitting anything</h2>
 
-  <p>Everything above finds low-degree structure by <em>building</em> it: enumerate characters,
-  certify them, fit a student. This section measures where the function's variance lives across
-  degrees <em>directly</em> — no basis, no code table, no fit. The probe: fork the teacher's
-  cache at the token <b>b</b> positions back from the prediction, resample <em>that one token</em>
-  g&nbsp;=&nbsp;16 times from the teacher's own conditional (the real suffix is teacher-forced
-  back in), and record how much the 512-slot terminal distribution moves. That within-fiber
-  variance is the <b>sensitivity</b> of coordinate b, and Parseval turns coordinates into
-  degrees: a degree-k character is counted by exactly k coordinates, so</p>
+  <p>Everything above finds structure by <em>building</em> it: enumerate characters, certify
+  them, fit a student. This section measures where the variance of the <b>top-1 target</b> —
+  the arc's agreement metric, \( f(x) \) = one-hot of the teacher's argmax over the full
+  248k-token vocabulary — lives across degrees <em>directly</em>. No basis, no code table, no
+  fit. The probe: fork the teacher's cache at the token <b>b</b> positions back, resample
+  <em>that one token</em> g&nbsp;=&nbsp;16 times from the teacher's own conditional (real suffix
+  teacher-forced back in), and check whether the argmax moved. For a one-hot function the
+  within-fiber variance <em>is</em> a probability: Sens<sub>b</sub> = P(resampling the token b
+  back flips the top-1), and Var = P(two random contexts disagree on the top-1) = 0.985.
+  Parseval turns coordinates into degrees — a degree-k character is counted by exactly k
+  coordinates:</p>
 
   <div class="eq">$$ \mathrm{Sens}_b \;=\; \sum_{S\,:\,S\text{ touches }b}\lVert\hat f(S)\rVert^2,
   \qquad \bar S \;=\; \sum_b \mathrm{Sens}_b \;=\; \sum_{k\ge1} k\,\overline W^{\,k},
   \qquad d_{\mathrm{eff}} \;=\; \frac{\bar S}{\mathrm{Var}}
   \;=\; \frac{\sum_k k\,\overline W^{\,k}}{\sum_k \overline W^{\,k}} , $$</div>
 
-  <p>where \( \overline W^{\,k} \) is the total spectral mass at degree k. Total sensitivity is
-  <em>degree-weighted</em> spectral mass, so the ratio \( d_{\mathrm{eff}} \) is the
-  variance-weighted <b>average degree</b> of the function — the center of mass of the degree
-  distribution — obtained purely from single-token perturbations.</p>
+  <p>so \( d_{\mathrm{eff}} \) is the variance-weighted <b>average degree</b> of the top-1
+  function — the center of mass of its degree distribution — obtained purely from single-token
+  perturbations.</p>
 
   <div class="fig">
     <div id="s10-profile"></div>
-    <div class="caption">The measured profile (M=1000 real FineWeb spans, ±1 s.e., both axes
-    log-ish). Resampling the last token moves the output 120× more than resampling a token 15
-    back. The annotations give the running share of total sensitivity: half of everything the
-    model reads, it reads from the final token.</div>
+    <div class="caption">The measured flip-probability profile (M=1000 real FineWeb spans,
+    ±1&nbsp;s.e.). Two regimes: fast decay near the prediction (60% at the last token, 18% three
+    back), then a <b>plateau at 2–3% per position</b> from b≈23 all the way out to b=124, with an
+    uptick at the earliest tokens (the ones that set the topic). The tail is signal, not noise —
+    identical resampled tokens produce identical rows, so flips only come from real
+    substitutions.</div>
   </div>
 
   <div class="cards" id="s10-cards"></div>
 
   <div class="fig">
     <div id="s10-degree"></div>
-    <div class="caption">What the mean pins down. Bars: the degree distribution implied if mass
-    sits on degrees {1, 2} — the recovery ladder's verdict (§9: certified triples get weight
-    exactly 0) — which forces a 96 / 4 split. Line: the assumption-free Markov envelope
-    \( \overline W^{\,>d}/\mathrm{Var} \le d_{\mathrm{eff}}/d \): no matter how adversarial the
-    spectrum, only 10% of variance can live above degree 10.</div>
+    <div class="caption">What a mean degree of ≈5.4 pins down: the assumption-free Markov
+    envelope — variance above degree K is at most \( (d_{\mathrm{eff}}-1)/(K-1) \) — decays
+    slowly, so the mass is genuinely spread across degrees. Contrast the old distributional
+    target (§9's KL arc), whose mean degree was ≈1: <b>the top-1 function is not low-degree</b>.
+    Argmax flips are decided at near-ties resolved by long-range context.</div>
   </div>
 
   <h3>The degree bound, live</h3>
   <p>The learning theorem needs tail mass \( \le \varepsilon/4 \) above the cutoff degree;
-  Markov delivers it at \( d \ge 4\bar S/\varepsilon \). Drag the target error: the worst-case
-  cutoff moves as 1/ε, while the <em>observed</em> spectrum (§5, §9) already satisfies every
-  target at degree 2 — the gap between the envelope and the dot is how far this function is
-  from adversarial.</p>
+  Markov delivers it at \( d \ge 4\bar S/\varepsilon \). Drag the target error and watch the
+  required cutoff move as 1/ε — for the top-1 target every practical ε demands degrees far
+  beyond any windowed parity student. This is the fit-free explanation of why held-out top-1
+  agreement barely moved for every window student in the arc: the lever is context coverage,
+  not window degree.</p>
 
   <div class="fig"><div id="s10-bound"></div></div>
 
   <div class="code-note"><code>sensitivity</code> stage (qary_lsh_dataset_gl.py: fork at
-  back-offset b via <code>_resample_and_label</code>, per-fiber unbiased variance via
-  <code>_sens_from_groups</code>, degree arithmetic via <code>_sens_report</code>; estimator
-  brute-force-anchored in tests). Run: M=1000, g=16, conditional resampling, $0.40 of A10G.
-  A rerun with uniform resampling over the slot alphabet (the theorem's exact measure) is
-  near-identical — d_eff 1.03 vs 1.04 — the verdict is measure-robust.
+  back-offset b via <code>_resample_and_label</code>, full-vocab argmax readout — no slot
+  projection anywhere in this arc — flip probability via <code>_sens_from_top1</code>, degree
+  arithmetic via <code>_sens_report</code>; estimator brute-force-anchored in tests; forked
+  evaluations self-checked for argmax equality). Run: M=1000, g=16, conditional resampling.
   Paper: sections/prelims.typ prop:dataset-sensitivity + thm:learning-low-degree;
   results in sections/experiments.typ <code>&lt;sec:sensitivity&gt;</code>.</div>
 </section>

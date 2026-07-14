@@ -4,10 +4,11 @@ A single-page, no-build-step site that explains what the canonical experiment do
 the hood: the Fourier domain (61 tokens × 133 LSH bits), the KL objective and the 512-slot
 student, sign-LSH vs random codes, the GL tree / paired-ψ estimators (with an interactive
 10-bit toy), the forked-cache oracle, and the real recovered sparse model running live in
-the browser (self-checked against `demo.py`). Section 10 explains the degree distribution
-measured by the `sensitivity` stage: the per-position sensitivity profile, the average-degree
-identity d_eff = S̄/Var = 1.04, the implied {deg-1: 96%, deg-2: 4%} split, and an interactive
-Markov degree-bound (d = 4S̄/ε) explorer.
+the browser (self-checked against `demo.py`). Section 10 explains the degree distribution of
+the FULL-VOCAB TOP-1 target measured by the `sensitivity` stage (no slot projection in that
+arc): the per-position flip-probability profile (60% at the last token, a 2–3% plateau out to
+124 back), the average-degree identity d_eff = S̄/Var ≈ 5.4 — the top-1 function is NOT
+low-degree — and an interactive Markov degree-bound (d = 4S̄/ε) explorer.
 
 ## View
 

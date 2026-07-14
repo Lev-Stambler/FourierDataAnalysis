@@ -607,44 +607,49 @@ that already see the tokens through an embedding table.
 
 The dataset-sensitivity machinery of @prop:dataset-sensitivity gives the low-degree hypothesis of
 @thm:learning-low-degree a directly measurable form, and the measurement needs no basis, no code
-table, and no fit: resample one token and watch the output distribution move.  For the same
-teacher as above (terminal $512$-slot distribution $f$ over real $128$-token FineWeb spans,
-$M = 1000$), the sensitivity of the coordinate $b$ tokens back from the prediction is estimated
-by forking the teacher's cache at that position, drawing $g = 16$ i.i.d. replacements from the
-teacher's own conditional at the fork, teacher-forcing the untouched real suffix, and taking the
-unbiased within-fiber sample variance of $f$ summed over slots -- the conditional
-(autoregressive) instance of the coordinate-averaging operator, with every forked evaluation
-self-checked against a fresh forward pass, and the estimator's core anchored against brute-force
-enumeration and the spectral identity of @prop:global-sensitivity in the module's tests.  The
-profile decays as a power law from the prediction point:
+table, and no fit: resample one token and watch whether the prediction changes.  The measured
+target is the arc's agreement metric itself: $f(x)$ is the one-hot indicator of the teacher's
+full-vocabulary argmax token, so sensitivities and variances are probabilities of top-$1$ events.
+For real $128$-token FineWeb spans ($M = 1000$), the sensitivity of the coordinate $b$ tokens
+back from the prediction is estimated by forking the teacher's cache at that position, drawing
+$g = 16$ i.i.d. replacements from the teacher's own conditional at the fork, teacher-forcing the
+untouched real suffix, and taking the unbiased within-fiber group variance of the one-hot
+readout -- which is exactly the probability that two independent resamples of that single token
+*flip* the top-$1$.  The total variance is the same object across contexts: the probability that
+two random spans disagree on the top-$1$, measured at $"Var" = 0.985$.  Every forked evaluation
+is self-checked against a fresh forward pass (argmax equality), and the estimator core is
+anchored against brute-force enumeration and the spectral identity of @prop:global-sensitivity
+in the module's tests.
 
-#table(columns: 9,
-  [$b$ (tokens back)], [$0$], [$1$], [$2$], [$3$], [$7$], [$15$], [$31$], [$124$],
-  [$"Sens"_b times 10^3$], [$143$], [$40$], [$21$], [$13$], [$4.0$], [$1.2$], [$1.1$], [$0.3$])
+#table(columns: 10,
+  [$b$ (tokens back)], [$0$], [$1$], [$2$], [$3$], [$7$], [$15$], [$31$], [$63$], [$124$],
+  [$"Sens"_b$ (flip prob.)], [$.60$], [$.37$], [$.23$], [$.18$], [$.10$], [$.048$], [$.033$],
+  [$.021$], [$.032$])
 
-Against the total slot variance $0.294$: the last token alone moves $49%$ of the function's
-variance, the last four tokens carry $71%$ of the total sensitivity, and the strided tail out to
-$b = 124$ (densified by linear interpolation) brings the total to $overline(S) = 0.306$.  The
-scale-free summary is the variance-weighted average degree
-$d_"eff" = overline(S) \/ "Var" = 1.04$: measured through single-token perturbations alone, the
-teacher-on-FineWeb function is spectrally concentrated at degree one with a thin higher tail --
-the same verdict the recovery ladder of @sec:whlsh-canonical reached by fitting, where degree two
-terminated the ladder and certified triples carried zero incremental weight.  The sufficient
-degree of @thm:learning-low-degree, $d >= 4 overline(S) \/ eps$, evaluates to $d = 8.3$, $16.7$,
-$41.7$ at $eps = 0.5$, $0.25$, $0.1$ of the total variance: a loose Markov envelope over a sharp
-underlying quantity, and the practical content is the ordering -- $overline(S)$ certifies that
-low-degree methods suffice for \$0.40 of GPU time, before any basis is chosen or any fit is
-attempted.  Two caveats keep the claim honest: the resampling measure is the teacher's own
-conditional rather than the uniform $mu$ of the theorem (the natural dataset-weighted reading of
-@prop:dataset-sensitivity, whose inequality direction makes the measured $overline(S)$ an
-estimate from below), and degree here counts token coordinates -- the same granularity as the
-ladder's per-token blocks.  The first caveat turns out to be immaterial: rerunning the identical
-protocol with the theorem's uniform $mu$ over the $511$-token slot alphabet gives a
-near-identical profile ($"Sens"_0 = 0.131$ vs $0.143$) and $d_"eff" = 1.03$ vs $1.04$ -- the
-low-degree verdict is robust to the resampling measure.  Varying the tail treatment (linear
-interpolation, a fitted power law, or a pessimistic flat-hold on the strided positions) and the
-statistical error place $d_"eff"$ in $[1.03, 1.08]$; since mass at degree $>= K$ contributes at
-least $K - 1$ of excess mean, the mean alone caps the deep tail at
-$(d_"eff" - 1) \/ (K - 1)$ -- at most $2$--$4%$ of the variance at degree $>= 3$, independent
-of any support assumption, with the ladder showing that what degree-$3$ structure exists is
-spanned by degrees one and two.
+Two regimes.  Near the prediction the profile decays fast -- resampling the last token flips the
+top-$1$ $60%$ of the time, three back $18%$ -- but from $b approx 23$ outward it *flattens* at a
+$2$--$3%$ flip rate per position all the way to $b = 124$, with a small uptick at the earliest
+span tokens (the tokens that set the topic).  Standard errors there are $0.003$--$0.004$ against
+values near $0.03$, and two branches drawing the same replacement token produce byte-identical
+rows, so the plateau is signal, not noise: the top-$1$ has genuine long-range dependence on the
+whole context.  Summed, the $16$ measured positions alone give $overline(S) = 2.14$
+($d_"eff" >= 2.17$ with no interpolation whatsoever), and densifying the strided tail gives
+$overline(S) = 5.33$, hence a variance-weighted average degree of
+$d_"eff" = overline(S) \/ "Var" approx 5.4$.  The sufficient degree of @thm:learning-low-degree,
+$d >= 4 overline(S) \/ eps$, evaluates to $d = 43$, $87$, $216$ at $eps = 0.5$, $0.25$, $0.1$ of
+the total variance, and the mean caps tails only weakly here (Markov: at most
+$(d_"eff" - 1)\/(K - 1)$ of the variance above degree $K$ -- still $49%$ at $K = 10$).
+
+The verdict is the mirror image of the distributional arc: *the top-$1$ function is not
+low-degree.*  An argmax is decided at decision boundaries, and near-ties are resolved by
+interactions reaching across the entire context, spreading spectral mass to degree
+$approx 5$ and beyond.  This is the fit-free explanation of an observation every fitted window
+student kept making -- held-out top-$1$ agreement barely moves no matter what the window model
+captures: a short-window low-degree student cannot represent a degree-$approx 5$ function whose
+flip mass plateaus across all $128$ positions.  For the top-$1$ program the lever is therefore
+context coverage, not window degree.  Caveats: the resampling measure is the teacher's own
+conditional (the dataset-weighted reading of @prop:dataset-sensitivity, making
+$overline(S)$ an estimate from below -- the true average degree can only be higher); degree
+counts token coordinates; and positions beyond the $16$ measured back-offsets are linearly
+interpolated, though even the interpolation-free floor $d_"eff" >= 2.17$ already places the
+target outside the low-degree regime.

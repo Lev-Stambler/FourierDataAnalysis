@@ -367,19 +367,20 @@ function buildSensProfile() {
   const svg = CH.svg("s10-profile", w, h);
   const x = d3.scaleSymlog().constant(1)
     .domain([0, d3.max(S.positions)]).range([m.l, w - m.r]);
+  const ymin = d3.min(S.sens) * 0.6;
   const y = d3.scaleLog()
-    .domain([1e-4, d3.max(S.sens) * 1.4]).range([h - m.b, m.t]);
+    .domain([ymin, d3.max(S.sens) * 1.4]).range([h - m.b, m.t]);
   svg.append("g").attr("transform", `translate(0,${h - m.b})`).attr("class", "axis")
     .call(d3.axisBottom(x).tickValues([0, 1, 2, 3, 5, 7, 11, 15, 31, 63, 124])
       .tickFormat((d) => String(d)));
   svg.append("g").attr("transform", `translate(${m.l},0)`).attr("class", "axis")
-    .call(d3.axisLeft(y).ticks(4, ".0e"));
+    .call(d3.axisLeft(y).ticks(5, ".0%"));
   svg.append("text").attr("x", (m.l + w - m.r) / 2).attr("y", h - 8)
     .attr("text-anchor", "middle").attr("class", "chart-label")
     .text("b = how many tokens back the resampled token sits (0 = last)");
   svg.append("text").attr("transform", "rotate(-90)").attr("x", -h / 2).attr("y", 14)
     .attr("text-anchor", "middle").attr("class", "chart-label")
-    .text("Sens_b (slot-L2 variance)");
+    .text("Sens_b = P(top-1 flips)");
   const pts = S.positions.map((b, i) => ({ b, v: S.sens[i], se: S.se[i] }));
   svg.append("path")
     .attr("d", d3.line().x((d) => x(d.b)).y((d) => y(d.v))(pts))
@@ -387,7 +388,7 @@ function buildSensProfile() {
   const g = svg.selectAll(null).data(pts).join("g");
   g.append("line")
     .attr("x1", (d) => x(d.b)).attr("x2", (d) => x(d.b))
-    .attr("y1", (d) => y(Math.max(1e-4, d.v - d.se)))
+    .attr("y1", (d) => y(Math.max(ymin, d.v - d.se)))
     .attr("y2", (d) => y(d.v + d.se))
     .attr("stroke", C.lsh).attr("stroke-width", 1);
   g.append("circle").attr("cx", (d) => x(d.b)).attr("cy", (d) => y(d.v))
@@ -409,16 +410,17 @@ function buildSensProfile() {
 function buildSensCards() {
   const S = VIS.sens;
   const host = U.el("s10-cards");
-  const deff = S.d_eff_interp;
   const cards = [
-    [deff.toFixed(2), "d_eff = S̄ / Var — the variance-weighted average degree", "hero"],
-    [Math.round(100 * S.sens[0] / S.var_tot) + "%",
-     "of the function's variance moves when only the last token is resampled", ""],
-    [S.S_interp.toFixed(3) + " / " + S.var_tot.toFixed(3),
-     "total sensitivity S̄ vs total variance (interpolated over all 125 positions)", ""],
-    [S.d_eps_interp["0.25"].toFixed(1),
-     "worst-case sufficient degree at ε = 25% of variance — the observed spectrum needs 2", ""],
-    ["$0.40", "cost of the whole measurement — no fit, no basis, no code table", "hero"],
+    [(100 * S.sens[0]).toFixed(0) + "%",
+     "chance the top-1 flips when ONLY the last token is resampled", "hero"],
+    [(100 * S.sens[S.sens.length - 1]).toFixed(1) + "%",
+     "flip rate at 124 tokens back — the tail never dies", ""],
+    [S.d_eff_interp.toFixed(1),
+     "d_eff = S̄ / Var — the top-1 target is NOT a low-degree function", "hero"],
+    [S.d_eff_measured.toFixed(2),
+     "interpolation-free floor on d_eff from the 16 measured positions alone", ""],
+    [S.d_eps_interp["0.25"].toFixed(0),
+     "worst-case sufficient degree at ε = 25% of variance (4·S̄/ε)", ""],
   ];
   for (const [big, lbl, cls] of cards) {
     const c = U.html(host, "div", "card " + cls);
@@ -430,41 +432,38 @@ function buildSensCards() {
 function buildSensDegree() {
   const S = VIS.sens;
   const deff = S.d_eff_interp;
-  const w2 = deff - 1;                       // mass at deg 2 if support = {1,2}
   const w = 660, h = 250, m = { t: 26, r: 20, b: 42, l: 60 };
   const svg = CH.svg("s10-degree", w, h);
-  const ks = [1, 2, 3, 4, 5, 6, 7, 8];
-  const x = d3.scaleBand().domain(ks).range([m.l, w - m.r]).padding(0.35);
+  const kmax = 40;
+  const x = d3.scaleLinear().domain([1, kmax]).range([m.l, w - m.r]);
   const y = d3.scaleLinear().domain([0, 1]).range([h - m.b, m.t]);
   svg.append("g").attr("transform", `translate(0,${h - m.b})`).attr("class", "axis")
-    .call(d3.axisBottom(x));
+    .call(d3.axisBottom(x).ticks(8));
   svg.append("g").attr("transform", `translate(${m.l},0)`).attr("class", "axis")
     .call(d3.axisLeft(y).ticks(5, "%"));
   svg.append("text").attr("x", (m.l + w - m.r) / 2).attr("y", h - 6)
     .attr("text-anchor", "middle").attr("class", "chart-label")
-    .text("degree k (token coordinates touched)");
+    .text("degree K (token coordinates touched)");
   svg.append("text").attr("transform", "rotate(-90)").attr("x", -h / 2).attr("y", 14)
     .attr("text-anchor", "middle").attr("class", "chart-label")
-    .text("share of variance");
-  const bars = [{ k: 1, v: 1 - w2 }, { k: 2, v: w2 }];
-  svg.selectAll("rect.deg").data(bars).join("rect").attr("class", "deg")
-    .attr("x", (d) => x(d.k)).attr("width", x.bandwidth())
-    .attr("y", (d) => y(d.v)).attr("height", (d) => y(0) - y(d.v))
-    .attr("rx", 3).attr("fill", C.lsh);
-  svg.selectAll("text.degv").data(bars).join("text").attr("class", "chart-note degv")
-    .attr("x", (d) => x(d.k) + x.bandwidth() / 2).attr("y", (d) => y(d.v) - 6)
-    .attr("text-anchor", "middle")
-    .text((d) => (100 * d.v).toFixed(1) + "%");
-  // Markov envelope on the tail ABOVE k: W^{>k}/Var <= d_eff / (k+1)
-  const env = ks.map((k) => ({ k, v: Math.min(1, deff / (k + 1)) }));
+    .text("max share of variance above degree K");
+  // Markov envelope: mass at degree >= K is <= (d_eff - 1)/(K - 1)
+  const env = d3.range(2, kmax + 1).map((k) => ({
+    k, v: Math.min(1, (deff - 1) / (k - 1)),
+  }));
   svg.append("path")
-    .attr("d", d3.line().x((d) => x(d.k) + x.bandwidth() / 2).y((d) => y(d.v))
-      .curve(d3.curveMonotoneX)(env))
-    .attr("fill", "none").attr("stroke", C.fixedS).attr("stroke-width", 2)
-    .attr("stroke-dasharray", "5,4");
-  svg.append("text").attr("x", x(3)).attr("y", y(env[2].v) - 8)
+    .attr("d", d3.line().x((d) => x(d.k)).y((d) => y(d.v)).curve(d3.curveMonotoneX)(env))
+    .attr("fill", "none").attr("stroke", C.lsh).attr("stroke-width", 2);
+  // marker at the measured mean degree
+  svg.append("line").attr("x1", x(deff)).attr("x2", x(deff))
+    .attr("y1", y(0)).attr("y2", y(1))
+    .attr("stroke", C.fixedS).attr("stroke-width", 2).attr("stroke-dasharray", "5,4");
+  svg.append("text").attr("x", x(deff) + 8).attr("y", m.t + 12)
     .attr("class", "chart-note").attr("fill", C.fixedS)
-    .text("Markov: variance above degree k ≤ d_eff/(k+1) — no assumptions");
+    .text(`mean degree d_eff = ${deff.toFixed(1)}`);
+  svg.append("text").attr("x", x(12)).attr("y", y(Math.min(1, (deff - 1) / 11)) - 10)
+    .attr("class", "chart-note").attr("fill", C.lsh)
+    .text("Markov: variance above degree K ≤ (d_eff−1)/(K−1) — no assumptions");
 }
 
 function buildSensBound() {
@@ -494,15 +493,9 @@ function buildSensBound() {
   svg.append("path")
     .attr("d", d3.line().x((p) => x(p.d)).y((p) => y(p.v))(curve))
     .attr("fill", "none").attr("stroke", C.lsh).attr("stroke-width", 2);
-  svg.append("text").attr("x", x(30)).attr("y", y(deff / 30) - 8)
+  svg.append("text").attr("x", x(30)).attr("y", y(Math.min(1, deff / 30)) - 8)
     .attr("class", "chart-note").attr("fill", C.lsh)
     .text("worst-case tail above d (Markov, from measured S̄)");
-  // observed: the ladder is done at degree 2
-  svg.append("circle").attr("cx", x(2)).attr("cy", y(0.005)).attr("r", 5)
-    .attr("fill", C.good);
-  svg.append("text").attr("x", x(2) + 9).attr("y", y(0.005) - 6)
-    .attr("class", "chart-note").attr("fill", C.good)
-    .text("observed: deg-3+ adds ~0 (§9)");
   const needle = svg.append("line").attr("stroke", C.fixedS).attr("stroke-width", 2);
   const hline = svg.append("line").attr("stroke", C.fixedS)
     .attr("stroke-dasharray", "3,3").attr("stroke-width", 1);
