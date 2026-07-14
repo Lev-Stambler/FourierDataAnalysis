@@ -876,6 +876,29 @@ def _terminal_probs(model, ids_batch, q):
         return torch.softmax(out.logits[:, -1, :q].float(), dim=-1)
 
 
+def _capture_hidden(model, ids_batch, q):
+    """One teacher forward with a forward hook on the unembedding: capture its
+    INPUT (h, the exact pre-LM-head vector -- no final-norm ambiguity) and its
+    OUTPUT (logits -> t* = full-vocab argmax).  Returns (h (B, d), t* (B,))."""
+    import torch
+    lm = model.get_output_embeddings()
+    grab = {}
+
+    def hook(_mod, inp, out):
+        grab["h"] = inp[0].detach()
+        grab["logits"] = (out[0] if isinstance(out, tuple) else out).detach()
+    handle = lm.register_forward_hook(hook)
+    try:
+        with torch.inference_mode():
+            model(input_ids=ids_batch, use_cache=False, return_dict=True, logits_to_keep=1)
+    finally:
+        handle.remove()
+    h, lg = grab["h"], grab["logits"]
+    h = h[:, -1, :] if h.dim() == 3 else h                        # (B, d)
+    lg = lg[:, -1, :] if lg.dim() == 3 else lg                    # (B, vocab)
+    return h.float(), lg[:, :q].argmax(-1)
+
+
 def _fill_and_label(model, PRE, w_fill, R, q, slot_ids, batch=32, seed=0):
     """R AR fills of w_fill tokens per fiber + slot-projected terminal teacher
     distribution of the completed window.  Returns (G (M*R, w_fill), P (M*R, V))."""
@@ -1494,6 +1517,128 @@ def _deg12_basis(bits_full, A_c, Mtr, device="cuda", thresh=0.01, max_pairs=1000
     ii = np.array([k[0] for k, _ in top] or [0]); jj = np.array([k[1] for k, _ in top] or [0])
     del Ff, A; torch.cuda.empty_cache()
     return anchors, ii, jj
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200, memory=32768)
+def relabel_hidden(m_fibers: int = 16000, fill_len: int = 61, r: int = 8,
+                   tag: str = "edu_tr", batch: int = 128):
+    """Re-label an existing table with the teacher's pre-LM-head hidden state h
+    and full-vocab argmax token t* -- reuses the cached fills, one forward per
+    context.  Saves labels_hidden_<...>.npz (H fp16, tstar) + lm_head.npz (Wu)."""
+    import os, time
+    import torch
+    vol.reload()
+    out = f"{ROOT}/labels_hidden_f{fill_len}_M{m_fibers}_R{r}_{tag}.npz"
+    if os.path.exists(out):
+        return out
+    _budget("relabel", 4.0)
+    started = time.time()
+    d = np.load(_table_path(fill_len, m_fibers, r, tag))
+    contexts = np.concatenate([d["PRE"][d["fiber_id"]], d["G"]], axis=1).astype(np.int64)
+    model, tok, q = _load_teacher()
+    Wu = model.get_output_embeddings().weight[:q].detach().float().cpu().numpy()
+    d_model = Wu.shape[1]
+    print(f"[relabel:{tag}] {len(contexts)} contexts, d_model={d_model}, q={q}", flush=True)
+    H = np.empty((len(contexts), d_model), np.float16)
+    tstar = np.empty(len(contexts), np.int64)
+    for lo in range(0, len(contexts), batch):
+        ids = torch.tensor(contexts[lo:lo + batch], dtype=torch.long, device="cuda")
+        h, ts = _capture_hidden(model, ids, q)
+        H[lo:lo + batch] = h.cpu().numpy().astype(np.float16)
+        tstar[lo:lo + batch] = ts.cpu().numpy()
+        if (lo // batch) % 50 == 0:
+            print(f"[relabel:{tag}] {min(lo + batch, len(contexts))}/{len(contexts)}",
+                  flush=True)
+    np.savez_compressed(out.replace(".npz", ".tmp.npz"), H=H, tstar=tstar)
+    os.replace(out.replace(".npz", ".tmp.npz"), out)
+    if not os.path.exists(f"{ROOT}/lm_head.npz"):
+        np.savez_compressed(f"{ROOT}/lm_head.npz", Wu=Wu.astype(np.float16))
+    vol.commit()
+    _record("relabel", started, {"tag": tag})
+    print(f"saved {out}", flush=True)
+    return out
+
+
+def _decode_top1(target, Ypred, Wu, codes):
+    """Predicted target -> token: unembed argmax (hidden) or nearest LSH code."""
+    return unembed_top1(Ypred, Wu) if target == "hidden" else code_decode(Ypred, codes)
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200,
+              memory=32768, secrets=WANDB_SECRET)
+def stream_top1(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
+                r: int = 8, target: str = "hidden"):
+    """Full-vocab TOP-1 agreement (no slots, no OTHER).  Target = teacher
+    pre-head hidden state (target=hidden: regress h, unembed, argmax) OR the
+    top-1 token's LSH code (target=code: regress code, nearest-decode).  Fixed
+    FineWeb-Edu test set, disjoint fresh train, deg-1+2 GL basis, ridge fit;
+    lsh vs ctrl on the same held-out top-1, logged to W&B."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("stream-top1", 8.0)
+    started = time.time()
+    te_tbl = make_data.local(m_test, r, 0, fill_len, "edu", 0, "edu_test")
+    tr_tbl = make_data.local(m_train, r, 0, fill_len, "edu", 3 * m_test, "edu_tr")
+    te_lbl = relabel_hidden.local(m_test, fill_len, r, "edu_test")
+    tr_lbl = relabel_hidden.local(m_train, fill_len, r, "edu_tr")
+    Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    ztab = dict(np.load(f"{ROOT}/codes.npz"))
+
+    def collapse(tbl, lbl):
+        d = np.load(tbl); L = np.load(lbl)
+        ctx = np.concatenate([d["PRE"][d["fiber_id"]], d["G"]], axis=1)
+        rows, inv, counts = np.unique(ctx, axis=0, return_inverse=True, return_counts=True)
+        Hs = np.zeros((len(rows), L["H"].shape[1]), np.float64)
+        np.add.at(Hs, inv, L["H"].astype(np.float64))
+        tg = np.empty(len(rows), np.int64); tg[inv] = L["tstar"]
+        return rows, Hs, counts.astype(np.float64), tg
+    c_tr, H_tr, n_tr, t_tr = collapse(tr_tbl, tr_lbl)
+    c_te, H_te, n_te, t_te = collapse(te_tbl, te_lbl)
+    fl = np.load(tr_tbl)["G"].shape[1]
+    meanH_tr, meanH_te = H_tr / n_tr[:, None], H_te / n_te[:, None]
+    rng = np.random.default_rng(0); vm = rng.random(len(n_tr)) < 0.15
+    summary = {"target": target, "m_train": m_train, "m_test": m_test, "encodings": {}}
+    for name in ("lsh", "ctrl"):
+        codes = ztab[name]; B = codes.shape[1]; nb = fl * B
+        bt = context_bits(c_tr, codes)[:, :nb]; bte = context_bits(c_te, codes)[:, :nb]
+        A_c = H_tr - n_tr[:, None] * (H_tr.sum(0) / n_tr.sum())[None, :]
+        anchors, ii, jj = _deg12_basis(bt, A_c, float(n_tr.sum()))
+
+        def feat(bits):
+            S = 1.0 - 2.0 * bits.astype(np.float32)
+            return np.concatenate([S[:, anchors], S[:, ii] * S[:, jj]], axis=1)
+        F_tr, F_te = feat(bt), feat(bte)
+        Y = meanH_tr if target == "hidden" else codes[t_tr].astype(np.float32)
+        best = None                                               # ridge wd on a val split
+        for wd in (1.0, 10.0, 100.0, 1000.0):
+            fit = fit_regression(F_tr[~vm], Y[~vm], n_tr[~vm], wd=wd)
+            pv = _decode_top1(target, F_tr[vm] @ fit["W"] + fit["b"], Wu, codes)
+            acc = weighted_agreement(pv, t_tr[vm], n_tr[vm])
+            if best is None or acc > best[0]:
+                best = (acc, wd, fit)
+        val_top1, wd, _ = best
+        fit = fit_regression(F_tr, Y, n_tr, wd=wd)
+        pred_te = _decode_top1(target, F_te @ fit["W"] + fit["b"], Wu, codes)
+        test_top1 = weighted_agreement(pred_te, t_te, n_te)
+        # sanity: the TRUE target must decode back to t* (validates hook/unembed/decode)
+        true_te = meanH_te if target == "hidden" else codes[t_te].astype(np.float32)
+        sane = weighted_agreement(_decode_top1(target, true_te, Wu, codes), t_te, n_te)
+        rec = {"n_features": int(len(anchors) + len(jj)), "wd": wd,
+               "val_top1": val_top1, "TEST_top1": test_top1, "sanity_top1": sane}
+        summary["encodings"][name] = rec
+        print(f"[top1:{name}:{target}] TEST {test_top1:.4f} (val {val_top1:.4f}, "
+              f"sanity {sane:.4f}, wd {wd})", flush=True)
+        run = _wandb_run(f"{name}-{target}-edu-M{m_train}", {**rec, "encoding": name,
+                         "target": target, "m_train": m_train})
+        if run is not None:
+            run.log({"TEST_top1": test_top1, "val_top1": val_top1, "m_train": m_train})
+            run.summary.update(rec); run.finish()
+        torch.cuda.empty_cache()
+    _write_json(f"{ROOT}/summary_top1_{target}_M{m_train}.json", summary)
+    _record("stream-top1", started, {"target": target, "m_train": m_train})
+    print(json.dumps(summary), flush=True)
+    return summary
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200,
@@ -2659,7 +2804,7 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          interactions: int = 0, top_pairs: int = 1000,
          g: int = 24, p_back: int = 0, depth: int = 6,
          resample: str = "conditional", corpus: str = "fineweb",
-         positions: str = ""):
+         positions: str = "", target: str = "hidden"):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -2699,6 +2844,10 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "stream-fit":
         print(stream_fit.remote(m_fibers, 3000, fill_len, R_FILLS, 3e-4,
                                 encoding if encoding != "all" else "lsh"))
+    if stage == "relabel":
+        print(relabel_hidden.remote(m_fibers, fill_len, R_FILLS, span))
+    if stage == "stream-top1":
+        print(stream_top1.remote(m_fibers, 3000, fill_len, R_FILLS, target))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":
