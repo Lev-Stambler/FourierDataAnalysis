@@ -628,11 +628,15 @@ def _fill_and_label(model, PRE, w_fill, R, q, slot_ids, batch=32, seed=0):
     G = np.empty((len(rows), w_fill), dtype=np.int64)
     P = np.empty((len(rows), len(slot_ids)), dtype=np.float32)
     slot_t = torch.tensor(slot_ids[1:], dtype=torch.long, device="cuda")
+    # only the last position's logits are ever used; without this the prefix
+    # forward materializes (batch, seq, 248k-vocab) logits (~8GB at batch 128)
+    # and OOMs the A10G
     for lo in range(0, len(rows), batch):
         sel = rows[lo:lo + batch]
         ids = torch.tensor(PRE[sel], dtype=torch.long, device="cuda")
         with torch.inference_mode():
-            out = model(input_ids=ids, use_cache=True, return_dict=True)
+            out = model(input_ids=ids, use_cache=True, return_dict=True,
+                        logits_to_keep=1)
             past, logits = out.past_key_values, out.logits[:, -1, :]
             made = []
             for _ in range(w_fill):
@@ -640,7 +644,7 @@ def _fill_and_label(model, PRE, w_fill, R, q, slot_ids, batch=32, seed=0):
                 nxt = torch.multinomial(probs, 1, generator=rng)
                 made.append(nxt)
                 out = model(input_ids=nxt, past_key_values=past, use_cache=True,
-                            return_dict=True)
+                            return_dict=True, logits_to_keep=1)
                 past, logits = out.past_key_values, out.logits[:, -1, :]
             term = torch.softmax(logits[:, :q].float(), dim=-1)
         G[lo:lo + batch] = torch.cat(made, dim=1).cpu().numpy()
