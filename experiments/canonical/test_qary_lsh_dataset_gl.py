@@ -17,6 +17,7 @@ from qary_lsh_dataset_gl import (
     dataset_gl_tau,
     draw_fibers,
     fit_softmax_slots,
+    oracle_deg1_psi,
     parity_features,
     soft_collapse,
     token_id_codes,
@@ -320,6 +321,63 @@ def test_csamp_singleton_fibers_report_no_pairs():
     F = rng.normal(size=(16, 1)).astype(np.float32)
     got = dataset_gl_csamp(bits, F, np.arange(16), tau=0.1, device="cpu")
     assert got["status"] == "no-pairs" and len(got["masks"]) == 0
+
+
+def _brute_oracle_deg1(split_bits, F, fib):
+    _, gid = np.unique(fib, return_inverse=True)
+    ng = int(gid.max()) + 1
+    cc = np.bincount(gid).astype(np.float64)
+    npairs = float((cc * (cc - 1)).sum())
+    B = split_bits.shape[1]
+    psi = np.zeros(B)
+    for b in range(B):
+        chi = 1.0 - 2.0 * split_bits[:, b].astype(np.float64)
+        acc = 0.0
+        for z in range(ng):
+            idx = np.flatnonzero(gid == z)
+            for i in idx:
+                for j in idx:
+                    if i != j:
+                        acc += float(F[i] @ F[j]) * chi[i] * chi[j]
+        psi[b] = acc / npairs
+    return psi
+
+
+def test_oracle_deg1_matches_bruteforce_pairs():
+    # forked data: every fiber has G rows sharing the stub (built in), so all
+    # within-fiber pairs are valid by construction -- no collision needed
+    rng = np.random.default_rng(21)
+    n_fib, G, B, V = 12, 6, 5, 3
+    split_bits = rng.integers(0, 2, (n_fib * G, B)).astype(np.uint8)
+    F = rng.normal(size=(n_fib * G, V)).astype(np.float32)
+    fib = np.repeat(np.arange(n_fib), G)
+    psi, norm = oracle_deg1_psi(split_bits, F, fib, device="cpu")
+    want = _brute_oracle_deg1(split_bits, F, fib)
+    assert np.allclose(psi, want, atol=1e-4)
+    assert np.allclose(norm, np.sqrt(np.maximum(want, 0.0)), atol=1e-4)
+
+
+def test_oracle_deg1_recovers_planted_bit_collision_free():
+    # F = chi_{bit 2} of the SPLIT token, all bits i.i.d.: the flat-file tree
+    # would starve (no un-split collisions), but the fork guarantees pairs, so
+    # bit 2 must dominate with psi ~ 1 and every other bit ~ 0.
+    rng = np.random.default_rng(22)
+    n_fib, G, B = 40, 10, 6
+    split_bits = rng.integers(0, 2, (n_fib * G, B)).astype(np.uint8)
+    fib = np.repeat(np.arange(n_fib), G)
+    F = (1.0 - 2.0 * split_bits[:, 2]).astype(np.float32)[:, None]
+    psi, norm = oracle_deg1_psi(split_bits, F, fib, device="cpu")
+    assert int(np.argmax(psi)) == 2
+    assert abs(psi[2] - 1.0) < 0.05
+    assert np.max(np.delete(psi, 2)) < 0.2
+
+
+def test_oracle_deg1_singleton_forks_no_pairs():
+    rng = np.random.default_rng(23)
+    split_bits = rng.integers(0, 2, (8, 4)).astype(np.uint8)
+    F = rng.normal(size=(8, 2)).astype(np.float32)
+    psi, norm = oracle_deg1_psi(split_bits, F, np.arange(8), device="cpu")
+    assert np.array_equal(psi, np.zeros(4)) and np.array_equal(norm, np.zeros(4))
 
 
 def test_fit_recovers_planted_soft_teacher():

@@ -326,7 +326,7 @@ def dataset_gl_csamp(bits, F_rows, fiber_gid, tau, max_width=512, device=None,
             break
         if k == n_search - 1:
             terminal = (cell, cc, npairs)
-        if (k + 1) % 500 == 0:
+        if (k + 1) % max(1, n_search // 20) == 0:
             print(f"[csamp] level {k + 1}/{n_search} width={len(live_masks)} "
                   f"pairs={npairs:.0f}", flush=True)
     masks = live_masks[live_masks.any(axis=1)]
@@ -341,6 +341,44 @@ def dataset_gl_csamp(bits, F_rows, fiber_gid, tau, max_width=512, device=None,
     return dict(status="ok", masks=masks.astype(np.uint8), widths=widths,
                 psi_top=psi_top, pair_profile=pair_profile,
                 no_evidence_levels=no_evidence, saturated_levels=saturated)
+
+
+def oracle_deg1_psi(split_bits, F_rows, fiber_gid, device=None):
+    """The paper's PAIRED bucket for every single-bit character of ONE split
+    coordinate, evaluated on FORKED-CACHE data (lem:qary-kv-estimator): every
+    row of a fiber shares the real prefix AND the generated stub L_k, so all
+    within-fiber pairs are valid by construction -- no collision on the
+    un-split suffix is required, and none of the frontier-burial / offline
+    collision-starvation applies.  For bit b,
+
+        psi(b) = (1/n_pairs) sum_z ( ||sum_{i in z} chi_b(i) F_i||^2
+                                     - sum_{i in z} ||F_i||^2 ),
+
+    unbiased for E_z|E[F chi_b | z]|^2 (z = fiber = one fork).  Returns
+    psi (B,) and its sqrt (the conditional deg-1 norm, comparable to the exact
+    spectrum's leaf norms).
+
+    split_bits: (m, B) uint8 code of the split token per forked row;
+    F_rows: (m, V) CENTERED terminal targets; fiber_gid: (m,) the fork id.
+    """
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    split_bits = np.asarray(split_bits, dtype=np.uint8)
+    _, gid = np.unique(np.asarray(fiber_gid), return_inverse=True)
+    gid = gid.astype(np.int64)
+    ng = int(gid.max()) + 1
+    counts = np.bincount(gid, minlength=ng).astype(np.float64)
+    n_pairs = float((counts * (counts - 1)).sum())
+    if n_pairs <= 0:
+        B = split_bits.shape[1]
+        return np.zeros(B), np.zeros(B)
+    F_t = torch.tensor(np.asarray(F_rows, dtype=np.float32), device=device)
+    gid_t = torch.tensor(gid, dtype=torch.long, device=device)
+    signs = torch.tensor(1.0 - 2.0 * split_bits.astype(np.float32), device=device)
+    Q = _bucket_Q(signs.t().contiguous(), F_t, gid_t, ng, mem_budget=2.0e8).cpu().numpy()
+    diag = float((F_t.double() ** 2).sum().item())
+    psi = (Q - diag) / n_pairs
+    return psi, np.sqrt(np.maximum(psi, 0.0))
 
 
 def dataset_gl_tau(bits, A, tau, norm_m, max_width=512, device=None, n_search=None):
@@ -769,6 +807,132 @@ def search(tau: float, m_fibers: int = M_FIBERS, r: int = R_FILLS, val_frac: flo
                                                 "unigram_val_kl", "eval")}
                       for n, e in summary["encodings"].items()}, indent=2), flush=True)
     return summary
+
+
+def _oracle_table_path(fill_len, m_fibers, g, p_back):
+    return f"{ROOT}/oracle_f{fill_len}_M{m_fibers}_G{g}_p{p_back}.npz"
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
+def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
+                     fill_len: int = W_WIN - K_FIXED, seed: int = 0):
+    """FORKED-CACHE data for the paper's paired estimator (no collisions
+    needed).  To split the token at reverse-index ``p_back`` (0 = the newest
+    filled token, which carries the heavy characters), fix the real prefix AND
+    the older filled tokens 0..(fill_len-2-p_back) as a SHARED STUB drawn once
+    per fiber, then sample the split token + any newer tokens ``g`` times.  All
+    g rows of a fiber then share the un-split continuation by construction --
+    exactly the theorem's cache fork -- so every within-fiber pair is valid.
+
+    Saves split_tok (M*g,), P (M*g, V slots), fiber_gid (M*g,), slot_ids."""
+    import os, time
+    import torch
+    vol.reload()
+    out = _oracle_table_path(fill_len, m_fibers, g, p_back)
+    if os.path.exists(out):
+        return out
+    _budget("oracle-data", 2.0)
+    started = time.time()
+    stub_len = fill_len - 1 - p_back
+    assert 0 <= stub_len < fill_len, f"p_back {p_back} out of range for fill {fill_len}"
+    model, tok, q = _load_teacher()
+    src = np.load(_table_path(fill_len, m_fibers, r=R_FILLS))       # reuse the fibers/slots
+    PRE, slot_ids = src["PRE"], src["slot_ids"]
+    if len(PRE) < m_fibers:
+        raise RuntimeError(f"only {len(PRE)} fibers cached")
+    PRE = PRE[:m_fibers]
+    if stub_len > 0:                                               # shared stub, one draw
+        stub, _ = _fill_and_label(model, PRE, stub_len, 1, q, slot_ids, seed=seed)
+        PRE_ext = np.concatenate([PRE, stub], axis=1)
+    else:
+        PRE_ext = PRE
+    w = fill_len - stub_len                                        # split token + newer
+    G_toks, P = _fill_and_label(model, PRE_ext, w, g, q, slot_ids, seed=seed + 7)
+    split_tok = G_toks[:, 0].astype(np.int64)                     # the split coordinate
+    fiber_gid = np.repeat(np.arange(m_fibers), g)
+    os.makedirs(ROOT, exist_ok=True)
+    np.savez_compressed(out.replace(".npz", ".tmp.npz"), split_tok=split_tok, P=P,
+                        fiber_gid=fiber_gid, slot_ids=slot_ids, q=q)
+    os.replace(out.replace(".npz", ".tmp.npz"), out)
+    vol.commit()
+    _record("oracle-data", started, {"m_fibers": m_fibers, "g": g, "p_back": p_back})
+    print(f"saved {out}", flush=True)
+    return out
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
+def oracle(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
+           fill_len: int = W_WIN - K_FIXED, val_frac: float = 0.15,
+           encoding: str = "all"):
+    """The paper-native PAIRED tree with NO collision dependence: run
+    ``oracle_deg1_psi`` on forked-cache data for the split token's code bits.
+    This natively recovers the newest-token deg-1 spectrum -- exactly where the
+    offline flat-file tree is collision-starved -- and is compared against the
+    unpaired exact marginal (both must rank LSH > ctrl).  A sparse deg-1 model
+    on the certified bits gives an end-to-end held-out KL."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("oracle", 1.0)
+    started = time.time()
+    path = _oracle_table_path(fill_len, m_fibers, g, p_back)
+    if not os.path.exists(path):
+        make_oracle_data.local(m_fibers, g, p_back, fill_len)
+    d = np.load(path)
+    split_tok, P, fiber_gid = d["split_tok"], d["P"], d["fiber_gid"]
+    z = dict(np.load(f"{ROOT}/codes.npz"))
+    tables = {"lsh": z["lsh"], "ctrl": z["ctrl"], "idbits": z["idbits"]}
+    if encoding != "all":
+        tables = {encoding: tables[encoding]}
+    rng = np.random.default_rng(0)
+    va = (rng.random(fiber_gid.max() + 1) < val_frac)[fiber_gid]
+    mu = P[~va].astype(np.float64).mean(0)
+    F = (P - mu[None, :]).astype(np.float32)                       # centered targets
+    summary = {"p_back": int(p_back), "g": int(g), "m_fibers": int(m_fibers),
+               "n_pairs_per_fiber": g * (g - 1), "encodings": {}}
+    for name, codes in tables.items():
+        sb = np.asarray(codes, dtype=np.uint8)[split_tok]         # (M*g, B) split code
+        psi, norm = oracle_deg1_psi(sb[~va], F[~va], fiber_gid[~va])
+        # unpaired exact marginal |E[F chi_b]|^2 on the same rows (sanity twin)
+        Ftr = F[~va]; chitr = 1.0 - 2.0 * sb[~va].astype(np.float32)
+        marg = ((chitr.T @ Ftr) / len(Ftr))
+        marg_norm = np.sqrt((marg.astype(np.float64) ** 2).sum(1))
+        order = np.argsort(-norm)
+        # rank agreement of the paired estimator with the exact marginal
+        rho = float(np.corrcoef(_rankdata(norm), _rankdata(marg_norm))[0, 1])
+        cert = np.flatnonzero(norm >= 0.01)
+        # sparse deg-1 model on oracle-certified bits (fiber-disjoint eval)
+        Ptr, Pva = P[~va], P[va]
+        Xtr = 1.0 - 2.0 * sb[~va][:, cert].astype(np.float32)
+        Xva = 1.0 - 2.0 * sb[va][:, cert].astype(np.float32)
+        ntr = np.ones(len(Xtr)); nva = np.ones(len(Xva))
+        fit = fit_softmax_slots(Xtr, Ptr, ntr, Xva, Pva, nva, steps=3000, lr=0.01)
+        base = fit_softmax_slots(Xtr[:, :0], Ptr, ntr, Xva[:, :0], Pva, nva, steps=1)
+        summary["encodings"][name] = {
+            "top_norms": norm[order[:15]].round(5).tolist(),
+            "top_bits": [int(b) for b in order[:15]],
+            "n_ge_0.01": int((norm >= 0.01).sum()),
+            "n_ge_0.02": int((norm >= 0.02).sum()),
+            "total_mass": float((psi[psi > 0]).sum()),
+            "max_norm": float(norm.max()),
+            "rank_corr_paired_vs_marginal": rho,
+            "n_certified": int(len(cert)),
+            "sparse_val_kl": fit["val_kl"], "sparse_improved": fit["improved"],
+            "unigram_val_kl": base["val_kl"]}
+        print(name, json.dumps({k: summary["encodings"][name][k] for k in
+              ("max_norm", "n_ge_0.01", "rank_corr_paired_vs_marginal",
+               "sparse_val_kl", "unigram_val_kl")}), flush=True)
+        torch.cuda.empty_cache()
+    _write_json(f"{ROOT}/oracle_f{fill_len}_M{m_fibers}_G{g}_p{p_back}.json", summary)
+    _record("oracle", started, {"p_back": p_back})
+    return summary
+
+
+def _rankdata(a):
+    order = np.argsort(a)
+    ranks = np.empty(len(a), dtype=np.float64)
+    ranks[order] = np.arange(len(a))
+    return ranks
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
@@ -1540,7 +1704,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          encoding: str = "all", span: str = "filled", patience: int = 3,
          steps: int = 600,
          train_path: str = "/cache/qwen35_argl/train_n20000.pt",
-         interactions: int = 0, top_pairs: int = 1000):
+         interactions: int = 0, top_pairs: int = 1000,
+         g: int = 24, p_back: int = 0):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -1567,6 +1732,10 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
                                interactions=interactions)
     if stage == "csamp":
         search_csamp.remote(tau, m_fibers, r, 0.15, fill_len, max_width, encoding)
+    if stage == "oracle-data":
+        make_oracle_data.remote(m_fibers, g, p_back, fill_len)
+    if stage == "oracle":
+        oracle.remote(m_fibers, g, p_back, fill_len, 0.15, encoding)
     if stage in ("search", "all"):
         if encoding == "parallel":
             # one container per encoding; summaries land as separate files
