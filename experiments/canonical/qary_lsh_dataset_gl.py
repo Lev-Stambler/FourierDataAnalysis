@@ -66,9 +66,26 @@ vol = modal.Volume.from_name("fda-cache", create_if_missing=True)
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install("numpy>=1.26", "torch>=2.5", "transformers>=5.13.1",
-                  "accelerate>=1.2", "datasets>=4.0", "safetensors", "sentencepiece")
+                  "accelerate>=1.2", "datasets>=4.0", "safetensors", "sentencepiece",
+                  "wandb>=0.18")
     .env({"HF_HOME": "/cache/hf"})
 )
+try:
+    WANDB_SECRET = [modal.Secret.from_name("wandb")]
+except Exception:
+    WANDB_SECRET = []
+
+
+def _wandb_run(name, config):
+    """Best-effort W&B run; returns the run or None (logging never breaks a fit).
+    The `wandb` Modal secret supplies WANDB_API_KEY."""
+    try:
+        import wandb
+        return wandb.init(project="fda-canonical-qary-lsh", name=name,
+                          config=config, reinit=True)
+    except Exception as e:
+        print(f"[wandb] disabled ({e})", flush=True)
+        return None
 
 
 # ------------------------------------------------------------------ code tables
@@ -1315,7 +1332,8 @@ def _deg12_basis(bits_full, A_c, Mtr, device="cuda", thresh=0.01, max_pairs=1000
     return anchors, ii, jj
 
 
-@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200, memory=32768)
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200,
+              memory=32768, secrets=WANDB_SECRET)
 def stream_fit(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
                r: int = 8, wd: float = 3e-4, encoding: str = "lsh"):
     """THE REAL THING (Lev's protocol): a fixed FineWeb-Edu test set set aside
@@ -1373,6 +1391,12 @@ def stream_fit(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
            "m_test": m_test, "wd": wd, "n_features": int(len(anchors) + len(jj)),
            "TRAIN_kl": train_kl, "TEST_kl": test_kl, "TEST_unigram_kl": uni}
     print("[stream-fit] " + json.dumps(out), flush=True)
+    run = _wandb_run(f"{encoding}-edu-M{m_train}", out)
+    if run is not None:
+        run.log({k: out[k] for k in ("TRAIN_kl", "TEST_kl", "TEST_unigram_kl",
+                                     "n_features")} | {"m_train": m_train})
+        run.summary.update(out)
+        run.finish()
     _write_json(f"{ROOT}/summary_streamfit_{encoding}_M{m_train}.json", out)
     _record("stream-fit", started, {"m_train": m_train})
     return out
