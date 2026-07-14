@@ -1436,8 +1436,12 @@ def _load_fork_levels(fill_len, m_fibers, g, depth, codes, target="slots"):
         gt = d["gtoks"]                                            # (m, j+1) gen order
         toks_newest_first = gt[:, ::-1]                            # block0 = newest token
         bits = np.asarray(codes, np.uint8)[toks_newest_first].reshape(len(gt), -1)
-        Y = d["H"].astype(np.float64) if target == "hidden" else d["P"].astype(np.float64)
-        F = (Y - Y.mean(0)[None, :]).astype(np.float32)
+        if target == "hidden":                                    # standardize per dim so
+            Y = d["H"].astype(np.float64)                         # psi weights all dims evenly
+            F = ((Y - Y.mean(0)[None, :]) / (Y.std(0)[None, :] + 1e-6)).astype(np.float32)
+        else:
+            Y = d["P"].astype(np.float64)
+            F = (Y - Y.mean(0)[None, :]).astype(np.float32)
         levels.append((bits, F, d["fiber_gid"]))
     return levels
 
@@ -1950,16 +1954,24 @@ def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
               f"{np.bincount(deg, minlength=depth+1).tolist()}", flush=True)
         bt = context_bits(c_tr, codes)[:, :nb]; bte = context_bits(c_te, codes)[:, :nb]
         sane = weighted_agreement(unembed_top1(meanH_te, Wu), t_te, n_te)
+        # persist masks so the fit is re-tunable without re-running the tree
+        np.savez_compressed(f"{ROOT}/gltree_top1_masks_{name}_d{depth}.npz",
+                            masks=masks, psi=psi, deg=deg); vol.commit()
         run = _wandb_run(f"gltree-{name}-hidden-d{depth}",
                          {"encoding": name, "depth": depth, "tau": tau,
                           "n_chars": int(len(masks)), "sanity": sane})
         psitot = float(psi.sum()) if len(psi) else 1.0
+        # fit the tree's characters HEAVIEST-FIRST (masks are psi-sorted) in blocks
+        # up to a memory bound; log cumulative TEST top-1, R2 (hidden variance
+        # explained) and psi_frac (fraction of recovered Fourier mass covered) --
+        # the honest "how much of the coeffs we account for"
         ladder = []
-        for D in range(1, depth + 1):                                # intermittent per degree
-            keep = deg <= D
-            if not keep.any():
-                continue
-            md = masks[keep]
+        max_chars = min(5000, len(masks))
+        ks = list(range(1000, max_chars + 1, 1000))
+        if not ks or ks[-1] < max_chars:
+            ks.append(max_chars)
+        for k in ks:
+            md = masks[:k]                                        # top-k by psi
             Ftr = parity_features(bt, md); Fte = parity_features(bte, md)
             best = None
             for wd in (10.0, 100.0, 1000.0):
@@ -1971,16 +1983,17 @@ def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
             wd = best[1]
             fit = fit_regression(Ftr, meanH_tr, n_tr, wd=wd)
             Hpred = Fte @ fit["W"] + fit["b"]
-            rec = {"degree": D, "n_chars": int(keep.sum()),
+            rec = {"n_chars": int(k), "n_deg3plus": int((deg[:k] >= 3).sum()),
                    "TEST_top1": weighted_agreement(unembed_top1(Hpred, Wu), t_te, n_te),
                    "R2_hidden": r2_hidden(Hpred, meanH_te, n_te),
-                   "psi_frac": float(psi[keep].sum() / psitot), "wd": wd}
+                   "psi_frac": float(psi[:k].sum() / psitot), "wd": wd}
             ladder.append(rec)
-            print(f"[gltree:{name}] deg<={D} ({rec['n_chars']} chars) "
+            print(f"[gltree:{name}] top-{k} psi ({rec['n_deg3plus']} deg>=3) "
                   f"top1 {rec['TEST_top1']:.4f} R2 {rec['R2_hidden']:.4f} "
-                  f"psi {rec['psi_frac']:.3f} (sanity {sane:.3f})", flush=True)
+                  f"psi_frac {rec['psi_frac']:.3f} (sanity {sane:.3f})", flush=True)
             if run is not None:
                 run.log(rec)
+            del Ftr, Fte; torch.cuda.empty_cache()
         if run is not None:
             run.summary.update({"final_top1": ladder[-1]["TEST_top1"] if ladder else 0.0,
                                 "sanity": sane}); run.finish()
