@@ -415,6 +415,104 @@ def oracle_deg1_psi(split_bits, F_rows, fiber_gid, device=None, clean=False):
     return psi, np.sqrt(np.maximum(psi, 0.0))
 
 
+def _level_psi(chi, F_t, gid_t, ng, block, n_pairs, device):
+    """(Q_S - block)/n_pairs for a batch of characters chi (L, m); block and
+    n_pairs are the per-level clean scalars (identical-fill floor removed)."""
+    Q = _bucket_Q(chi, F_t, gid_t, ng, mem_budget=2.0e8).cpu().numpy()
+    return (Q - block) / n_pairs
+
+
+def forked_gl_tree(levels, B, tau, max_width=128, device=None, progress=None):
+    """The TRUE dataset-GL tree, native and scalable BEYOND degree two: a
+    reverse-time beam search that grows Walsh characters across tokens using
+    the paper's forked-cache PAIRED estimator at every level (collision-free,
+    unlike the offline group-by, and enumeration-free, unlike the per-degree
+    GEMMs).  ``levels[j]`` holds a fork that resampled the newest ``j+1`` tokens
+    ``g`` times per fiber -- so every level supplies genuine within-fork pairs.
+    A character on the newest ``k`` tokens is discovered by extending its heavy
+    lower-token prefixes (hereditary GL): at level ``j`` every live parent is
+    extended by each single bit of token block ``j``, the paired weight
+    ``psi(S) = E_z|E[F chi_S | z]|^2`` is estimated on that level's fork, and
+    children with ``psi >= tau^2/4`` are kept.  Degree = number of tokens the
+    character spans, unbounded by construction.
+
+    levels[j] = (bits (m, (j+1)*B) uint8 newest-first, F (m, V) centered,
+    fiber_gid (m,)).  Returns dict(masks (K, depth*B) uint8, psi (K,),
+    per_level_kept).  Point-mass note: the per-level clean subtraction removes
+    the identical-fill floor (chi_S=1 for all S on repeated fills); residual
+    inflation is left for the downstream val-gated fit to reject."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    depth = len(levels)
+    thresh = tau * tau / 4.0
+    total = depth * B
+    live = np.zeros((1, total), dtype=np.uint8)                    # the empty character
+    kept = {}
+    per_level_kept = []
+    for j in range(depth):
+        bits_j, F_rows, fib = levels[j]
+        bits_j = np.asarray(bits_j, dtype=np.uint8)
+        w = (j + 1) * B
+        m = len(F_rows)
+        F_t = torch.tensor(np.asarray(F_rows, dtype=np.float32), device=device)
+        _, gid = np.unique(np.asarray(fib), return_inverse=True)
+        gid = gid.astype(np.int64); ng = int(gid.max()) + 1
+        gid_t = torch.tensor(gid, dtype=torch.long, device=device)
+        counts = np.bincount(gid, minlength=ng).astype(np.float64)
+        # clean scalars: subcell = (fiber, full resampled-span value)
+        packed = np.packbits(bits_j, axis=1)
+        view = np.ascontiguousarray(packed).view(
+            [("", packed.dtype)] * packed.shape[1]).ravel()
+        _, cod = np.unique(view, return_inverse=True)
+        _, sub = np.unique(gid * (int(cod.max()) + 1) + cod, return_inverse=True)
+        sub = sub.astype(np.int64); nsub = int(sub.max()) + 1
+        sub_t = torch.tensor(sub, dtype=torch.long, device=device)
+        subc = np.bincount(sub, minlength=nsub).astype(np.float64)
+        block = float(_bucket_Q(torch.ones((1, m), device=device), F_t, sub_t, nsub,
+                                mem_budget=2.0e8).cpu().numpy()[0])
+        n_pairs = float((counts * (counts - 1)).sum() - (subc * (subc - 1)).sum())
+        if n_pairs <= 0:
+            per_level_kept.append(0)
+            continue
+        # candidate children: each live parent + one bit of THIS token block
+        block_bits = np.arange(j * B, (j + 1) * B)
+        rows = []
+        for parent in live:
+            free = block_bits[parent[block_bits] == 0]
+            if not len(free):
+                continue
+            rep = np.repeat(parent[None, :], len(free), axis=0)
+            rep[np.arange(len(free)), free] = 1
+            rows.append(rep)
+        if not rows:
+            per_level_kept.append(0)
+            continue
+        children = np.unique(np.concatenate(rows), axis=0)
+        chi = torch.tensor(parity_features(bits_j, children[:, :w]).T.copy(),
+                           device=device)
+        psi = _level_psi(chi, F_t, gid_t, ng, block, n_pairs, device)
+        heavy = np.flatnonzero(psi >= thresh)
+        for idx in heavy:
+            key = tuple(int(x) for x in children[idx])
+            if psi[idx] > kept.get(key, -1e30):
+                kept[key] = float(psi[idx])
+        per_level_kept.append(int(len(heavy)))
+        # carry the empty char + the globally heaviest characters forward
+        top = sorted(kept.items(), key=lambda kv: -kv[1])[:max_width]
+        live = np.concatenate([np.zeros((1, total), dtype=np.uint8),
+                               np.array([k for k, _ in top], dtype=np.uint8)]) \
+            if top else np.zeros((1, total), dtype=np.uint8)
+        if progress is not None:
+            progress(j, depth, kept)
+    if not kept:
+        return dict(masks=np.zeros((0, total), np.uint8), psi=np.zeros(0),
+                    per_level_kept=per_level_kept)
+    order = sorted(kept.items(), key=lambda kv: -kv[1])
+    masks = np.array([k for k, _ in order], dtype=np.uint8)
+    psi = np.array([v for _, v in order], dtype=np.float64)
+    return dict(masks=masks, psi=psi, per_level_kept=per_level_kept)
+
+
 def dataset_gl_tau(bits, A, tau, norm_m, max_width=512, device=None, n_search=None,
                    on_progress=None, progress_every=None):
     """Exact-W csamp GL tree over bit arrays: keep children with W >= tau^2/4,
@@ -1007,13 +1105,142 @@ def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
     split_tok = G_toks[:, 0].astype(np.int64)                     # the split coordinate
     fiber_gid = np.repeat(np.arange(m_fibers), g)
     os.makedirs(ROOT, exist_ok=True)
+    # gtoks = ALL resampled tokens (generation order, oldest-resampled first);
+    # the tree needs the full newest p_back+1 tokens, not just the split
     np.savez_compressed(out.replace(".npz", ".tmp.npz"), split_tok=split_tok, P=P,
+                        gtoks=G_toks.astype(np.int64),
                         fiber_gid=fiber_gid, slot_ids=slot_ids, q=q)
     os.replace(out.replace(".npz", ".tmp.npz"), out)
     vol.commit()
     _record("oracle-data", started, {"m_fibers": m_fibers, "g": g, "p_back": p_back})
     print(f"saved {out}", flush=True)
     return out
+
+
+def _load_fork_levels(fill_len, m_fibers, g, depth, codes):
+    """Assemble the tree's per-level fork bit-data from cached oracle tables:
+    level j = fork that resampled the newest j+1 tokens (p_back=j).  Returns
+    a list of (bits (m, (j+1)*B) newest-first, F (m,V) centered, gid (m,))."""
+    B = codes.shape[1]
+    levels = []
+    for j in range(depth):
+        d = np.load(_oracle_table_path(fill_len, m_fibers, g, j))
+        gt = d["gtoks"]                                            # (m, j+1) gen order
+        toks_newest_first = gt[:, ::-1]                            # block0 = newest token
+        bits = np.asarray(codes, np.uint8)[toks_newest_first].reshape(len(gt), -1)
+        P = d["P"]
+        F = (P - P.astype(np.float64).mean(0)[None, :]).astype(np.float32)
+        levels.append((bits, F, d["fiber_gid"]))
+    return levels
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
+def gl_tree(m_fibers: int = 2000, g: int = 16, depth: int = 6,
+            fill_len: int = 61, tau: float = 0.02, max_width: int = 128,
+            fit_m: int = 8000, val_frac: float = 0.15, encoding: str = "all"):
+    """THE TRUE DATASET GL, end to end and BEYOND degree two: generate a fork
+    per tree level (newest 1..depth tokens), grow characters of every degree
+    with ``forked_gl_tree``, then fit the recovered basis STAGED BY DEGREE on
+    the flat table (clean 3-way fiber split) and report TEST KL -- the honest
+    test of whether high-degree characters push below the deg-1+2 ceiling."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("gl-tree", 3.0)
+    started = time.time()
+    # ensure every fork level exists (generate the missing ones)
+    for j in range(depth):
+        if not os.path.exists(_oracle_table_path(fill_len, m_fibers, g, j)):
+            make_oracle_data.local(m_fibers, g, j, fill_len)
+    z = dict(np.load(f"{ROOT}/codes.npz"))
+    tables = {"lsh": z["lsh"], "ctrl": z["ctrl"]}
+    if encoding != "all":
+        tables = {encoding: tables[encoding]}
+    # flat fit table (clean 3-way split)
+    data = np.load(_table_path(fill_len, fit_m, R_FILLS))
+    P, fiber_id = data["P"], data["fiber_id"]
+    fl = data["G"].shape[1]
+    contexts = np.concatenate([data["PRE"][fiber_id], data["G"]], axis=1)
+    rng = np.random.default_rng(0)
+    u = rng.random(fiber_id.max() + 1)[fiber_id]
+    te, va = u < 0.15, (u >= 0.15) & (u < 0.30)
+    tr = ~(te | va)
+    ctx_tr, A_tr, n_tr, _ = soft_collapse(contexts[tr], P[tr])
+    ctx_va, A_va, n_va, _ = soft_collapse(contexts[va], P[va])
+    ctx_te, A_te, n_te, _ = soft_collapse(contexts[te], P[te])
+    Ptr, Pva, Pte = A_tr / n_tr[:, None], A_va / n_va[:, None], A_te / n_te[:, None]
+    mu = A_tr.sum(0) / n_tr.sum()
+
+    def slot_kl(off, Pn, n):
+        lq = off - torch.logsumexp(off, 1, keepdim=True)
+        lp = torch.tensor(np.log(np.clip(Pn, 1e-12, None)), device=off.device)
+        return float((torch.tensor(n[:, None] * Pn, device=off.device)
+                      * (lp - lq)).sum() / float(n.sum()))
+
+    summary = {"tau": tau, "depth": depth, "encodings": {}}
+    for name, codes in tables.items():
+        B = codes.shape[1]
+        levels = _load_fork_levels(fill_len, m_fibers, g, depth, codes)
+        t0 = time.time()
+        tree = forked_gl_tree(levels, B, tau, max_width=max_width,
+                              progress=lambda j, D, kept: print(
+                                  f"[tree:{name}] level {j+1}/{D} kept {len(kept)}",
+                                  flush=True))
+        masks = tree["masks"]                                      # (K, depth*B)
+        deg = np.array([int((m.reshape(depth, B).any(1)).sum()) for m in masks]) \
+            if len(masks) else np.zeros(0, int)
+        hist = np.bincount(deg, minlength=depth + 1).tolist()
+        print(f"[tree:{name}] {len(masks)} chars, degree hist {hist}, "
+              f"{time.time()-t0:.0f}s", flush=True)
+        # STAGED-BY-DEGREE fit on the flat table: deg-1 base, then add each
+        # higher degree as a val-gated block (avoids the flat-fit overfit)
+        nb = depth * B
+        bt = context_bits(ctx_tr, codes)[:, :nb]
+        bv = context_bits(ctx_va, codes)[:, :nb]
+        bte = context_bits(ctx_te, codes)[:, :nb]
+        uni = slot_kl(torch.tensor(np.tile(np.log(np.clip(mu, 1e-12, None)),
+                      (len(Pte), 1)), device="cuda", dtype=torch.float32), Pte, n_te)
+        d1 = masks[deg == 1] if len(masks) else masks
+        fit1 = fit_softmax_slots(parity_features(bt, d1), Ptr, n_tr,
+                                 parity_features(bv, d1), Pva, n_va, steps=3000, lr=0.01)
+        W1 = torch.tensor(fit1["W"], device="cuda"); b1 = torch.tensor(fit1["b"], device="cuda")
+        off_tr = torch.tensor(parity_features(bt, d1), device="cuda") @ W1 + b1
+        off_va = torch.tensor(parity_features(bv, d1), device="cuda") @ W1 + b1
+        off_te = torch.tensor(parity_features(bte, d1), device="cuda") @ W1 + b1
+        ladder = [{"degree": 1, "n": int((deg == 1).sum()),
+                   "val_kl": slot_kl(off_va, Pva, n_va),
+                   "test_kl": slot_kl(off_te, Pte, n_te)}]
+        print(f"[fit:{name}] deg1 ({ladder[-1]['n']}) test {ladder[-1]['test_kl']:.4f} "
+              f"(uni {uni:.4f})", flush=True)
+        for dd in range(2, depth + 1):
+            md = masks[deg == dd]
+            if not len(md):
+                continue
+            Wd, vk, improved = _fit_block(
+                parity_features(bt, md), off_tr.cpu().numpy(), Ptr, n_tr,
+                parity_features(bv, md), off_va.cpu().numpy(), Pva, n_va,
+                steps=1500, lr=0.01)
+            if improved:
+                Wt = torch.tensor(Wd, device="cuda")
+                off_tr = off_tr + torch.tensor(parity_features(bt, md), device="cuda") @ Wt
+                off_va = off_va + torch.tensor(parity_features(bv, md), device="cuda") @ Wt
+                off_te = off_te + torch.tensor(parity_features(bte, md), device="cuda") @ Wt
+            ladder.append({"degree": dd, "n": int(len(md)), "improved": bool(improved),
+                           "val_kl": slot_kl(off_va, Pva, n_va),
+                           "test_kl": slot_kl(off_te, Pte, n_te)})
+            print(f"[fit:{name}] +deg{dd} ({len(md)}, kept={improved}) "
+                  f"test {ladder[-1]['test_kl']:.4f}", flush=True)
+        summary["encodings"][name] = {
+            "n_chars": int(len(masks)), "degree_hist": hist,
+            "TEST_unigram_kl": uni, "final_TEST_kl": ladder[-1]["test_kl"],
+            "ladder": ladder, "per_level_kept": tree["per_level_kept"]}
+        print(name, json.dumps({k: summary["encodings"][name][k]
+              for k in ("n_chars", "degree_hist", "final_TEST_kl",
+                        "TEST_unigram_kl")}), flush=True)
+        torch.cuda.empty_cache()
+    _write_json(f"{ROOT}/summary_gltree_f{fill_len}_d{depth}_tau{tau}.json", summary)
+    _record("gl-tree", started, {"tau": tau, "depth": depth})
+    return summary
 
 
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
@@ -1893,7 +2120,7 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          steps: int = 600,
          train_path: str = "/cache/qwen35_argl/train_n20000.pt",
          interactions: int = 0, top_pairs: int = 1000,
-         g: int = 24, p_back: int = 0):
+         g: int = 24, p_back: int = 0, depth: int = 6):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -1924,6 +2151,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         make_oracle_data.remote(m_fibers, g, p_back, fill_len)
     if stage == "oracle":
         oracle.remote(m_fibers, g, p_back, fill_len, 0.15, encoding)
+    if stage == "gl-tree":
+        gl_tree.remote(m_fibers, g, depth, fill_len, tau, max_width,
+                       8000, 0.15, encoding)
     if stage == "oracle-sweep":
         # native deg-1 at EVERY filled token position (0=newest .. fill_len-1),
         # one container per level; the fast reorder_cache fork keeps each cheap

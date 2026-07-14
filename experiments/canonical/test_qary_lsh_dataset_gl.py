@@ -17,6 +17,7 @@ from qary_lsh_dataset_gl import (
     dataset_gl_tau,
     draw_fibers,
     fit_softmax_slots,
+    forked_gl_tree,
     oracle_deg1_psi,
     parity_features,
     soft_collapse,
@@ -425,6 +426,52 @@ def test_oracle_deg1_clean_removes_pointmass_floor():
     clean, _ = oracle_deg1_psi(split, F, fib, device="cpu", clean=True)
     assert raw.min() > 0.0                                         # inflated by the floor
     assert np.allclose(clean, 0.0)                                 # no cross-token pairs -> 0
+
+
+def _fork_level(rng, n_fib, G, depth, j, base, planted):
+    """One fork level: resample blocks 0..j per row, keep older blocks at the
+    fiber base; F = the planted staircase over the FULL token codes."""
+    B = 2
+    fib = np.repeat(np.arange(n_fib), G)
+    full = base[fib].copy()                                        # (m, depth*B)
+    resample = rng.integers(0, 2, (len(fib), (j + 1) * B)).astype(np.uint8)
+    full[:, :(j + 1) * B] = resample
+    # planted staircase F = sum_k coef * prod_{bit in prefix_k} chi(bit)
+    F = np.zeros(len(fib))
+    for coef, sup in planted:
+        chi = np.ones(len(fib))
+        for bit in sup:
+            chi *= 1.0 - 2.0 * full[:, bit]
+        F += coef * chi
+    return resample, F[:, None].astype(np.float32), fib
+
+
+def test_forked_gl_tree_recovers_staircase_deg3():
+    # planted: a=block0-bit0, b=block1-bit0, c=block2-bit0; every prefix heavy
+    # ({a}, {a,b}, {a,b,c}) so hereditary growth reaches the degree-3 character
+    rng = np.random.default_rng(31)
+    B, depth, n_fib, G = 2, 3, 60, 12
+    a, b, c = 0, 2, 4
+    planted = [(0.7, [a]), (0.7, [a, b]), (0.7, [a, b, c])]
+    base = rng.integers(0, 2, (n_fib, depth * B)).astype(np.uint8)
+    levels = [_fork_level(rng, n_fib, G, depth, j, base, planted) for j in range(depth)]
+    got = forked_gl_tree(levels, B=B, tau=0.35, max_width=64, device="cpu")
+    masks = {tuple(np.flatnonzero(m).tolist()) for m in got["masks"]}
+    assert (a,) in masks                                          # degree 1
+    assert (a, b) in masks                                        # degree 2
+    assert (a, b, c) in masks                                     # degree 3 -- beyond enumeration
+
+
+def test_forked_gl_tree_empty_when_no_signal():
+    rng = np.random.default_rng(32)
+    B, depth, n_fib, G = 2, 3, 40, 10
+    base = rng.integers(0, 2, (n_fib, depth * B)).astype(np.uint8)
+    levels = [_fork_level(rng, n_fib, G, depth, j, base, [(1.0, [])])  # F const -> no char
+              for j in range(depth)]
+    got = forked_gl_tree(levels, B=B, tau=0.35, max_width=64, device="cpu")
+    # the only "character" with signal is the empty one, which is never emitted
+    nonempty = [m for m in got["masks"] if m.any()]
+    assert len(nonempty) == 0
 
 
 def test_oracle_deg1_singleton_forks_no_pairs():
