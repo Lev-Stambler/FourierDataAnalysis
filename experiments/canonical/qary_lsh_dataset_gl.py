@@ -1343,8 +1343,10 @@ def gl_tree_refit(fill_len: int = 61, depth: int = 6, fit_m: int = 8000,
     off_va = torch.tensor(bfeat(bv), device="cuda") @ Wb + bb
     off_te = torch.tensor(bfeat(bte), device="cuda") @ Wb + bb
     base_test = slot_kl(off_te, Pte, n_te)
-    print(f"[refit:{encoding}] deg1+2 baseline test {base_test:.4f}", flush=True)
-    ladder = [{"stage": "deg1+2", "test_kl": base_test}]
+    base_train = slot_kl(off_tr, Ptr, n_tr)
+    print(f"[refit:{encoding}] deg1+2 baseline TRAIN {base_train:.4f} TEST {base_test:.4f}",
+          flush=True)
+    ladder = [{"stage": "deg1+2", "train_kl": base_train, "test_kl": base_test}]
     kept_hi = 0
     for dd in range(3, depth + 1):
         md = masks[deg == dd][:per_deg]
@@ -1367,11 +1369,29 @@ def gl_tree_refit(fill_len: int = 61, depth: int = 6, fit_m: int = 8000,
                 if bad >= 3:
                     break
         ladder.append({"stage": f"deg<= {dd}", "kept_hi": kept_hi,
+                       "train_kl": slot_kl(off_tr, Ptr, n_tr),
                        "test_kl": slot_kl(off_te, Pte, n_te)})
         print(f"[refit:{encoding}] +deg{dd} (kept_hi {kept_hi}) "
-              f"test {ladder[-1]['test_kl']:.4f} (base {base_test:.4f})", flush=True)
+              f"TRAIN {ladder[-1]['train_kl']:.4f} TEST {ladder[-1]['test_kl']:.4f}",
+              flush=True)
+    # RECONSTRUCTION probe (Lev's point): fit baseline + a big block of tree
+    # deg>=3 chars on TRAIN with NO val gate.  If TRAIN KL collapses while TEST
+    # stays ~1.10, the ceiling is a GENERALIZATION gap (more data -> lower TEST),
+    # not an information limit.  If TRAIN also floors, the window genuinely does
+    # not determine f (prefix info is missing) and degree/data cannot help.
+    hi = masks[deg >= 3][:6000]
+    Xtr = np.concatenate([bfeat(bt), parity_features(bt[:, :ndep], hi)], axis=1)
+    Xte = np.concatenate([bfeat(bte), parity_features(bte[:, :ndep], hi)], axis=1)
+    rec = fit_softmax_slots(Xtr, Ptr, n_tr, Xtr, Ptr, n_tr, steps=6000, lr=0.02)
+    Wr = torch.tensor(rec["W"], device="cuda"); br = torch.tensor(rec["b"], device="cuda")
+    rec_train = slot_kl(torch.tensor(Xtr, device="cuda") @ Wr + br, Ptr, n_tr)
+    rec_test = slot_kl(torch.tensor(Xte, device="cuda") @ Wr + br, Pte, n_te)
+    print(f"[refit:{encoding}] RECONSTRUCT (deg1+2 + {len(hi)} deg>=3, no gate) "
+          f"TRAIN {rec_train:.4f} TEST {rec_test:.4f}", flush=True)
     out = {"encoding": encoding, "baseline_TEST_kl": base_test,
+           "baseline_TRAIN_kl": base_train,
            "final_TEST_kl": ladder[-1]["test_kl"], "kept_high_degree": kept_hi,
+           "reconstruct_TRAIN_kl": rec_train, "reconstruct_TEST_kl": rec_test,
            "ladder": ladder}
     _write_json(f"{ROOT}/summary_gltree_refit_{encoding}_f{fill_len}.json", out)
     _record("gl-tree-refit", started)
