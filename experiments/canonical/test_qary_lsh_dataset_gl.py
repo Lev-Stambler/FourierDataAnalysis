@@ -372,6 +372,61 @@ def test_oracle_deg1_recovers_planted_bit_collision_free():
     assert np.max(np.delete(psi, 2)) < 0.2
 
 
+def _brute_oracle_deg1_clean(split_bits, F, fib):
+    """psi over CROSS-TOKEN pairs only (same-token pairs, chi_b(i)chi_b(j)=1
+    for all b, are excluded as the point-mass floor)."""
+    _, gid = np.unique(fib, return_inverse=True)
+    ng = int(gid.max()) + 1
+    B = split_bits.shape[1]
+    same = (split_bits[:, None, :] == split_bits[None, :, :]).all(2)
+    psi = np.zeros(B)
+    npairs = 0.0
+    for z in range(ng):
+        idx = np.flatnonzero(gid == z)
+        for i in idx:
+            for j in idx:
+                if i != j and not same[i, j]:
+                    npairs += 1
+    for b in range(B):
+        chi = 1.0 - 2.0 * split_bits[:, b].astype(np.float64)
+        acc = 0.0
+        for z in range(ng):
+            idx = np.flatnonzero(gid == z)
+            for i in idx:
+                for j in idx:
+                    if i != j and not same[i, j]:
+                        acc += float(F[i] @ F[j]) * chi[i] * chi[j]
+        psi[b] = acc / npairs
+    return psi
+
+
+def test_oracle_deg1_clean_matches_bruteforce_crosstoken():
+    rng = np.random.default_rng(24)
+    n_fib, G, B, V = 10, 6, 4, 3                                   # few bits -> token repeats
+    split_bits = rng.integers(0, 2, (n_fib * G, B)).astype(np.uint8)
+    F = rng.normal(size=(n_fib * G, V)).astype(np.float32)
+    fib = np.repeat(np.arange(n_fib), G)
+    psi, _ = oracle_deg1_psi(split_bits, F, fib, device="cpu", clean=True)
+    want = _brute_oracle_deg1_clean(split_bits, F, fib)
+    assert np.allclose(psi, want, atol=1e-4)
+
+
+def test_oracle_deg1_clean_removes_pointmass_floor():
+    # every fiber is a POINT MASS (all G rows identical token) + one lone
+    # cross-token row: the un-cleaned psi is inflated and near-constant across
+    # bits; the cleaned psi zeroes the collision floor.
+    rng = np.random.default_rng(25)
+    n_fib, G, B = 30, 8, 5
+    codeA = rng.integers(0, 2, (n_fib, B)).astype(np.uint8)
+    split = np.repeat(codeA, G, axis=0)                            # all same within fiber
+    F = rng.normal(size=(n_fib * G, 2)).astype(np.float32)
+    fib = np.repeat(np.arange(n_fib), G)
+    raw, _ = oracle_deg1_psi(split, F, fib, device="cpu", clean=False)
+    clean, _ = oracle_deg1_psi(split, F, fib, device="cpu", clean=True)
+    assert raw.min() > 0.0                                         # inflated by the floor
+    assert np.allclose(clean, 0.0)                                 # no cross-token pairs -> 0
+
+
 def test_oracle_deg1_singleton_forks_no_pairs():
     rng = np.random.default_rng(23)
     split_bits = rng.integers(0, 2, (8, 4)).astype(np.uint8)

@@ -349,7 +349,7 @@ def dataset_gl_csamp(bits, F_rows, fiber_gid, tau, max_width=512, device=None,
                 no_evidence_levels=no_evidence, saturated_levels=saturated)
 
 
-def oracle_deg1_psi(split_bits, F_rows, fiber_gid, device=None):
+def oracle_deg1_psi(split_bits, F_rows, fiber_gid, device=None, clean=False):
     """The paper's PAIRED bucket for every single-bit character of ONE split
     coordinate, evaluated on FORKED-CACHE data (lem:qary-kv-estimator): every
     row of a fiber shares the real prefix AND the generated stub L_k, so all
@@ -360,9 +360,17 @@ def oracle_deg1_psi(split_bits, F_rows, fiber_gid, device=None):
         psi(b) = (1/n_pairs) sum_z ( ||sum_{i in z} chi_b(i) F_i||^2
                                      - sum_{i in z} ||F_i||^2 ),
 
-    unbiased for E_z|E[F chi_b | z]|^2 (z = fiber = one fork).  Returns
-    psi (B,) and its sqrt (the conditional deg-1 norm, comparable to the exact
-    spectrum's leaf norms).
+    unbiased for E_z|E[F chi_b | z]|^2 (z = fiber = one fork).
+
+    ``clean=True`` additionally subtracts the SAME-TOKEN block within each
+    fiber (pairs whose split token is IDENTICAL, so chi_b(i)chi_b(j)=1 for
+    EVERY b): that is a per-fiber constant -- the token-collision / point-mass
+    floor -- which shifts all psi(b) equally and so cannot change the ranking,
+    but it inflates magnitudes and floods a fixed certification bar (every bit
+    passes).  Removing it leaves only the discriminating cross-token pairs, so
+    the bar and the reported norms become meaningful (the value that the
+    theorem certifies is still the un-cleaned full weight, recovered by fitting
+    the whole basis).  Returns psi (B,) and its sqrt.
 
     split_bits: (m, B) uint8 code of the split token per forked row;
     F_rows: (m, V) CENTERED terminal targets; fiber_gid: (m,) the fork id.
@@ -374,16 +382,36 @@ def oracle_deg1_psi(split_bits, F_rows, fiber_gid, device=None):
     gid = gid.astype(np.int64)
     ng = int(gid.max()) + 1
     counts = np.bincount(gid, minlength=ng).astype(np.float64)
-    n_pairs = float((counts * (counts - 1)).sum())
-    if n_pairs <= 0:
-        B = split_bits.shape[1]
-        return np.zeros(B), np.zeros(B)
     F_t = torch.tensor(np.asarray(F_rows, dtype=np.float32), device=device)
     gid_t = torch.tensor(gid, dtype=torch.long, device=device)
     signs = torch.tensor(1.0 - 2.0 * split_bits.astype(np.float32), device=device)
     Q = _bucket_Q(signs.t().contiguous(), F_t, gid_t, ng, mem_budget=2.0e8).cpu().numpy()
-    diag = float((F_t.double() ** 2).sum().item())
-    psi = (Q - diag) / n_pairs
+    B = split_bits.shape[1]
+    if not clean:
+        n_pairs = float((counts * (counts - 1)).sum())
+        if n_pairs <= 0:
+            return np.zeros(B), np.zeros(B)
+        block = float((F_t.double() ** 2).sum().item())            # diagonal only
+    else:
+        # subcell = (fiber, split-token VALUE); block = the same-token square,
+        # n_pairs = only the cross-token (discriminating) pairs
+        packed = np.packbits(split_bits, axis=1)
+        view = np.ascontiguousarray(packed).view(
+            [("", packed.dtype)] * packed.shape[1]).ravel()
+        _, code_id = np.unique(view, return_inverse=True)
+        _, sub = np.unique(gid * (int(code_id.max()) + 1) + code_id,
+                           return_inverse=True)
+        sub = sub.astype(np.int64)
+        nsub = int(sub.max()) + 1
+        sub_t = torch.tensor(sub, dtype=torch.long, device=device)
+        ones = torch.ones((1, len(sub)), dtype=torch.float32, device=device)
+        block = float(_bucket_Q(ones, F_t, sub_t, nsub,
+                                mem_budget=2.0e8).cpu().numpy()[0])   # sum||sum_subcell F||^2
+        subc = np.bincount(sub, minlength=nsub).astype(np.float64)
+        n_pairs = float((counts * (counts - 1)).sum() - (subc * (subc - 1)).sum())
+        if n_pairs <= 0:
+            return np.zeros(B), np.zeros(B)
+    psi = (Q - block) / n_pairs
     return psi, np.sqrt(np.maximum(psi, 0.0))
 
 
@@ -1020,7 +1048,9 @@ def oracle(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
                "n_pairs_per_fiber": g * (g - 1), "encodings": {}}
     for name, codes in tables.items():
         sb = np.asarray(codes, dtype=np.uint8)[split_tok]         # (M*g, B) split code
-        psi, norm = oracle_deg1_psi(sb[~va], F[~va], fiber_gid[~va])
+        # clean=True removes the b-independent token-collision floor so the
+        # ranking and the 0.01 bar are meaningful (see oracle_deg1_psi)
+        psi, norm = oracle_deg1_psi(sb[~va], F[~va], fiber_gid[~va], clean=True)
         # unpaired exact marginal |E[F chi_b]|^2 on the same rows (sanity twin)
         Ftr = F[~va]; chitr = 1.0 - 2.0 * sb[~va].astype(np.float32)
         marg = ((chitr.T @ Ftr) / len(Ftr))
@@ -1038,7 +1068,11 @@ def oracle(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
         # run PRINTS progress toward the goal (KL dropping below unigram as each
         # certified leaf is added) instead of one end-of-run number.
         ladder = []
-        rungs = [k for k in (5, 10, 25, 50, 100, 200, len(cert)) if 0 < k <= len(cert)]
+        B = sb.shape[1]
+        # sparse certified rungs + the full deg-1 basis (comparable to the exact
+        # enumeration number regardless of how many bits clear the clean bar)
+        rungs = [k for k in (5, 10, 25, 50, 100, 200, len(cert), B)
+                 if 0 < k <= B]
         rungs = sorted(set(rungs))
         best_fit = None
         for K in rungs:
@@ -1890,6 +1924,14 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         make_oracle_data.remote(m_fibers, g, p_back, fill_len)
     if stage == "oracle":
         oracle.remote(m_fibers, g, p_back, fill_len, 0.15, encoding)
+    if stage == "oracle-sweep":
+        # native deg-1 at EVERY filled token position (0=newest .. fill_len-1),
+        # one container per level; the fast reorder_cache fork keeps each cheap
+        calls = [oracle.spawn(m_fibers, g, pb, fill_len, 0.15, encoding)
+                 for pb in range(fill_len)]
+        for c in calls:
+            print(json.dumps(c.get()["encodings"].get("lsh", {}).get("kl_ladder", []),
+                             indent=0), flush=True)
     if stage in ("search", "all"):
         if encoding == "parallel":
             # one container per encoding; summaries land as separate files
