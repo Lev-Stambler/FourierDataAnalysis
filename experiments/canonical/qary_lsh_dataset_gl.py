@@ -1186,12 +1186,19 @@ def gl_tree(m_fibers: int = 2000, g: int = 16, depth: int = 6,
                               progress=lambda j, D, kept: print(
                                   f"[tree:{name}] level {j+1}/{D} kept {len(kept)}",
                                   flush=True))
-        masks = tree["masks"]                                      # (K, depth*B)
+        masks = tree["masks"]                                      # (K, depth*B), psi-sorted
         deg = np.array([int((m.reshape(depth, B).any(1)).sum()) for m in masks]) \
             if len(masks) else np.zeros(0, int)
         hist = np.bincount(deg, minlength=depth + 1).tolist()
         print(f"[tree:{name}] {len(masks)} chars, degree hist {hist}, "
               f"{time.time()-t0:.0f}s", flush=True)
+        # persist masks+psi+degree so the fit can be re-tuned WITHOUT re-searching
+        np.savez_compressed(f"{ROOT}/gltree_masks_f{fill_len}_d{depth}_{name}.npz",
+                            masks=masks, psi=tree["psi"], deg=deg)
+        vol.commit()
+        # deg>=3 is added top-K by psi (a huge noisy block would be rejected
+        # wholesale by the val gate, hiding any genuinely useful high-degree char)
+        top_per_deg = 800
         # HONEST test of "beyond deg-2": build the FULL deg-1+2 enumeration
         # baseline (all fill_len tokens -- the 1.103 recipe), then add the
         # tree's deg>=3 characters (which enumeration cannot reach) as
@@ -1238,7 +1245,7 @@ def gl_tree(m_fibers: int = 2000, g: int = 16, depth: int = 6,
               f"test {base_test:.4f} (uni {uni:.4f})", flush=True)
         # add the TREE's deg>=3 characters (over the newest depth tokens)
         for dd in range(3, depth + 1):
-            md = masks[deg == dd]
+            md = masks[deg == dd][:top_per_deg]                    # top-K by psi
             if not len(md):
                 continue
             Ftr = parity_features(bt[:, :ndep], md)
