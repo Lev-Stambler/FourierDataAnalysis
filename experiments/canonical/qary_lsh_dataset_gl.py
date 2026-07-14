@@ -888,12 +888,15 @@ def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
         raise RuntimeError(f"only {len(PRE)} fibers cached")
     PRE = PRE[:m_fibers]
     if stub_len > 0:                                               # shared stub, one draw
-        stub, _ = _fill_and_label(model, PRE, stub_len, 1, q, slot_ids, seed=seed)
+        stub, _ = _fill_and_label(model, PRE, stub_len, 1, q, slot_ids,
+                                  batch=128, seed=seed)
         PRE_ext = np.concatenate([PRE, stub], axis=1)
     else:
         PRE_ext = PRE
     w = fill_len - stub_len                                        # split token + newer
-    G_toks, P = _fill_and_label(model, PRE_ext, w, g, q, slot_ids, seed=seed + 7)
+    # batch 128: a 0.8B teacher at batch 32 leaves the A10G badly starved
+    G_toks, P = _fill_and_label(model, PRE_ext, w, g, q, slot_ids,
+                                batch=128, seed=seed + 7)
     split_tok = G_toks[:, 0].astype(np.int64)                     # the split coordinate
     fiber_gid = np.repeat(np.arange(m_fibers), g)
     os.makedirs(ROOT, exist_ok=True)
