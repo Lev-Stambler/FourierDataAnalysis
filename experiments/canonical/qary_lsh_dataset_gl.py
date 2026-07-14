@@ -1357,7 +1357,7 @@ def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
     import torch
     vol.reload()
     out = _oracle_table_path(fill_len, m_fibers, g, p_back)
-    if os.path.exists(out):
+    if os.path.exists(out) and "H" in np.load(out).files:         # regen legacy P-only tables
         return out
     _budget("oracle-data", 2.0)
     started = time.time()
