@@ -220,7 +220,7 @@ def _bucket_Q(chi, A_t, gid_t, ng, mem_budget=8.0e8, cls_chunk=128):
 
 
 def dataset_gl_csamp(bits, F_rows, fiber_gid, tau, max_width=512, device=None,
-                     n_search=None):
+                     n_search=None, on_progress=None, progress_every=None):
     """Offline realization of the paper's PAIRED CSAMP bucket
     (ar_categorical_gl.typ, lem:qary-kv-estimator): both draws of a pair share
     the real context Z AND the un-split continuation L_k, so a cell is
@@ -326,9 +326,15 @@ def dataset_gl_csamp(bits, F_rows, fiber_gid, tau, max_width=512, device=None,
             break
         if k == n_search - 1:
             terminal = (cell, cc, npairs)
-        if (k + 1) % max(1, n_search // 20) == 0:
+        step = progress_every or max(1, n_search // 20)
+        if (k + 1) % step == 0 or k == n_search - 1:
+            cert = int((psi >= thresh).sum()) if npairs > 0 else 0
+            mass = float(psi[psi >= thresh].sum()) if npairs > 0 else 0.0
             print(f"[csamp] level {k + 1}/{n_search} width={len(live_masks)} "
-                  f"pairs={npairs:.0f}", flush=True)
+                  f"pairs={npairs:.0f} filled_buckets={cert} captured_mass={mass:.4f}",
+                  flush=True)
+            if on_progress is not None:
+                on_progress(k + 1, n_search, live_masks.copy())
     masks = live_masks[live_masks.any(axis=1)]
     psi_top = []
     if len(masks) and terminal is not None and terminal[2] > 0:
@@ -381,7 +387,8 @@ def oracle_deg1_psi(split_bits, F_rows, fiber_gid, device=None):
     return psi, np.sqrt(np.maximum(psi, 0.0))
 
 
-def dataset_gl_tau(bits, A, tau, norm_m, max_width=512, device=None, n_search=None):
+def dataset_gl_tau(bits, A, tau, norm_m, max_width=512, device=None, n_search=None,
+                   on_progress=None, progress_every=None):
     """Exact-W csamp GL tree over bit arrays: keep children with W >= tau^2/4,
     ORDERED with a bounded frontier (the campaign's fast ordered search).
 
@@ -450,9 +457,21 @@ def dataset_gl_tau(bits, A, tau, norm_m, max_width=512, device=None, n_search=No
         widths.append(int(len(live_masks)))
         if len(live_masks) == 0:
             break
-        if kk % 500 == 0:
-            print(f"[gl] level {kk}/{n_search} width={len(live_masks)} ng={ng}",
-                  flush=True)
+        step = progress_every or max(1, n_search // 20)
+        if kk % step == 0 or kk == n_search:
+            # filled buckets so far = distinct live characters whose current
+            # coefficient already clears the leaf bar
+            live = live_masks[live_masks.any(axis=1)]
+            cert = 0
+            if len(live):
+                chi = torch.tensor(parity_features(bits, live), device=device)
+                ln = np.sqrt(((chi.T @ A_t) / norm_m).double().pow(2)
+                             .sum(1).cpu().numpy())
+                cert = int((ln >= tau / 2.0).sum())
+            print(f"[gl] level {kk}/{n_search} width={len(live_masks)} ng={ng} "
+                  f"filled_buckets={cert}", flush=True)
+            if on_progress is not None:
+                on_progress(kk, n_search, live.copy())
     masks = live_masks[live_masks.any(axis=1)]
     frontier_masks = masks.copy()
     norms_top = []
@@ -525,6 +544,27 @@ def fit_softmax_slots(F_tr, P_tr, n_tr, F_va, P_va, n_va, steps=2000, lr=0.05,
     Wm_b, b_b = best_state
     return {"W": Wm_b.cpu().numpy(), "b": b_b.cpu().numpy(), "val_kl": best,
             "improved": bool(best < init_val - 1e-9)}
+
+
+def _kl_progress(name, bits_tr, P_tr, n_tr, bits_va, P_va, n_va, uni_kl,
+                 max_feats=256, steps=300):
+    """Build an on_progress(level, ntot, masks) callback that fits the current
+    frontier's characters and prints held-out KL vs the unigram floor -- so a
+    long descent shows live progress toward the goal (KL dropping) instead of
+    grinding silently.  Caps the quick fit at ``max_feats`` characters."""
+    def cb(level, ntot, masks):
+        if len(masks) == 0:
+            print(f"[{name}] level {level}/{ntot}: width 0", flush=True)
+            return
+        mm = masks[:max_feats]
+        fit = fit_softmax_slots(parity_features(bits_tr, mm), P_tr, n_tr,
+                                parity_features(bits_va, mm), P_va, n_va,
+                                steps=steps, lr=0.01)
+        gain = uni_kl - fit["val_kl"]
+        print(f"[{name}] level {level}/{ntot}: {len(masks)} chars -> "
+              f"val_kl {fit['val_kl']:.4f} (unigram {uni_kl:.4f}, gain {gain:+.4f})",
+              flush=True)
+    return cb
 
 
 def eval_slots(Wm, b, F, P, n):
@@ -759,10 +799,16 @@ def search(tau: float, m_fibers: int = M_FIBERS, r: int = R_FILLS, val_frac: flo
     for name, codes in tables.items():
         bits_tr = context_bits(ctx_tr, codes)
         bits_va = context_bits(ctx_va, codes)
+        uni_kl = fit_softmax_slots(np.zeros((len(ctx_tr), 0), np.float32),
+                                   A_tr / n_tr[:, None], n_tr,
+                                   np.zeros((len(ctx_va), 0), np.float32),
+                                   A_va / n_va[:, None], n_va, steps=1)["val_kl"]
+        cb = _kl_progress(name, bits_tr, A_tr / n_tr[:, None], n_tr,
+                          bits_va, A_va / n_va[:, None], n_va, uni_kl)
         t0 = time.time()
         got = dataset_gl_tau(bits_tr, A_search, tau, norm_m=int((~va_rows).sum()),
                              max_width=max_width,
-                             n_search=fill_len * codes.shape[1])
+                             n_search=fill_len * codes.shape[1], on_progress=cb)
         entry = {"status": got["status"], "widths": got["widths"],
                  "saturated_levels": len(got.get("saturated_levels", [])),
                  "leaf_norms_top": got.get("leaf_norms_top", []),
@@ -967,9 +1013,17 @@ def search_csamp(tau: float, m_fibers: int = M_FIBERS, r: int = R_FILLS,
                "encodings": {}}
     for name, codes in tables.items():
         bits_tr = context_bits(contexts[~va_rows], codes)
+        # live progress: fit the frontier's characters on per-fill rows and
+        # report held-out KL as the descent proceeds
+        bits_va = context_bits(contexts[va_rows], codes)
+        Ptr, Pva = P[~va_rows], P[va_rows]
+        one_tr, one_va = np.ones(len(Ptr)), np.ones(len(Pva))
+        uni_kl = fit_softmax_slots(bits_tr[:, :0], Ptr, one_tr,
+                                   bits_va[:, :0], Pva, one_va, steps=1)["val_kl"]
+        cb = _kl_progress(name, bits_tr, Ptr, one_tr, bits_va, Pva, one_va, uni_kl)
         t0 = time.time()
         got = dataset_gl_csamp(bits_tr, F, fib_tr, tau, max_width=max_width,
-                               n_search=fill_len * codes.shape[1])
+                               n_search=fill_len * codes.shape[1], on_progress=cb)
         prof = got["pair_profile"]
         entry = {"status": got["status"], "widths": got["widths"],
                  "psi_top": got["psi_top"],
