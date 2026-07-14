@@ -602,3 +602,40 @@ feature lift is generic capacity, not geometry.  The complete picture is a *two-
 LSH encoding is worth $0.18$--$0.21$ nats precisely in bottlenecked models, where the code is the
 model's only access to the tokens (the Walsh-polynomial compression regime), and nothing in models
 that already see the tokens through an embedding table.
+
+== Degree bounds via sensitivity: a fit-free certificate <sec:sensitivity>
+
+The dataset-sensitivity machinery of @prop:dataset-sensitivity gives the low-degree hypothesis of
+@thm:learning-low-degree a directly measurable form, and the measurement needs no basis, no code
+table, and no fit: resample one token and watch the output distribution move.  For the same
+teacher as above (terminal $512$-slot distribution $f$ over real $128$-token FineWeb spans,
+$M = 1000$), the sensitivity of the coordinate $b$ tokens back from the prediction is estimated
+by forking the teacher's cache at that position, drawing $g = 16$ i.i.d. replacements from the
+teacher's own conditional at the fork, teacher-forcing the untouched real suffix, and taking the
+unbiased within-fiber sample variance of $f$ summed over slots -- the conditional
+(autoregressive) instance of the coordinate-averaging operator, with every forked evaluation
+self-checked against a fresh forward pass, and the estimator's core anchored against brute-force
+enumeration and the spectral identity of @prop:global-sensitivity in the module's tests.  The
+profile decays as a power law from the prediction point:
+
+#table(columns: 9,
+  [$b$ (tokens back)], [$0$], [$1$], [$2$], [$3$], [$7$], [$15$], [$31$], [$124$],
+  [$"Sens"_b times 10^3$], [$143$], [$40$], [$21$], [$13$], [$4.0$], [$1.2$], [$1.1$], [$0.3$])
+
+Against the total slot variance $0.294$: the last token alone moves $49%$ of the function's
+variance, the last four tokens carry $71%$ of the total sensitivity, and the strided tail out to
+$b = 124$ (densified by linear interpolation) brings the total to $overline(S) = 0.306$.  The
+scale-free summary is the variance-weighted average degree
+$d_"eff" = overline(S) \/ "Var" = 1.04$: measured through single-token perturbations alone, the
+teacher-on-FineWeb function is spectrally concentrated at degree one with a thin higher tail --
+the same verdict the recovery ladder of @sec:whlsh-canonical reached by fitting, where degree two
+terminated the ladder and certified triples carried zero incremental weight.  The sufficient
+degree of @thm:learning-low-degree, $d >= 4 overline(S) \/ eps$, evaluates to $d = 8.3$, $16.7$,
+$41.7$ at $eps = 0.5$, $0.25$, $0.1$ of the total variance: a loose Markov envelope over a sharp
+underlying quantity, and the practical content is the ordering -- $overline(S)$ certifies that
+low-degree methods suffice for \$0.40 of GPU time, before any basis is chosen or any fit is
+attempted.  Two caveats keep the claim honest: the resampling measure is the teacher's own
+conditional rather than the uniform $mu$ of the theorem (the natural dataset-weighted reading of
+@prop:dataset-sensitivity, whose inequality direction makes the measured $overline(S)$ an
+estimate from below), and degree here counts token coordinates -- the same granularity as the
+ladder's per-token blocks.
