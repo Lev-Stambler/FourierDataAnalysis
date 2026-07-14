@@ -853,8 +853,12 @@ def _stream_spans(tok, n_spans, span_len=CTX, max_docs=8_000_000, corpus=FINEWEB
     """Stream distinct spans from a corpus.  ``skip`` discards the first ``skip``
     qualifying spans so a later training draw never reuses the held-out test
     spans (continual fresh sampling; each doc seen at most once)."""
+    import os
     from datasets import load_dataset
-    ds = load_dataset(corpus[0], name=corpus[1], split="train", streaming=True)
+    tok_hf = (os.environ.get("HF_TOKEN") or os.environ.get("HF_HUB_TOKEN")
+              or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+    ds = load_dataset(corpus[0], name=corpus[1], split="train", streaming=True,
+                      token=tok_hf)
     spans, seen = [], 0
     for i, row in enumerate(ds):
         text = row.get("text") or ""
