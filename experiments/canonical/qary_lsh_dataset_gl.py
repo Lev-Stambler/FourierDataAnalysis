@@ -1224,15 +1224,25 @@ def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024, block=1,
             return xor_parity_features(bits_t, idx[klo:hi])
     C = np.empty((len(idx), G_t.shape[1]), np.float32)
     if block > 1:
+        D = len(bits_t)
         for klo in range(0, len(idx), block):
             F = _feat(klo, min(klo + block, len(idx)))
-            Fw = F * w_t[:, None]
-            S = (F.t() @ Fw) / wsum
-            bvec = (Fw.t() @ G_t) / wsum
-            S += 1e-4 * torch.eye(len(S), device=dev)              # dup clusters: singular
+            k = F.shape[1]
+            # ROW-TILED Gram/rhs/update: full-height F*w and F@C temporaries
+            # are 8-16 GB each at 4M rows (OOM'd the 4M pair fit)
+            S = torch.zeros((k, k), dtype=torch.float32, device=dev)
+            bvec = torch.zeros((k, G_t.shape[1]), dtype=torch.float32, device=dev)
+            for lo in range(0, D, 262144):
+                Ft = F[lo:lo + 262144]
+                Fw = Ft * w_t[lo:lo + 262144, None]
+                S += Ft.t() @ Fw
+                bvec += Fw.t() @ G_t[lo:lo + 262144]
+            S /= wsum; bvec /= wsum
+            S += 1e-4 * torch.eye(k, device=dev)                   # dup clusters: singular
             C_b = torch.linalg.solve(S.double(), bvec.double()).float()
-            G_t -= F @ C_b
-            C[klo:klo + len(C_b)] = C_b.cpu().numpy()
+            for lo in range(0, D, 262144):
+                G_t[lo:lo + 262144] -= F[lo:lo + 262144] @ C_b
+            C[klo:klo + k] = C_b.cpu().numpy()
         return C, (G_t.cpu().numpy() if was_np else G_t)
     for klo in range(0, len(idx), char_chunk):
         F = _feat(klo, min(klo + char_chunk, len(idx)))
