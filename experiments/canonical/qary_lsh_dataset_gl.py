@@ -61,7 +61,7 @@ SENS_POSITIONS = [0, 1, 2, 3, 4, 5, 6, 7, 11, 15, 23, 31, 47, 63, 95, 124]
 
 ROOT = "/cache/canonical/qary_lsh_gl"
 A10_PER_SECOND = 0.000306
-BUDGET = 100.0  # raised for grad-sense (1M-char harvest on H100; ledger counts
+BUDGET = 250.0  # raised for grad-sense (1M-char harvest on H100; ledger counts
                 # wall-seconds at the A10 rate, so H100 hours under-count ~3.6x)
 
 app = modal.App("canonical-qary-lsh-gl")
@@ -3413,7 +3413,7 @@ def deg2_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
 def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
              r2: int = 64, n_pairs: int = 160_000, blocks: int = 3, r3: int = 16,
              kappa: float = 6.0, per_anchor: int = 3000, max_tris: int = 200_000,
-             encoding: str = "lsh"):
+             encoding: str = "lsh", far: int = 0):
     """Degree 3, EXACTLY, on top of the deg-1+2 model: a triple's coefficient
     is the PAIR coefficient of the sign-flipped target (psi3(a,b,c) =
     deg2_exact_psi(bits, G*chi_c)[a,b]), so the tested pair enumerator runs
@@ -3486,6 +3486,10 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
     eye3 = torch.eye(r3, device=dev)
     combos = [(i, i) for i in range(blocks)] + \
              [(i, j) for i in range(blocks) for j in range(blocks) if i != j]
+    if far:
+        # long-range copy-gating shape: newest-block PAIR x a DISTANT block's
+        # bit ("copy from -k now" = products spanning recent and far blocks)
+        combos += [(0, j) for j in range(blocks, min(far, win))]
     found = {}
     for (pb, ab) in combos:                                        # pair block, anchor block
         sub = np.arange(pb * B, (pb + 1) * B)
@@ -3568,6 +3572,11 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
                 "acc_copy": float(correct[is_copy].mean()),
                 "acc_nocopy": float(correct[~is_copy].mean()),
                 "top5": rank_hits[5] / len(t_te), "top20": rank_hits[20] / len(t_te)}
+        rare = freq < 100                                          # rare x copy cross-tab
+        if (rare & is_copy).sum() > 20:
+            diag["rare_copy_share_of_rare"] = float(is_copy[rare].mean())
+            diag["acc_rare_copy"] = float(correct[rare & is_copy].mean())
+            diag["acc_rare_nocopy"] = float(correct[rare & ~is_copy].mean())
         for name_, edges in (("conf", [0.0, 0.25, 0.5, 0.75, 1.01]),):
             for j in range(len(edges) - 1):
                 m = (conf >= edges[j]) & (conf < edges[j + 1])
@@ -4603,7 +4612,7 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          batch: int = 8192, n_train: int = 1_000_000, n_test: int = 50_000,
          target_chars: int = 1_000_000, chunk: int = 16384, win: int = 61,
          kappa: float = 4.0, mlp: int = 0, variant: str = "raw",
-         blocks: int = 3, max_tris: int = 200_000):
+         blocks: int = 3, max_tris: int = 200_000, far: int = 0):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -4674,7 +4683,7 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "deg3-fit":                                          # anchored triple ladder
         print(deg3_fit.remote(n_train, n_test, win, 64, 160_000, blocks, 16,
                               kappa, 3000, max_tris,
-                              encoding if encoding != "all" else "lsh"))
+                              encoding if encoding != "all" else "lsh", far))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":
