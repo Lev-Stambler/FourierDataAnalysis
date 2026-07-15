@@ -1308,7 +1308,7 @@ def _logspace_ste_chars(bits_f, theta, eps=1e-3):
 
 
 def fourier_learn_chars(bits, G, w, vm, K=16384, rho=0.5, lam=0.1, l1=0.0,
-                        gamma=0.1, steps=2000, lr=0.05, batch=8192, eps=1e-3,
+                        gamma=0.1, steps=2000, lr=1e-3, batch=8192, eps=1e-3,
                         warm_masks=None, warm_C=None, device=None, seed=0,
                         log_fn=None):
     """Directly LEARN the Fourier decomposition of G: K characters of ANY
@@ -1345,8 +1345,11 @@ def fourier_learn_chars(bits, G, w, vm, K=16384, rho=0.5, lam=0.1, l1=0.0,
         wc = torch.tensor(np.asarray(warm_C[:K], np.float32))
         u0[: len(wc)] = torch.atanh(torch.clamp(wc / rho, -0.999, 0.999))
     u = u0.to(dev).requires_grad_(True)
-    opt = torch.optim.Adam([theta, u], lr=lr)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps)
+    # AdamW, CONSTANT lr (Lev: the cosine-to-zero froze late exploration);
+    # decay only the coefficients -- decaying gate logits pulls masks toward
+    # the 0.5 boundary
+    opt = torch.optim.AdamW([{"params": [theta], "weight_decay": 0.0},
+                             {"params": [u], "weight_decay": 0.01}], lr=lr)
 
     def val_mse():
         with torch.no_grad():
@@ -1388,7 +1391,6 @@ def fourier_learn_chars(bits, G, w, vm, K=16384, rho=0.5, lam=0.1, l1=0.0,
         loss.backward()
         torch.nn.utils.clip_grad_norm_([theta, u], 1.0)
         opt.step()
-        sched.step()
         if log_fn is not None and t % 50 == 0:
             with torch.no_grad():
                 mh = torch.sigmoid(theta) > 0.5
@@ -1396,7 +1398,7 @@ def fourier_learn_chars(bits, G, w, vm, K=16384, rho=0.5, lam=0.1, l1=0.0,
                 moved = float((mh != (theta0.to(dev) > 0)).any(1).float().mean()) \
                     if warm_masks is not None else float("nan")
                 cn = C.detach().norm(dim=1)
-            log_fn(t, {"train_mse": float(mse), "lr": float(sched.get_last_lr()[0]),
+            log_fn(t, {"train_mse": float(mse), "lr": lr,
                        "pair_decorr": float(decorrelation_penalty(phi)),
                        "deg_mean": float(dg.mean()), "deg_max": float(dg.max()),
                        "n_deg_gt4": int((dg > 4).sum()),
