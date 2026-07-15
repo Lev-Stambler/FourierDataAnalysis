@@ -89,8 +89,10 @@ need projections, not independent averages; `sequential_deflate(block=512)`).
 | deg-1 exact (4,256 chars, closed form) | 0.148 | 4.68 |
 | + 6,000 exact deg-2 pairs | 0.200 | 4.02 |
 | + 48,000 | 0.228 | 3.63 |
-| **+ 160,000 (test-optimal)** | **0.233** | **3.49** |
+| **+ 160,000 (deg-2 test-optimal)** | **0.233** | **3.49** |
 | + 400,000 | 0.232 | 3.48 |
+| deg-1+2 **+ 100,000 exact deg-3 triples** (`deg3-fit`) | 0.251 | 3.19 |
+| deg-1+2 **+ 200,000 triples — still climbing at the cap** | **0.254** | **3.13** |
 
 - **+58% relative top-1 over deg-1**; deg-2 captures 0.233 of the 0.609 post-deg-1 residual;
   overfit onset only below ~4× floor. Beats every prior model in the program incl. the old
@@ -105,10 +107,15 @@ need projections, not independent averages; `sequential_deflate(block=512)`).
 - Fail-loud lessons baked into code + tests: batch deflation amplifies duplicate clusters
   (1−m)²; residual must never grow; ψ ≤ total mass; floor-relative gates (ψ noise
   concentrates within √(2/dY)≈4% of floor).
+- **Degree 3 works the same way** (`deg3-fit`): a triple's coefficient is the PAIR map of
+  the sign-flipped target (`psi3(a,b,c) = deg2map(G·χ_c)[a,b]`; one global projection shared
+  across anchors — the rowwise flip commutes). 378k triples above 6× floor in the newest 3
+  blocks (40 s enumeration); block-OMP on the deg-1+2 residual adds +0.021 top-1 and −0.36
+  KL at the 200k cap, still climbing.
 - Artifacts: `plain_ctx128_N1000000_s30000_plain_tr.npz` (reusable supervision),
-  `deg2exact_lsh_win{32,61}_r64.npz` (top-1M pairs + deg-1 fits), `summary_deg2fit_lsh_
-  win32.json`; W&B `deg2exact-*`/`deg2fit-*`. Next: same/adjacent-block deg-3 enumeration
-  (cheap 133²-GEMMs per block), more contexts to extend the pair tail.
+  `deg2exact_lsh_win{32,61}_r64.npz` (top-1M pairs + deg-1 fits), `summary_deg{2,3}fit_lsh_
+  win32.json`; W&B `deg2exact-*`/`deg2fit-*`/`deg3fit-*`. Next: uncapped triples + 4 blocks,
+  deg-4 via pair anchors, more contexts to push floors down.
 
 ## Learned Fourier features — TOP-1 target (2026-07-14, stage `dl-fourier`)
 
