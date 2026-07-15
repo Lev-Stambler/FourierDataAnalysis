@@ -1390,10 +1390,24 @@ def fourier_learn_chars(bits, G, w, vm, K=16384, rho=0.5, lam=0.1, l1=0.0,
         opt.step()
         sched.step()
         if log_fn is not None and t % 50 == 0:
-            log_fn(t, {"train_mse": float(mse), "lr": float(sched.get_last_lr()[0])})
+            with torch.no_grad():
+                mh = torch.sigmoid(theta) > 0.5
+                dg = mh.sum(1).float()
+                moved = float((mh != (theta0.to(dev) > 0)).any(1).float().mean()) \
+                    if warm_masks is not None else float("nan")
+                cn = C.detach().norm(dim=1)
+            log_fn(t, {"train_mse": float(mse), "lr": float(sched.get_last_lr()[0]),
+                       "pair_decorr": float(decorrelation_penalty(phi)),
+                       "deg_mean": float(dg.mean()), "deg_max": float(dg.max()),
+                       "n_deg_gt4": int((dg > 4).sum()),
+                       "masks_moved_frac": moved,
+                       "coef_norm_mean": float(cn.mean()),
+                       "coef_norm_max": float(cn.max())})
         if (t + 1) % 100 == 0:
             vmse = val_mse()
             history.append((t + 1, vmse))
+            if log_fn is not None:
+                log_fn(t + 1, {"val_mse": vmse, "best_val_mse": min(best, vmse)})
             if vmse < best:
                 best = vmse
                 best_state = (theta.detach().clone(), u.detach().clone())
