@@ -13,6 +13,7 @@ from qary_lsh_dataset_gl import (
     _sens_from_groups,
     _sens_from_top1,
     _full_kl,
+    _logspace_ste_chars,
     _sens_report,
     _ste_features,
     _top1_variance,
@@ -34,6 +35,7 @@ from qary_lsh_dataset_gl import (
     sequential_deflate,
     xor_parity_features,
     fit_regression,
+    fourier_learn_chars,
     fit_softmax_slots,
     forked_gl_tree,
     harden_masks,
@@ -847,6 +849,55 @@ def test_deg2_exact_psi_finds_planted_pairs():
     mask[1, 4] = mask[4, 1] = mask[2, 7] = mask[7, 2] = False
     assert psi2[mask].max() < 1e-6                                 # nothing else
     assert abs(mass_r - float((G ** 2).sum(1).mean())) < 1e-5      # r >= dY: no loss
+
+
+def test_logspace_ste_matches_parity_with_finite_grads():
+    import torch
+    rng = np.random.default_rng(29)
+    m_rows, n, K = 128, 12, 8
+    bits = rng.integers(0, 2, (m_rows, n)).astype(np.uint8)
+    theta = torch.tensor(rng.normal(0, 3, (K, n)).astype(np.float32),
+                         requires_grad=True)
+    phi = _logspace_ste_chars(torch.tensor(bits.astype(np.float32)), theta)
+    mh = (torch.sigmoid(theta) > 0.5).numpy().astype(np.uint8)
+    assert np.array_equal(phi.detach().numpy(), parity_features(bits, mh))
+    phi.sum().backward()
+    assert torch.isfinite(theta.grad).all()
+
+
+def test_fourier_learn_recovers_planted_any_degree():
+    # the point of the learned decomposition: characters of ANY degree,
+    # including deg-5 (beyond enumeration reach), recovered from near-empty
+    # init; coefficients bounded; anti-collapse keeps slots distinct
+    rng = np.random.default_rng(31)
+    m_rows, n, dY = 16384, 14, 8
+    bits = rng.integers(0, 2, (m_rows, n)).astype(np.uint8)
+    sels = [[3], [1, 6], [0, 5, 11], [2, 4, 7, 9, 12]]             # deg 1,2,3,5
+    planted = np.zeros((4, n), np.uint8)
+    for j, sel in enumerate(sels):
+        planted[j, sel] = 1
+    mags = np.array([1.0, 0.7, 0.5, 0.6])
+    V = rng.normal(size=(4, dY)); V /= np.linalg.norm(V, axis=1, keepdims=True)
+    G = ((parity_features(bits, planted) * mags) @ V).astype(np.float32)
+    G -= G.mean(0)
+    G /= np.sqrt((G ** 2).sum(1).mean())
+    w = np.ones(m_rows)
+    vm = rng.random(m_rows) < 0.15
+    # cold gradient start cannot reach an orthogonal deg-3/5 char (single-gate
+    # toggles have zero signal at any strict prefix) -- the CONTRACT is
+    # completing/extending warm starts from the exact enumeration (the stage
+    # warm-starts from the top enumerated pairs/triples)
+    warm = np.zeros((2, n), np.uint8)
+    warm[0, [0, 5]] = 1                                            # 2 of the deg-3 char
+    warm[1, [2, 4, 7]] = 1                                         # 3 of the deg-5 char
+    res = fourier_learn_chars(bits, G, w, vm, K=24, rho=0.8, lam=0.1, l1=0.0,
+                              steps=1200, lr=0.05, batch=2048, device="cpu",
+                              seed=0, warm_masks=warm)
+    got = {tuple(np.flatnonzero(mk)) for mk in res["masks"]}
+    for sel in sels:
+        assert tuple(sel) in got, f"planted {sel} not recovered (got {sorted(got)})"
+    assert np.abs(res["C"]).max() <= 0.8 + 1e-5                    # bounded coefficients
+    assert res["val_mse"] < 0.2
 
 
 def test_deg3_via_anchored_deg2_map():

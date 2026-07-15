@@ -1271,6 +1271,112 @@ def _sparsity_stats(E):
             "total_energy": tot}
 
 
+def _logspace_ste_chars(bits_f, theta, eps=1e-3):
+    """Learned characters with STE to the CLOSEST character function, product
+    computed in LOG space for stability: inclusion gates m = sigmoid(theta)
+    over the bits; per-bit factor is (1-2m_i) when bit i is set, 1 otherwise,
+    so log|phi(x)| = <b(x), log max(|1-2m|, eps)> -- ONE GEMM, linear in the
+    bit vector.  Forward value is the EXACT +-1 parity of the hardened mask
+    (m > 0.5); gradients flow through sign * exp(logmag).  bits_f: (B, n)
+    float 0/1; theta: (K, n).  Returns (B, K) +-1 with grad."""
+    import torch
+    m = torch.sigmoid(theta)
+    fac = torch.clamp((1.0 - 2.0 * m).abs(), min=eps)
+    logmag = bits_f @ torch.log(fac).t()                          # (B, K)
+    mag = torch.exp(logmag)
+    hard = (m > 0.5).to(bits_f.dtype)
+    sign = (1.0 - 2.0 * ((bits_f @ hard.t()) % 2.0)).detach()     # exact parity
+    return sign * (mag + (1.0 - mag).detach())
+
+
+def fourier_learn_chars(bits, G, w, vm, K=16384, rho=0.5, lam=0.1, l1=0.0,
+                        gamma=0.1, steps=2000, lr=0.05, batch=8192, eps=1e-3,
+                        warm_masks=None, device=None, seed=0, log_fn=None):
+    """Directly LEARN the Fourier decomposition of G: K characters of ANY
+    degree (inclusion gates, log-space product, STE to the closest character)
+    x LEARNED coefficients bounded by rho (c = rho * tanh(u)).  Anti-collapse:
+    decorrelation_penalty on the hard character activations (+ optional L1 on
+    coefficients).  Gates init near EMPTY masks (m ~ 0.02): random init makes
+    the log-product underflow; degree grows greedily from the constant char.
+    Val-gated best state.  Returns {"masks", "C", "val_mse", "history"}."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(seed)
+    bits_t = bits if torch.is_tensor(bits) else \
+        torch.tensor(np.asarray(bits, np.uint8), device=device)
+    dev = bits_t.device
+    G_t = G if torch.is_tensor(G) else torch.tensor(np.asarray(G, np.float32), device=dev)
+    w_t = torch.tensor(np.asarray(w, np.float32), device=dev)
+    vmask = torch.tensor(np.asarray(vm, bool), device=dev)
+    tr = torch.nonzero(~vmask).ravel()
+    va = torch.nonzero(vmask).ravel()[:32768]
+    n, dY = bits_t.shape[1], G_t.shape[1]
+    gen = torch.Generator(device="cpu").manual_seed(seed)
+    theta0 = -4.0 + 0.5 * torch.randn(K, n, generator=gen)        # near-empty masks
+    if warm_masks is not None and len(warm_masks):
+        wm = torch.tensor(np.asarray(warm_masks[:K // 2], np.float32))
+        theta0[: len(wm)] = torch.where(wm > 0.5, torch.tensor(4.0),
+                                        torch.tensor(-4.0))
+    theta = theta0.to(dev).requires_grad_(True)
+    u = (0.01 * torch.randn(K, dY, generator=gen)).to(dev).requires_grad_(True)
+    opt = torch.optim.Adam([theta, u], lr=lr)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps)
+
+    def val_mse():
+        with torch.no_grad():
+            out, wsum = 0.0, 0.0
+            for lo in range(0, len(va), 16384):
+                idx = va[lo:lo + 16384]
+                phi = _logspace_ste_chars(bits_t[idx].float(), theta, eps)
+                pred = phi @ (rho * torch.tanh(u))
+                out += float((w_t[idx][:, None] * (pred - G_t[idx].float()) ** 2).sum())
+                wsum += float(w_t[idx].sum())
+            return out / (wsum * dY)
+
+    best = val_mse()
+    best_state = (theta.detach().clone(), u.detach().clone())
+    history = [(0, best)]
+    for t in range(steps):
+        bi = tr[torch.randint(len(tr), (min(batch, len(tr)),),
+                              generator=gen).to(dev)]
+        phi = _logspace_ste_chars(bits_t[bi].float(), theta, eps)
+        C = rho * torch.tanh(u)
+        pred = phi @ C
+        wb = w_t[bi]
+        resid = G_t[bi].float() - pred
+        mse = (wb[:, None] * resid ** 2).sum() / (wb.sum() * dY)
+        loss = mse + lam * decorrelation_penalty(phi)
+        if gamma:
+            # magnitude-free sensing pressure (grad-sense lesson): a slot with
+            # a ~0 coefficient gets NO mask gradient from the MSE (coefficient
+            # and mask starve each other); -log psi forces every slot toward
+            # SOME residual-correlated character first
+            # leave-one-out: sense against the residual PLUS the slot's own
+            # contribution (phi^2 = 1), else a slot self-cancels its signal by
+            # fitting its tiny projection and the completion ramp dies
+            corr = (phi * wb[:, None]).t() @ resid.detach() / wb.sum() + C.detach()
+            loss = loss - gamma * torch.log((corr ** 2).sum(1) + 1e-8).mean()
+        if l1:
+            loss = loss + l1 * C.abs().mean()
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_([theta, u], 1.0)
+        opt.step()
+        sched.step()
+        if log_fn is not None and t % 50 == 0:
+            log_fn(t, {"train_mse": float(mse), "lr": float(sched.get_last_lr()[0])})
+        if (t + 1) % 100 == 0:
+            vmse = val_mse()
+            history.append((t + 1, vmse))
+            if vmse < best:
+                best = vmse
+                best_state = (theta.detach().clone(), u.detach().clone())
+    theta_b, u_b = best_state
+    masks = (torch.sigmoid(theta_b) > 0.5).cpu().numpy().astype(np.uint8)
+    return {"masks": masks, "C": (rho * torch.tanh(u_b)).cpu().numpy(),
+            "val_mse": best, "history": history}
+
+
 def deg2_exact_psi(bits, G, w, r=64, device=None, ctx_chunk=262144, proj=None):
     """EXACT degree-2 spectroscopy, gradient-free: the plain Fourier
     coefficient of EVERY pair character chi_a*chi_b on target dim d is an
