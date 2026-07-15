@@ -119,6 +119,10 @@ need projections, not independent averages; `sequential_deflate(block=512)`).
   DIAG (failure modes): copy cases 0.38 vs non-copy 0.19; teacher token in our top-5 48%;
   RARE targets (<100 train occurrences, 26% of cases) fail at ~3% regardless of copy —
   and only 17% of them even appear in the 32-token window (context-coverage, not gating).
+- **Encoding control (exact regime)**: random codes — deg-1 0.124, deg-1+2 peak 0.218/KL
+  3.86 (more raw deg-2 mass, 0.249: identity stored quadratically instead of linearly) vs
+  LSH 0.148 / 0.233 / 3.49 — **LSH keeps +19% (deg-1) and +7% (deg-1+2) relative**; the
+  encoding matters at every level, less as degree grows.
 - **Learned decomposition (`fourier-learn`, Track B) — a supported null**: inclusion-gate
   characters (any degree, log-space product, STE to the closest character, bounded
   coefficients, leave-one-out −log ψ sensing) recover planted chars to deg-5 from warm
