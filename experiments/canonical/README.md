@@ -66,40 +66,49 @@ mass plateaus across all 128 positions. For the top-1 program the lever is conte
 window degree. Artifacts: `sensitivity_top1_conditional_fineweb_M1000.{json,npz}`; W&B run
 `sens-top1-conditional-fineweb-M1000`.
 
-## Gradient-sensed spectroscopy at scale — the deg-≥2 spectrum is DIFFUSE (2026-07-15, stages `plain-data`/`grad-sense`)
+## Exact deg-2 spectroscopy — deg-1+2 = 0.233 top-1 / 3.49 KL (2026-07-15, stages `plain-data`/`grad-sense`/`deg2-exact`/`deg2-fit`)
 
-The definitive scaling test of the sparse-Fourier program, on PLAIN streamed data (no
-fibers/fills — those are Dataset-GL requirements): 1M FineWeb-Edu spans, one teacher forward
-each, UNIT-NORMALIZED centered pre-head target (Parseval: total mass = 0.727 centered +
-0.273 in the mean direction; ψ is an absolute mass scale), full-vocab top-1 + KL, sanity
-0.980. Algorithm = gradient matching pursuit: exact closed-form deg-1 stage, then rounds of
-soft-annealed −log ψ sensing (deg 2/3) + SEQUENTIAL deflation + a 6σ floor-relative ψ gate.
+PLAIN streamed data (no fibers/fills — those are Dataset-GL requirements): 1M FineWeb-Edu
+spans, one teacher forward each, UNIT-NORMALIZED centered pre-head target (Parseval: mass =
+0.727 centered + 0.273 mean; ψ absolute), full-vocab top-1 + KL, sanity 0.980.
 
-| model (1M contexts, lsh codes) | TEST top-1 | TEST KL | mass |
-|---|---|---|---|
-| mean vector only | — | 5.82 | 0.273 |
-| deg-1 exact, 61-tok window (8,113 chars) | **0.148** | 4.62 | +0.128 |
-| deg-1 exact, 128-tok window (17,024 chars) | 0.147 | 4.58 | ≈same |
-| + best deg-2/3 characters | **flat** | flat | +≲0.01 reachable |
+**An earlier version of this section declared the deg-≥2 spectrum "diffuse — character
+scaling dead". That was a METHOD ARTIFACT, caught by Lev's keep-going loop.** Three stacked
+failures produced it: (1) gradient soft-mixture sensing silently missed every heavy pair
+(best find ψ≈3e-5 vs true max 3.2e-4 — never bound a spectrum by search); (2) the accept
+gate sat at 7× the noise floor; (3) plain-coefficient reconstruction over correlated pairs
+double-counts shared mass (first ladder DEGRADED 0.148→0.017, KL 123). The replacement is
+EXACT: `deg2-exact` enumerates every pair character's coefficient via one n×n GEMM per
+projected target dim (`M_d = Xᵀ(g_d wX)/Σw`, all 9M win-32 pairs in ~60 s, per-pair floor
+2.5e-7), and `deg2-fit` fits the top pairs by block-OMP projection (correlated dictionaries
+need projections, not independent averages; `sequential_deflate(block=512)`).
 
-- **Deg-1 saturates fast and is honest** (train 0.151 / test 0.148, no overfit gap; 50k→1M
-  contexts moved it 0.132→0.148). **Doubling the window adds nothing** — tokens 62–128 back
-  carry no deg-1 signal on plain data (the sensitivity plateau is not deg-1-linear content).
-- **Beyond degree 1 there is (almost) nothing sparse to find**: with batch-32k sensing whose
-  gradient floor matches the val measurement floor (1.6e-5 at 1M contexts), the LARGEST
-  individual deg-2/3 character carries ψ ≈ 3e-5 (0.004% of the function); the population
-  above a 6σ gate accrues at ~6 chars per 2,048-slot round. ~82% of the centered spectral
-  mass sits in characters individually < 2e-5 — spread over ≥ millions of characters. THE
-  CHARACTER-SCALING CURVE IS FLAT: no character budget (1k or 1M) moves top-1 on this
-  encoding. Triangulates with d_eff ≈ 5.4 (sensitivity) and the 0.167 MLP ceiling: the
-  per-token sign-LSH representation itself is the binding constraint, not the model class,
-  data size, window, or search algorithm.
-- Bug history baked into the code: batch deflation AMPLIFIES on-data duplicate clusters
-  ((1−m)² on a size-m cluster; 305 constant tie-break bit columns) — deflation is sequential
-  and the run fails loudly if the residual ever grows or ψ exceeds total mass.
-- Artifacts: `plain_ctx128_N1000000_s30000_plain_tr.npz` (reusable 1M-context supervision),
-  `gradsense_ckpt_lsh_win{61,128}_N1000000.npz` (deg-1 exact fits W1/b1),
-  `summary_gradsense_lsh_K1000.json`; W&B `gradsense-lsh-N1000000-K1000`.
+| model (win 32, 1M contexts, lsh) | TEST top-1 | TEST KL |
+|---|---|---|
+| mean vector only | — | 5.82 |
+| deg-1 exact (4,256 chars, closed form) | 0.148 | 4.68 |
+| + 6,000 exact deg-2 pairs | 0.200 | 4.02 |
+| + 48,000 | 0.228 | 3.63 |
+| **+ 160,000 (test-optimal)** | **0.233** | **3.49** |
+| + 400,000 | 0.232 | 3.48 |
+
+- **+58% relative top-1 over deg-1**; deg-2 captures 0.233 of the 0.609 post-deg-1 residual;
+  overfit onset only below ~4× floor. Beats every prior model in the program incl. the old
+  "MLP ceiling" 0.167 (fiber data).
+- **The structure is interpretable**: ~75% of significant pair mass is SAME-TOKEN-BLOCK
+  quadratics of the newest ~5 tokens (richer token-identity features than linear code bits);
+  cross-block pairs are adjacent-token bigrams, (0,1) ≫ (0,2) > (1,2). Heavy pairs live in
+  the last ~32 tokens (win 61/128 enumerations match win 32). Deg-1 itself: 0.148 at every
+  window 32/61/128; grew 0.132→0.148 from 50k→1M contexts.
+- ψ values are NOT additive across pairs (on-data correlation): naive Σψ "exceeds" the
+  residual mass; only projection-based captured mass is meaningful.
+- Fail-loud lessons baked into code + tests: batch deflation amplifies duplicate clusters
+  (1−m)²; residual must never grow; ψ ≤ total mass; floor-relative gates (ψ noise
+  concentrates within √(2/dY)≈4% of floor).
+- Artifacts: `plain_ctx128_N1000000_s30000_plain_tr.npz` (reusable supervision),
+  `deg2exact_lsh_win{32,61}_r64.npz` (top-1M pairs + deg-1 fits), `summary_deg2fit_lsh_
+  win32.json`; W&B `deg2exact-*`/`deg2fit-*`. Next: same/adjacent-block deg-3 enumeration
+  (cheap 133²-GEMMs per block), more contexts to extend the pair tail.
 
 ## Learned Fourier features — TOP-1 target (2026-07-14, stage `dl-fourier`)
 
