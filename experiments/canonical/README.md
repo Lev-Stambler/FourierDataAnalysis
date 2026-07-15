@@ -138,6 +138,10 @@ need projections, not independent averages; `sequential_deflate(block=512)`).
 | deg-1+2 + 200,000 triples | 0.254 | 3.13 |
 | deg-1+2 **+ 1M STAGED triples (809k local-first + far)** | **0.2642** | **3.09** |
 | + 2M triples / + quads on the overfit base | 0.254–0.256 | — |
+| **4M CONTEXTS** (floors ÷4): deg-1 | 0.149 | 4.67 |
+| 4M: + 400k pairs (still climbing at cap) | 0.238 | 3.32 |
+| 4M: + 2.5M staged triples (10.9M resolvable) | 0.296 | 2.68 |
+| **4M: + 2.5M quads — the 0.30 crossing** | **0.3007** | **2.624** |
 
 - **+58% relative top-1 over deg-1**; deg-2 captures 0.233 of the 0.609 post-deg-1 residual;
   overfit onset only below ~4× floor. Beats every prior model in the program incl. the old
@@ -152,6 +156,10 @@ need projections, not independent averages; `sequential_deflate(block=512)`).
 - Fail-loud lessons baked into code + tests: batch deflation amplifies duplicate clusters
   (1−m)²; residual must never grow; ψ ≤ total mass; floor-relative gates (ψ noise
   concentrates within √(2/dY)≈4% of floor).
+- **DATA SCALING IS THE ENGINE**: 1M→4M contexts moved the stack 0.2642→0.3007 (KL 3.09→
+  2.62) with every layer STILL capped (pairs 400k/1.2M, triples 2.5M/10.9M resolvable, quads
+  2.5M/3.4M); the 1M overfit turnovers were coefficient noise, not structure limits. 4M DIAG:
+  copy 0.43 / non-copy 0.23, top-5 0.54, rare 0.056 (up from 0.032), teacher-high-conf 0.44.
 - **Sparsity audit** (`_sparsity_stats`): deg-2 IS sparse (N_eff 18.4k; half the pair energy
   in 8,982 chars); deg-3 is a diffuse sea (N_eff 855k; k50 = 496k of 2.5M) — the ladder's
   ~1M turnover is dust-coefficient noise, so MORE DATA extends it (4M contexts generating).
