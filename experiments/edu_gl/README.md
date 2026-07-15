@@ -27,3 +27,22 @@ Encodings: `lsh` (sign-LSH on the classifier's own word embeddings), `ctrl`
 allowed as references only): ridge + tiny MLP on mean-pooled embeddings.
 Artifacts land on the `fda-cache` volume under `/cache/edu_gl`; W&B project
 `fda-edu-gl`.
+
+## Results (2026-07-15, w=64, 1M train / 25k val / 25k test)
+
+Test R² vs the classifier score (val-selected rung = 50k pairs):
+
+| model | deg-1 | deg-1 + 50k pairs | Spearman | size |
+|---|---|---|---|---|
+| lsh | 0.265 | **0.406** | 0.649 | 681 KB (643×) |
+| ctrl | 0.125 | 0.307 | 0.583 | 681 KB |
+| tokid | 0.066 | 0.111 (best @10k) | 0.349 | 141 KB |
+| ridge ceiling (fitted) | — | 0.629 | 0.799 | 3 KB + emb |
+| MLP ceiling (fitted) | — | 0.756 | 0.858 | 1 MB + emb |
+
+- Deg-2 needs data: at 20k rows the pair noise ceiling sits above the real
+  spectrum (every rung hurt); at 1M rows 50k calculated pairs take LSH from
+  0.265 to 0.406. All encodings peak at ~50k then decline into the 2×floor
+  noise tail (val selects the rung).
+- LSH > random codes on a scalar semantic target: 2.1× the deg-1 R², +32%
+  relative at the selected rung. Token-id bits are far behind throughout.
