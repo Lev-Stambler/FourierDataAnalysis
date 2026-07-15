@@ -41,6 +41,49 @@ uv run modal run --detach qary_lsh_dataset_gl.py --stage fit-deg1 --fill-len 61 
 uv run modal run --detach qary_lsh_dataset_gl.py --stage sensitivity --m-fibers 1000 --g 16
 ```
 
+## Pure Dataset GL — LSH's ψ ordering is INVERTED; full-set deflation recovers 0.1837 (2026-07-15, `pure_gl.py`)
+
+The canonical minimal GL (`pure_gl.py`): the score is the paper's pair correlation
+ψ̂(S) = E_z E_{x₁≠x₂}[f·χ_S · f·χ_S] over REAL model continuations of dataset prefixes
+(brute-force-anchored test), f = H/‖f‖ ≤ 1 per row, keep Ψ ≥ τ²/4 (τ=0.1), hereditary
+tree, `max_width=512` frontier. NO subcell subtraction, NO centering, NO deg-1 residual.
+Evaluation is CLOSED-FORM only (`gl_recon_eval`: `fit_deg1_exact` base +
+`sequential_deflate` coefficients + `reconstruct_ladder`); Adam/ridge refits are NOT
+dataset-GL (a diverged Adam refit produced a bogus KL≈70 before this was enforced).
+
+1. **The gate is sound but non-selective by physics, not by bug**: after fixing the
+   ‖f‖≤1 scale contract (unnormalized ψ was inflated ×1024, τ²/4 vacuous, 46% of a
+   shuffled-pairing null passed; now null max 6.8e-4 < 2.5e-3), everything STILL passes —
+   the collision/density floor of near-deterministic rollouts clears τ²/4 for every
+   character under any encoding (the paper's point-mass caveat, measured).
+2. **LSH's ψ ordering is the pure density spectrum, ANTI-correlated with function**
+   (constant-unit-vector diagnostic, `diag_gltree.py`): corr(ψ_lsh, density) = 0.998 at
+   deg-1, 0.995 at deg-2; top-512 overlap with density 97.9%, with the functional
+   (fiber-centered covariance) ranking **0.0**; corr with functional **−0.876**. LSH
+   clusters similar tokens on shared bits; plausible continuations agree on them;
+   pinned bits have no variance left to predict with.
+3. **Closed-form ladders (f61 / f16 = 16-token fills, full pipeline
+   `run_f16_pipeline.sh`)**: lsh deg-1 exact 0.1563/0.1478 (KL 4.241/4.476), + top-5000
+   tree chars = **+0.0000 at both lengths**; ctrl (random codes) deg-1 0.1338/0.1287 →
+   +top-5000 **0.1486/0.1431** (KL −0.06 both). Context length changes nothing:
+   the density block is intrinsic to LSH codes on model rollouts.
+4. **THE RESOLUTION — completeness held; the top-K choice was the artifact.** Deflating
+   ALL 290,871 kept characters (f61, ψ order, rungs 0/5k/20k/50k/100k/150k/all):
+   lsh 0.1563 → 0.1563 → 0.1563 → 0.1565 → 0.1570 → 0.1587 → **0.1837 (KL 4.079)**.
+   +2.7 top-1 pts over exact deg-1, and essentially ALL of it arrives in the LAST 140k
+   characters of the ψ ordering — the functional LSH characters were ranked at the
+   BOTTOM (the −0.876 made visible). Dataset GL as a τ-SIEVE works; ψ as a RANKER for
+   density-aligned encodings is inverted. Never pick top-K by raw ψ on LSH — deflate
+   everything the sieve kept. (ctrl full ladder pending; summary JSONs
+   `summary_gl_recon_*.json`, masks `pure_gl_masks_*` on the volume.)
+
+Gotchas added to the ledger: fork self-check must gate on the MEDIAN of several fibers
+(fp16 decode-vs-forward divergence is a per-sequence lottery, tails 1.3–2.3e-2 at every
+level; the single-sample assert was a per-level coin flip); the tree extends ≤1 bit per
+token block, so same-block quadratics (the heavy pairs in deg-2 spectroscopy above) are
+STRUCTURALLY unreachable — that and the `max_width` cap now bound what the sieve can
+contain.
+
 ## Degree bounds via sensitivity — TOP-1 target (2026-07-14; sections/experiments.typ `<sec:sensitivity>`)
 
 The fit-free probe of `thm:learning-low-degree`, on the **full-vocab top-1 target** (the arc's
