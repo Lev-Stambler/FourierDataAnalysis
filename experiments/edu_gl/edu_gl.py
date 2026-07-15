@@ -637,8 +637,8 @@ def build_codes(encoding, b=B_LSH):
     raise ValueError(f"unknown encoding {encoding}")
 
 
-@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200,
-              memory=32768, secrets=WANDB_SECRET)
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=49152, secrets=WANDB_SECRET)
 def fit(encoding: str = "lsh", w: int = W_WIN, b: int = B_LSH,
         max_pairs: int = 400_000, n_train: int = 1_000_000,
         n_val: int = 25_000, n_test: int = 25_000, block: int = 512,

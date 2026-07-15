@@ -48,6 +48,10 @@ Test R² vs the classifier score (val-selected rung = 50k pairs):
   relative at the selected rung. Token-id bits are far behind throughout.
 - Deg-3 (pair-anchored exact enumeration, 4096 anchors on the 50k residual):
   +0.002 test R² — floor-limited at 1M rows, not evidence of absent structure.
+- Data scaling (2M rows, lsh): deg-1 flat at 0.267 (saturated); deg-2 test R²
+  0.406 → **0.428** with the val-optimal rung moving 50k → 200k pairs (the
+  halved floor unlocks more real pairs). ~+0.02 per doubling — real but
+  diminishing; the 0.43 → 0.76 gap is beyond the deg-≤2-over-bits class.
 
 ## v2: CSAMP dataset-GL pilot (edu_gl_csamp.py, 2026-07-15)
 
