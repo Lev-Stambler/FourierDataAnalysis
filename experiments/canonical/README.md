@@ -66,6 +66,41 @@ mass plateaus across all 128 positions. For the top-1 program the lever is conte
 window degree. Artifacts: `sensitivity_top1_conditional_fineweb_M1000.{json,npz}`; W&B run
 `sens-top1-conditional-fineweb-M1000`.
 
+## Gradient-sensed spectroscopy at scale — the deg-≥2 spectrum is DIFFUSE (2026-07-15, stages `plain-data`/`grad-sense`)
+
+The definitive scaling test of the sparse-Fourier program, on PLAIN streamed data (no
+fibers/fills — those are Dataset-GL requirements): 1M FineWeb-Edu spans, one teacher forward
+each, UNIT-NORMALIZED centered pre-head target (Parseval: total mass = 0.727 centered +
+0.273 in the mean direction; ψ is an absolute mass scale), full-vocab top-1 + KL, sanity
+0.980. Algorithm = gradient matching pursuit: exact closed-form deg-1 stage, then rounds of
+soft-annealed −log ψ sensing (deg 2/3) + SEQUENTIAL deflation + a 6σ floor-relative ψ gate.
+
+| model (1M contexts, lsh codes) | TEST top-1 | TEST KL | mass |
+|---|---|---|---|
+| mean vector only | — | 5.82 | 0.273 |
+| deg-1 exact, 61-tok window (8,113 chars) | **0.148** | 4.62 | +0.128 |
+| deg-1 exact, 128-tok window (17,024 chars) | 0.147 | 4.58 | ≈same |
+| + best deg-2/3 characters | **flat** | flat | +≲0.01 reachable |
+
+- **Deg-1 saturates fast and is honest** (train 0.151 / test 0.148, no overfit gap; 50k→1M
+  contexts moved it 0.132→0.148). **Doubling the window adds nothing** — tokens 62–128 back
+  carry no deg-1 signal on plain data (the sensitivity plateau is not deg-1-linear content).
+- **Beyond degree 1 there is (almost) nothing sparse to find**: with batch-32k sensing whose
+  gradient floor matches the val measurement floor (1.6e-5 at 1M contexts), the LARGEST
+  individual deg-2/3 character carries ψ ≈ 3e-5 (0.004% of the function); the population
+  above a 6σ gate accrues at ~6 chars per 2,048-slot round. ~82% of the centered spectral
+  mass sits in characters individually < 2e-5 — spread over ≥ millions of characters. THE
+  CHARACTER-SCALING CURVE IS FLAT: no character budget (1k or 1M) moves top-1 on this
+  encoding. Triangulates with d_eff ≈ 5.4 (sensitivity) and the 0.167 MLP ceiling: the
+  per-token sign-LSH representation itself is the binding constraint, not the model class,
+  data size, window, or search algorithm.
+- Bug history baked into the code: batch deflation AMPLIFIES on-data duplicate clusters
+  ((1−m)² on a size-m cluster; 305 constant tie-break bit columns) — deflation is sequential
+  and the run fails loudly if the residual ever grows or ψ exceeds total mass.
+- Artifacts: `plain_ctx128_N1000000_s30000_plain_tr.npz` (reusable 1M-context supervision),
+  `gradsense_ckpt_lsh_win{61,128}_N1000000.npz` (deg-1 exact fits W1/b1),
+  `summary_gradsense_lsh_K1000.json`; W&B `gradsense-lsh-N1000000-K1000`.
+
 ## Learned Fourier features — TOP-1 target (2026-07-14, stage `dl-fourier`)
 
 LEARN the parities instead of GL-searching them: an explicit degree profile (512 deg-1 +
