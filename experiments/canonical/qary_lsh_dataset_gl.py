@@ -4547,7 +4547,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          k1: int = 512, k2: int = 512, k3: int = 256, lam: float = 0.1,
          batch: int = 8192, n_train: int = 1_000_000, n_test: int = 50_000,
          target_chars: int = 1_000_000, chunk: int = 16384, win: int = 61,
-         kappa: float = 4.0, mlp: int = 0, variant: str = "raw"):
+         kappa: float = 4.0, mlp: int = 0, variant: str = "raw",
+         blocks: int = 3, max_tris: int = 200_000):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -4616,8 +4617,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         print(deg2_fit.remote(n_train, n_test, win, 64, target_chars,
                               encoding if encoding != "all" else "lsh"))
     if stage == "deg3-fit":                                          # anchored triple ladder
-        print(deg3_fit.remote(n_train, n_test, win,
-                              encoding=encoding if encoding != "all" else "lsh"))
+        print(deg3_fit.remote(n_train, n_test, win, 64, 160_000, blocks, 16,
+                              kappa, 3000, max_tris,
+                              encoding if encoding != "all" else "lsh"))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":
