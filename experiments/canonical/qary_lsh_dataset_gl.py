@@ -5072,7 +5072,7 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
                                    chunk // 2, chunk // 2,
                                    encoding if encoding != "all" else "lsh"))
     if stage == "deg3-fit":                                          # anchored triple ladder
-        print(deg3_fit.remote(n_train, n_test, win, 64, 400_000, blocks, 16,
+        print(deg3_fit.remote(n_train, n_test, win, 64, 800_000, blocks, 16,
                               kappa, 3000, max_tris,
                               encoding if encoding != "all" else "lsh", far,
                               deg4))
