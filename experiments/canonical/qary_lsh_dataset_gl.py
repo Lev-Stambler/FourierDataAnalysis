@@ -3329,19 +3329,27 @@ def deg2_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
           f"{deg1_kl:.4f}; fitting {K} exact pairs (psi {psi[0]:.2e}.."
           f"{psi[K - 1]:.2e})", flush=True)
     t0 = time.time()
-    C = fourier_coefficients(bits_t, G_t, w_tr, idx, device=dev)
-    print(f"[deg2fit:{encoding}:w{win}] coefficients in "
-          f"{time.time() - t0:.0f}s", flush=True)
+    res1 = float((G_t ** 2).sum(1).mean())
+    # SEQUENTIAL matching pursuit, psi order: same-block pairs are strongly
+    # correlated on-data (top-50 all share the newest token's block) and
+    # independent plain coefficients double-count the shared component once
+    # per pair -- the first plain-sum ladder DEGRADED 0.148 -> 0.017/KL 123
+    C, G_t = sequential_deflate(bits_t, G_t, w_tr, idx, device=dev)
+    res2 = float((G_t ** 2).sum(1).mean())
+    print(f"[deg2fit:{encoding}:w{win}] MP coefficients in "
+          f"{time.time() - t0:.0f}s; deg-2 captured mass "
+          f"{res1 - res2:.4f} (residual {res1:.4f} -> {res2:.4f})", flush=True)
     ks = sorted({k for k in (5, 100, 1_500, 6_000, 18_000, 48_000, 160_000,
                              400_000) if k <= K} | {K})
+    cum_cap = np.cumsum((C.astype(np.float64) ** 2).sum(1))       # exact per-char
     ladder = reconstruct_ladder(bte_t, idx, C, c0, np.arange(K), ks, Wu,
                                 t_te, w_te, kl_ref=(H_te_f32, s_bar),
                                 base=deg1_te)
     for entry in ladder:
-        entry["cum_psi"] = float(psi[:entry["k"]].sum())
+        entry["cum_captured"] = float(cum_cap[entry["k"] - 1])
         print(f"[deg2fit:{encoding}:w{win}] === deg-1 + {entry['k']} pairs: "
               f"TEST top-1 {entry['top1']:.4f} KL {entry['kl']:.4f} "
-              f"(cum psi {entry['cum_psi']:.4f})", flush=True)
+              f"(captured {entry['cum_captured']:.4f})", flush=True)
     summary = {"encoding": encoding, "win": win, "n_train": n_train,
                "deg1_top1": deg1_top1, "deg1_kl": deg1_kl,
                "K": K, "pair_floor": floor, "ladder": ladder}
@@ -3351,7 +3359,7 @@ def deg2_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
     if run is not None:
         for entry in ladder:
             run.log({"pairs": entry["k"], "TEST_top1": entry["top1"],
-                     "TEST_kl": entry["kl"], "cum_psi": entry["cum_psi"]})
+                     "TEST_kl": entry["kl"], "cum_captured": entry["cum_captured"]})
         run.summary.update({"deg1_top1": deg1_top1,
                             "best_top1": max(e["top1"] for e in ladder)})
         run.finish()
