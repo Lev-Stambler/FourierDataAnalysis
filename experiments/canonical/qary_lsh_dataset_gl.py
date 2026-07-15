@@ -3832,7 +3832,8 @@ def fourier_learn(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
                   r2: int = 64, K: int = 8192, rho: float = 0.5, lam: float = 0.1,
                   l1: float = 0.0, gamma: float = 0.1, steps: int = 1500,
                   lr: float = 0.05, batch: int = 8192, warm_pairs: int = 2048,
-                  warm_tris: int = 2048, encoding: str = "lsh"):
+                  warm_tris: int = 2048, encoding: str = "lsh",
+                  deflate_pairs: int = 160_000, deflate_tris: int = 1_000_000):
     """Track B: directly LEARN the Fourier decomposition on the deg-1-free
     residual -- K inclusion-gate characters of ANY degree (log-space product,
     STE to the closest character), coefficients learned within [-rho, rho],
@@ -3868,25 +3869,35 @@ def fourier_learn(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
     for lo in range(0, len(bits_t), 131072):
         G_t[lo:lo + 131072] -= \
             (1.0 - 2.0 * bits_t[lo:lo + 131072].float()) @ W1 + b1
-    res1 = float((G_t ** 2).sum(1).mean())
-    # warm masks: top exact pairs (+ triples if a deg3fit artifact exists)
-    wm = np.zeros((0, nb), np.uint8)
-    wp = min(warm_pairs, len(z2["top_a"]))
-    m2 = np.zeros((wp, nb), np.uint8)
-    m2[np.arange(wp), z2["top_a"][:wp].astype(int)] = 1
-    m2[np.arange(wp), z2["top_b"][:wp].astype(int)] = 1
-    wm = np.concatenate([wm, m2])
+    # deflate the FULL fitted stack (pairs + optimal triples): flearn explores
+    # the DUST -- training on a pair-mass-rich residual makes every unfitted
+    # heavy char one toggle away the attractor and slots collapse down-degree
+    # (v2/v3 post-mortems)
+    kp = int(min(deflate_pairs, (z2["top_psi"] > 2.0 * float(z2["floor"])).sum()))
+    idx2d = np.full((kp, 4), -1, np.int16)
+    idx2d[:, 0] = z2["top_a"][:kp]; idx2d[:, 1] = z2["top_b"][:kp]
+    _, G_t = sequential_deflate(bits_t, G_t, w_tr, idx2d, device=dev, block=512)
     cpath = f"{ROOT}/deg3fit_coefs_{encoding}_win{win}.npz"
     wc = None
+    wm = np.zeros((0, nb), np.uint8)
     if os.path.exists(cpath):
         zc = np.load(cpath)
-        i3 = zc["idx3"][:warm_tris]
-        m3 = np.zeros((len(i3), nb), np.uint8)
-        for j, row in enumerate(i3):
+        i3all = zc["idx3"]
+        kt = int(min(deflate_tris, len(i3all)))
+        _, G_t = sequential_deflate(bits_t, G_t, w_tr, i3all[:kt], device=dev,
+                                    block=512)
+        # exploration seeds: the NEXT (unfitted) triple tier + next pair tier
+        i3w = i3all[kt: kt + warm_tris]
+        m3 = np.zeros((len(i3w), nb), np.uint8)
+        for j, row in enumerate(i3w):
             m3[j, row[row >= 0].astype(int)] = 1
         wm = np.concatenate([wm, m3])
-        wc = np.concatenate([zc["C2"][:wp].astype(np.float32),
-                             zc["C3"][:len(i3)].astype(np.float32)])
+    wp = min(warm_pairs, max(len(z2["top_a"]) - kp, 0))
+    m2 = np.zeros((wp, nb), np.uint8)
+    m2[np.arange(wp), z2["top_a"][kp:kp + wp].astype(int)] = 1
+    m2[np.arange(wp), z2["top_b"][kp:kp + wp].astype(int)] = 1
+    wm = np.concatenate([wm, m2])
+    res1 = float((G_t ** 2).sum(1).mean())
     vm = np.random.default_rng(0).random(len(bits_tr)) < 0.05
     run = _wandb_run(f"fourierlearn-{encoding}-w{win}-K{K}",
                      {"K": K, "rho": rho, "lam": lam, "gamma": gamma,
