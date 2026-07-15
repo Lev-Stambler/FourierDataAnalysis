@@ -24,6 +24,7 @@ from qary_lsh_dataset_gl import (
     dataset_gl_tau,
     decorrelation_penalty,
     dedupe_indices,
+    deg2_exact_psi,
     draw_fibers,
     fit_deg1_exact,
     fit_mlp_hidden,
@@ -821,6 +822,33 @@ def test_learn_sense_recovers_planted():
     assert float((G_res ** 2).sum(1).mean()) < 0.05 * total_mass
 
 
+def test_deg2_exact_psi_finds_planted_pairs():
+    # gradient-free check of the diffuseness claim: EXACT enumeration of every
+    # degree-2 pair's Fourier weight via one n x n GEMM per (projected) target
+    # dim.  On the full domain the planted pairs must surface exactly and
+    # everything else must be ~0.
+    rng = np.random.default_rng(17)
+    n, dY = 10, 8
+    bits = _all_masks(n)
+    planted = np.zeros((3, n), np.uint8)
+    planted[0, [1, 4]] = 1
+    planted[1, [2, 7]] = 1
+    planted[2, [0, 3, 5]] = 1                                      # deg-3: invisible to the map
+    coefs = np.array([0.9, 0.2, 0.5])
+    V = rng.normal(size=(3, dY)); V /= np.linalg.norm(V, axis=1, keepdims=True)
+    G = ((parity_features(bits, planted) * coefs) @ V).astype(np.float32)
+    G -= G.mean(0)
+    w = np.ones(len(bits))
+    psi2, mass_r = deg2_exact_psi(bits, G, w, r=8, device="cpu")
+    assert psi2.shape == (n, n)
+    assert abs(psi2[1, 4] - 0.81) < 1e-3 and abs(psi2[4, 1] - 0.81) < 1e-3
+    assert abs(psi2[2, 7] - 0.04) < 1e-3
+    mask = np.ones((n, n), bool); np.fill_diagonal(mask, False)
+    mask[1, 4] = mask[4, 1] = mask[2, 7] = mask[7, 2] = False
+    assert psi2[mask].max() < 1e-6                                 # nothing else
+    assert abs(mass_r - float((G ** 2).sum(1).mean())) < 1e-5      # r >= dY: no loss
+
+
 def test_sequential_deflate_handles_duplicates_and_constants():
     # the first grad-sense smoke diverged because BATCH deflation computed all
     # coefficients against one residual snapshot: an on-data duplicate cluster
@@ -995,3 +1023,119 @@ def test_load_fork_levels_hidden_unit_rows_pooled_stats(tmp_path, monkeypatch):
         Y = (Hs[j] - mu[None, :]) / (sd[None, :] + 1e-6)
         expect = Y / np.linalg.norm(Y, axis=1, keepdims=True)
         assert np.allclose(F, expect, atol=1e-3)                   # pooled stats used
+
+
+def _write_resid_levels(rng, codes, m_fibers, g, depth, fill_len, W_true,
+                        deg2_coef):
+    # H = fiber constant (density pollutant) + deg-1-linear part (unary
+    # pollutant) + iid noise + optional planted deg-2 {block0-bit0,
+    # block1-bit0}.  At level 0 the block-1 token is part of the frozen stub,
+    # so the deg-2 term enters through a per-fiber frozen sign -- exactly how
+    # real H carries deeper structure at shallow fork levels
+    import qary_lsh_dataset_gl as Q
+    B = codes.shape[1]
+    sb_frozen = rng.choice([-1.0, 1.0], m_fibers)
+    for j in range(depth):
+        m = m_fibers * g
+        gtoks = rng.integers(0, len(codes), (m, j + 1))
+        bits = np.asarray(codes, np.uint8)[gtoks[:, ::-1]].reshape(m, -1)
+        fib = np.repeat(np.arange(m_fibers), g)
+        H = rng.normal(0, 5.0, (m_fibers, 16))[fib].astype(np.float64)
+        H += (1.0 - 2.0 * bits.astype(np.float64)) @ W_true[:bits.shape[1]]
+        H += rng.normal(0, 0.5, (m, 16))                          # iid noise
+        if deg2_coef:
+            sa = 1.0 - 2.0 * bits[:, 0]                           # block0-bit0
+            sb = (1.0 - 2.0 * bits[:, B]) if j >= 1 else sb_frozen[fib]
+            H[:, 7] += deg2_coef * sa * sb
+        np.savez(Q._oracle_table_path(fill_len, m_fibers, g, j),
+                 gtoks=gtoks, H=H.astype(np.float16),
+                 P=np.zeros((m, 2), np.float32), fiber_gid=fib)
+
+
+def test_load_fork_levels_hidden_resid_kills_pollutants(tmp_path, monkeypatch):
+    # resid target = subtract deg-1 fit + per-fiber center: with ONLY the two
+    # pollutants present (fiber constant, deg-1-linear), the tree must find
+    # NOTHING; with a planted deg-2 on top, it must recover it (its hereditary
+    # deg-1 prefix keeps within-fiber covariance mass via the frozen suffix)
+    import qary_lsh_dataset_gl as Q
+
+    monkeypatch.setattr(Q, "ROOT", str(tmp_path))
+    rng = np.random.default_rng(11)
+    m_fibers, g, depth, fill_len, V, B = 300, 8, 2, 61, 16, 3
+    codes = rng.integers(0, 2, (V, B)).astype(np.uint8)
+    W_true = rng.normal(0, 1, (depth * B, 16))
+    # pollutants only -> nothing survives
+    _write_resid_levels(rng, codes, m_fibers, g, depth, fill_len, W_true, 0.0)
+    levels = Q._load_fork_levels(fill_len, m_fibers, g, depth, codes,
+                                 target="hidden", deg1_W=W_true,
+                                 fiber_center=True)
+    got = forked_gl_tree(levels, B=B, tau=0.35, max_width=64, device="cpu")
+    assert not any(m.any() for m in got["masks"])
+    # + planted deg-2 -> recovered through its deg-1 prefix
+    _write_resid_levels(rng, codes, m_fibers, g, depth, fill_len, W_true, 3.0)
+    levels = Q._load_fork_levels(fill_len, m_fibers, g, depth, codes,
+                                 target="hidden", deg1_W=W_true,
+                                 fiber_center=True)
+    got = forked_gl_tree(levels, B=B, tau=0.35, max_width=64, device="cpu")
+    masks = {tuple(np.flatnonzero(m).tolist()) for m in got["masks"]}
+    assert (0, B) in masks                                        # the deg-2 char
+    for bits, F, fib in levels:                                   # paper contract
+        assert (np.linalg.norm(F.astype(np.float64), axis=1) <= 1 + 1e-6).all()
+
+
+# ------------------------------------------------------- pure GL (pure_gl.py)
+
+def test_pair_psi_matches_bruteforce():
+    # psi_hat(S) = mean over fibers z and REAL-sample pairs i!=j of
+    # [f_i chi_S(i) f_j chi_S(j)] -- literal double sum vs the GEMM identity
+    from pure_gl import pair_psi
+
+    rng = np.random.default_rng(3)
+    m_fib, G, nb, d = 10, 4, 6, 3
+    bits = rng.integers(0, 2, (m_fib * G, nb)).astype(np.uint8)
+    F = rng.normal(0, 1, (m_fib * G, d)).astype(np.float32)
+    gid = np.repeat(np.arange(m_fib), G)
+    masks = np.zeros((3, nb), np.uint8)
+    masks[0, 0] = 1; masks[1, [1, 3]] = 1; masks[2, [0, 2, 5]] = 1
+    got = pair_psi(bits, masks, F, gid, device="cpu")
+    chi = 1.0 - 2.0 * ((bits.astype(np.int64) @ masks.T) % 2)      # (m, 3)
+    want = np.zeros(3)
+    n_pairs = 0
+    for z in range(m_fib):
+        idx = np.flatnonzero(gid == z)
+        for i in idx:
+            for j in idx:
+                if i != j:
+                    want += chi[i] * chi[j] * float(F[i] @ F[j])
+        n_pairs += len(idx) * (len(idx) - 1)
+    want /= n_pairs
+    assert np.allclose(got, want, atol=1e-5)
+
+
+def test_pure_gl_tree_recovers_staircase_deg3():
+    from pure_gl import pure_gl_tree
+
+    rng = np.random.default_rng(31)
+    B, depth, n_fib, G = 2, 3, 60, 12
+    a, b, c = 0, 2, 4
+    planted = [(0.7, [a]), (0.7, [a, b]), (0.7, [a, b, c])]
+    base = rng.integers(0, 2, (n_fib, depth * B)).astype(np.uint8)
+    levels = [_fork_level(rng, n_fib, G, depth, j, base, planted) for j in range(depth)]
+    got = pure_gl_tree(levels, B=B, tau=0.35, max_width=64, device="cpu")
+    masks = {tuple(np.flatnonzero(m).tolist()) for m in got["masks"]}
+    assert (a,) in masks and (a, b) in masks and (a, b, c) in masks
+
+
+def test_pure_gl_tree_null_uniform():
+    # constant f + UNIFORM resampling -> E[chi_S|z] = 0 -> psi ~ 0, keep nothing
+    from pure_gl import pure_gl_tree
+
+    rng = np.random.default_rng(32)
+    B, depth, n_fib, G = 2, 3, 200, 12
+    levels = []
+    for j in range(depth):
+        fib = np.repeat(np.arange(n_fib), G)
+        bits = rng.integers(0, 2, (len(fib), (j + 1) * B)).astype(np.uint8)
+        levels.append((bits, np.ones((len(fib), 1), np.float32), fib))
+    got = pure_gl_tree(levels, B=B, tau=0.35, max_width=64, device="cpu")
+    assert not any(m.any() for m in got["masks"])

@@ -1,0 +1,86 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-eQhkZFuPltu4AHM1lO1HPG
+✓ Created objects.
+├── 🔨 Created mount 
+│   /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh
+│   _dataset_gl.py
+├── 🔨 Created function wandb_ping.
+├── 🔨 Created function make_data.
+├── 🔨 Created function gen_data.
+├── 🔨 Created function search.
+├── 🔨 Created function relabel_hidden.
+├── 🔨 Created function gl_tree.
+├── 🔨 Created function stream_top1.
+├── 🔨 Created function make_oracle_data.
+├── 🔨 Created function gl_tree_top1.
+├── 🔨 Created function sensitivity.
+├── 🔨 Created function refit_top1.
+├── 🔨 Created function dl_fourier.
+├── 🔨 Created function stream_fit.
+├── 🔨 Created function gen_plain_data.
+├── 🔨 Created function make_plain_data.
+├── 🔨 Created function grad_sense.
+├── 🔨 Created function gl_tree_refit.
+├── 🔨 Created function oracle.
+├── 🔨 Created function fit_staged.
+├── 🔨 Created function fit_staged_real.
+├── 🔨 Created function search_csamp.
+├── 🔨 Created function fit_deg1.
+├── 🔨 Created function spectrum_deg1.
+├── 🔨 Created function fit_sparse3.
+├── 🔨 Created function fit_sparse2.
+├── 🔨 Created function spectrum_deg2.
+└── 🔨 Created function search_slots.
+[gradsense:lsh] sanity 0.9798 total mass 0.7269 n=8113 bits x 1000000 contexts
+[gradsense:lsh] resume 0 chars
+[gradsense:lsh] mean-only KL 5.8181; deg-1 exact: top-1 0.1479 KL 4.6208
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: levstamb (umd-leans-well) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: Tracking run with wandb version 0.28.0
+wandb: Run data is saved locally in /root/wandb/run-20260715_021848-38oeasgx
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run gradsense-lsh-N1000000-K1000
+wandb: ⭐️ View project at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: 🚀 View run at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/38oeasgx
+/root/qary_lsh_dataset_gl.py:1135: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)
+  log_fn(t, {"mean_log_psi": float(torch.log(psi + 1e-8).mean()),
+[gradsense:lsh] round 1: dry (2035 raw, 2035 fresh, 0 kept; top psi [3.107728e-05 2.511324e-05 2.352505e-05 2.346746e-05 2.312234e-05
+ 2.305266e-05 2.300068e-05 2.213113e-05] vs gate 1.22e-04, floor 1.83e-05)
+[gradsense:lsh] round 2: dry (2033 raw, 2011 fresh, 0 kept; top psi [2.634688e-05 2.444816e-05 2.309585e-05 2.300068e-05 2.291995e-05
+ 2.251084e-05 2.228508e-05 2.227011e-05] vs gate 1.22e-04, floor 1.83e-05)
+[gradsense:lsh] round 3: dry (2033 raw, 1979 fresh, 0 kept; top psi [2.627765e-05 2.467116e-05 2.465199e-05 2.317255e-05 2.291421e-05
+ 2.291342e-05 2.258015e-05 2.228573e-05] vs gate 1.22e-04, floor 1.83e-05)
+wandb: updating run metadata
+wandb: uploading history steps 38-38, summary
+wandb: 
+wandb: Run history:
+wandb:           lr ███▇▆▆▅▄▃▂▂▁▁███▇▆▆▅▄▃▂▂▁▁███▇▆▆▅▄▃▂▂▁▁
+wandb: mean_log_psi ▁▁▃▄▄▄▅▅▅▆▆▇█▁▂▃▄▄▄▅▅▅▆▆▇█▁▂▃▄▄▅▅▅▅▆▆▇█
+wandb:     mean_psi ▁▁▁▁▁▂▂▃▄▆▇▇█▁▁▁▁▁▂▃▄▅▆▇█▇▁▁▁▁▁▂▃▄▄▆▆██
+wandb:   pair_corr2 ▁▁▁▁▁▁▁▂▃▅▆▇█▁▁▁▁▁▁▁▂▃▅▆▇█▁▁▁▁▁▁▁▂▃▅▆▇█
+wandb:         temp █▇▇▆▆▅▅▄▃▃▂▂▁█▇▇▆▆▅▅▄▃▃▂▂▁█▇▇▆▆▅▅▄▃▃▂▂▁
+wandb: 
+wandb: Run summary:
+wandb:        TEST_kl 4.62084
+wandb:      TEST_top1 0.1479
+wandb: TRAIN_sub_top1 0.1509
+wandb:  captured_mass 0.12808
+wandb:          chars 0
+wandb:        deg1_kl 4.62084
+wandb:      deg1_top1 0.1479
+wandb:       encoding lsh
+wandb:   kl_mean_only 5.81812
+wandb:             lr 6e-05
+wandb:            +11 ...
+wandb: 
+wandb: 🚀 View run gradsense-lsh-N1000000-K1000 at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/38oeasgx
+wandb: ⭐️ View project at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260715_021848-38oeasgx/logs
+{'encoding': 'lsh', 'n_train': 1000000, 'win': 61, 'target_chars': 1000, 'chars': 0, 'sanity_top1': 0.9798, 'TEST_top1': 0.1479, 'TRAIN_sub_top1': 0.1509, 'TEST_kl': 4.620843257746101, 'kl_mean_only': 5.818117029798031, 's_bar': 130.26748657226562, 'deg1_top1': 0.1479, 'deg1_kl': 4.620843257746101, 'residual_mass': 0.598815381526947, 'captured_mass': 0.12808310985565186, 'total_mass': 0.7268984913825989, 'ladder': [{'k': 0, 'top1': 0.1479, 'kl': 4.620843257746101}], 'control_ladder': [], 'mlp_top1': None, 'deg_hist': {'2': 0, '3': 0}}
+{"encoding": "lsh", "n_train": 1000000, "win": 61, "target_chars": 1000, "chars": 0, "sanity_top1": 0.9798, "TEST_top1": 0.1479, "TRAIN_sub_top1": 0.1509, "TEST_kl": 4.620843257746101, "kl_mean_only": 5.818117029798031, "s_bar": 130.26748657226562, "deg1_top1": 0.1479, "deg1_kl": 4.620843257746101, "residual_mass": 0.598815381526947, "captured_mass": 0.12808310985565186, "total_mass": 0.7268984913825989, "ladder": [{"k": 0, "top1": 0.1479, "kl": 4.620843257746101}], "control_ladder": [], "mlp_top1": null, "deg_hist": {"2": 0, "3": 0}}
+✓ App completed. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-eQhkZFuPltu4AHM1lO1HPG
