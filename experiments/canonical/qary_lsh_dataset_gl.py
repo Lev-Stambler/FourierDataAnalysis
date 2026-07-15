@@ -1177,11 +1177,34 @@ def fourier_coefficients(bits, G, w, idx, device=None, char_chunk=8192,
     return (C / float(w_t.sum())).cpu().numpy()
 
 
+def _full_kl(H_pred, H_true, Wu, w, device=None, rows=1024):
+    """Weighted mean FULL-VOCAB KL(teacher || student) between the softmaxes of
+    two hidden-state batches under the frozen unembedding.  NOT scale-invariant
+    (softmax temperature): normalized predictions must be rescaled by the mean
+    teacher norm before calling."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    Wt = torch.as_tensor(np.asarray(Wu, np.float32), device=device)
+    w = np.asarray(w, dtype=np.float64)
+    out = 0.0
+    for lo in range(0, len(H_true), rows):
+        lt = torch.as_tensor(np.asarray(H_true[lo:lo + rows], np.float32),
+                             device=device) @ Wt.t()
+        ls = torch.as_tensor(np.asarray(H_pred[lo:lo + rows], np.float32),
+                             device=device) @ Wt.t()
+        lp, lq = torch.log_softmax(lt, 1), torch.log_softmax(ls, 1)
+        kl = (lp.exp() * (lp - lq)).sum(1).double().cpu().numpy()
+        out += float((w[lo:lo + rows] * kl).sum())
+    return out / float(w.sum())
+
+
 def reconstruct_ladder(bits, idx, C, c0, order, ks, Wu, tstar, w, device=None,
-                       char_chunk=8192):
+                       char_chunk=8192, kl_ref=None):
     """Cumulative plain-Fourier reconstruction F_hat = c0 + sum c_S chi_S,
     walking characters in ``order`` and snapshotting full-vocab top-1 at each
-    k in ks (single pass).  Returns [{'k', 'top1'}, ...]."""
+    k in ks (single pass).  kl_ref=(H_true, scale) additionally reports
+    KL(teacher || student) with predictions rescaled by ``scale``.
+    Returns [{'k', 'top1'[, 'kl']}, ...]."""
     import torch
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     bits_t = bits if torch.is_tensor(bits) else \
@@ -1196,8 +1219,11 @@ def reconstruct_ladder(bits, idx, C, c0, order, ks, Wu, tstar, w, device=None,
             sub = order[pos:pos + min(char_chunk, k - pos)]
             Fhat += xor_parity_features(bits_t, np.asarray(idx)[sub]) @ C_t[sub]
             pos += len(sub)
-        pred = unembed_top1(Fhat.cpu().numpy() + np.asarray(c0)[None, :], Wu)
-        out.append({"k": k, "top1": weighted_agreement(pred, tstar, w)})
+        H_pred = Fhat.cpu().numpy() + np.asarray(c0)[None, :]
+        rec = {"k": k, "top1": weighted_agreement(unembed_top1(H_pred, Wu), tstar, w)}
+        if kl_ref is not None:
+            rec["kl"] = _full_kl(H_pred * kl_ref[1], kl_ref[0], Wu, w, device=dev)
+        out.append(rec)
     return out
 
 
@@ -2805,9 +2831,21 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
         Fhat_trs = apply_chars(bits_tr_t[torch.tensor(trs, device=dev)],
                                Fhat_trs, idx_all, C_all)
 
+    # KL reference: teacher probs reconstructed from stored hidden states;
+    # normalized predictions rescaled by the constant mean teacher norm
+    # (softmax is not scale-invariant; no per-row oracle scale is used)
+    s_bar = float(np.linalg.norm(dtr["H"][:100_000].astype(np.float32), axis=1).mean())
+    H_te_f32 = dte["H"].astype(np.float32)
+
     def top1(Fhat, tstar, w):
         pred = unembed_top1(Fhat.cpu().numpy() + c0[None, :], Wu)
         return weighted_agreement(pred, tstar, w)
+
+    def test_kl(Fhat):
+        return _full_kl((Fhat.cpu().numpy() + c0[None, :]) * s_bar, H_te_f32,
+                        Wu, w_te, device=dev)
+    kl0 = test_kl(torch.zeros_like(Fhat_te))                       # k=0 mean-only reference
+    print(f"[gradsense:{encoding}] mean-vector-only KL {kl0:.4f}", flush=True)
 
     run = _wandb_run(f"gradsense-{encoding}-N{n_train}-K{target_chars}",
                      {"encoding": encoding, "n_train": n_train, "win": win,
@@ -2872,10 +2910,12 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
             if m not in crossed and len(idx_all) >= m:
                 crossed.add(m)
                 te1, tr1 = top1(Fhat_te, t_te, w_te), top1(Fhat_trs, t_trs, np.ones(len(trs)))
+                kl = test_kl(Fhat_te)
                 wb({"milestone_chars": m, "TEST_top1": te1, "TRAIN_top1": tr1,
-                    "milestone_residual_mass": res_mass})
+                    "TEST_kl": kl, "milestone_residual_mass": res_mass})
                 print(f"[gradsense:{encoding}] === {m} chars: TEST top-1 {te1:.4f} "
-                      f"(train {tr1:.4f}, captured {mass0 - res_mass:.4f})", flush=True)
+                      f"KL {kl:.4f} (train top-1 {tr1:.4f}, kl0 {kl0:.4f}, "
+                      f"captured {mass0 - res_mass:.4f})", flush=True)
         rnd += 1
         if rnd % 8 == 0:
             np.savez(ckpt + ".tmp.npz", idx=idx_all, psi=psi_all,
@@ -2886,10 +2926,12 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
     os.replace(ckpt + ".tmp.npz", ckpt)
 
     final_te, final_trs = top1(Fhat_te, t_te, w_te), top1(Fhat_trs, t_trs, np.ones(len(trs)))
+    final_kl = test_kl(Fhat_te)
     res_mass = float((G_res ** 2).sum(1).mean())
     ks = [m for m in milestones if m <= len(idx_all)] or [len(idx_all)]
     ladder = reconstruct_ladder(bits_te_t, idx_all, C_all, c0,
-                                np.argsort(-psi_all), ks, Wu, t_te, w_te)
+                                np.argsort(-psi_all), ks, Wu, t_te, w_te,
+                                kl_ref=(H_te_f32, s_bar))
     # random control: same realized degree profile, PLAIN coefficients of the
     # original target, same ladder
     rng = np.random.default_rng(7)
@@ -2912,7 +2954,8 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
         C_r = fourier_coefficients(bits_tr_t, G0, w_tr, r_idx, device=dev)
         del G0
         ctl_ladder = reconstruct_ladder(bits_te_t, r_idx, C_r, c0,
-                                        np.arange(len(r_idx)), ks, Wu, t_te, w_te)
+                                        np.arange(len(r_idx)), ks, Wu, t_te, w_te,
+                                        kl_ref=(H_te_f32, s_bar))
     mlp_top1 = None
     if mlp:
         fit = fit_mlp_hidden(bits_tr, normalize(dtr["H"]) - c0[None, :], w_tr, vm,
@@ -2922,6 +2965,7 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
     summary = {"encoding": encoding, "n_train": n_train, "win": win,
                "target_chars": target_chars, "chars": int(len(idx_all)),
                "sanity_top1": sane, "TEST_top1": final_te, "TRAIN_sub_top1": final_trs,
+               "TEST_kl": final_kl, "kl_mean_only": kl0, "s_bar": s_bar,
                "residual_mass": res_mass, "captured_mass": mass0 - res_mass,
                "total_mass": mass0, "ladder": ladder, "control_ladder": ctl_ladder,
                "mlp_top1": mlp_top1,

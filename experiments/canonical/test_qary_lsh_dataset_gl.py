@@ -12,6 +12,7 @@ from qary_lsh_dataset_gl import (
     _iter_suffix_gids,
     _sens_from_groups,
     _sens_from_top1,
+    _full_kl,
     _sens_report,
     _ste_features,
     _top1_variance,
@@ -808,6 +809,20 @@ def test_learn_sense_recovers_planted():
     assert min(stopped) <= 400 and len(res["history"]) >= 1
     # deflation drove the residual to (near) nothing: the function was captured
     assert float((G_res ** 2).sum(1).mean()) < 0.05 * total_mass
+
+
+def test_full_kl_zero_on_teacher_and_positive_off():
+    rng = np.random.default_rng(9)
+    D, d, q = 64, 6, 40
+    H = rng.normal(size=(D, d)).astype(np.float32) * 3.0
+    Wu = rng.normal(size=(q, d)).astype(np.float32)
+    w = np.ones(D)
+    assert abs(_full_kl(H, H, Wu, w, device="cpu", rows=17)) < 1e-6
+    assert _full_kl(H + rng.normal(size=H.shape).astype(np.float32),
+                    H, Wu, w, device="cpu") > 0.01
+    # scaling the STUDENT changes KL (softmax temperature) -- the caller must
+    # rescale normalized predictions by the mean teacher norm
+    assert _full_kl(0.1 * H, H, Wu, w, device="cpu") > 0.01
 
 
 def test_ste_hard_forward_matches_parity():
