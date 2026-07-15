@@ -3351,7 +3351,7 @@ def deg2_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
     # correlated on-data (top-50 all share the newest token's block) and
     # independent plain coefficients double-count the shared component once
     # per pair -- the first plain-sum ladder DEGRADED 0.148 -> 0.017/KL 123
-    C, G_t = sequential_deflate(bits_t, G_t, w_tr, idx, device=dev)
+    C, G_t = sequential_deflate(bits_t, G_t, w_tr, idx, device=dev, block=512)
     res2 = float((G_t ** 2).sum(1).mean())
     print(f"[deg2fit:{encoding}:w{win}] MP coefficients in "
           f"{time.time() - t0:.0f}s; deg-2 captured mass "
