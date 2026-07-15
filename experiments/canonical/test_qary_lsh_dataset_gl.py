@@ -22,8 +22,13 @@ from qary_lsh_dataset_gl import (
     dataset_gl_csamp,
     dataset_gl_tau,
     decorrelation_penalty,
+    dedupe_indices,
     draw_fibers,
     fit_mlp_hidden,
+    fourier_coefficients,
+    learn_sense_chunk,
+    masks_to_indices,
+    xor_parity_features,
     fit_regression,
     fit_softmax_slots,
     forked_gl_tree,
@@ -680,6 +685,131 @@ def test_sens_report_arithmetic_and_interp():
     assert rep["S_measured"] < rep["S_interp"]
 
 
+def test_xor_parity_matches_dense():
+    rng = np.random.default_rng(0)
+    m_rows, n = 200, 20
+    bits = rng.integers(0, 2, (m_rows, n)).astype(np.uint8)
+    masks = np.zeros((9, n), np.uint8)
+    for j, sel in enumerate([[], [3], [17], [1, 6], [0, 19], [2, 5, 11],
+                             [4, 8, 9, 15], [0, 1, 2, 3], [7, 10, 13, 18]]):
+        masks[j, sel] = 1
+    idx = masks_to_indices(masks)
+    assert idx.shape == (9, 4) and idx.dtype == np.int16
+    got = xor_parity_features(bits, idx)
+    assert np.array_equal(got, parity_features(bits, masks))
+    assert np.all(got[:, 0] == 1.0)                                # deg-0 = constant char
+
+
+def test_index_dedupe_roundtrip():
+    masks = np.zeros((6, 10), np.uint8)
+    masks[0, [1, 4]] = 1
+    masks[1, 7] = 1
+    masks[2, [1, 4]] = 1                                           # dup of row 0
+    masks[3, [2, 5, 8]] = 1
+    # row 4 stays empty (deg-0: must be dropped)
+    masks[5, 7] = 1                                                # dup of row 1
+    idx = masks_to_indices(masks)
+    psi = np.arange(6, dtype=np.float64)
+    seen = set()
+    k1, p1 = dedupe_indices(idx, psi, seen)
+    assert [tuple(r[r >= 0]) for r in k1] == [(1, 4), (7,), (2, 5, 8)]
+    assert p1.tolist() == [0.0, 1.0, 3.0]                          # first occurrence wins
+    # a second round with overlapping chars keeps only the globally fresh one
+    k2, p2 = dedupe_indices(idx[[0, 3]], psi[[0, 3]], seen)
+    assert len(k2) == 0
+    fresh = masks_to_indices(np.eye(10, dtype=np.uint8)[[9]])
+    k3, _ = dedupe_indices(np.concatenate([idx[[1]], fresh]), np.ones(2), seen)
+    assert [tuple(r[r >= 0]) for r in k3] == [(9,)]
+
+
+def test_fourier_coefficients_exact_on_full_domain():
+    rng = np.random.default_rng(2)
+    n, dY = 8, 5
+    bits = _all_masks(n)                                           # uniform full domain
+    planted = np.zeros((6, n), np.uint8)
+    for j, sel in enumerate([[0], [5], [1, 3], [2, 7], [1, 4, 6], [0, 2, 5, 7]]):
+        planted[j, sel] = 1
+    V = rng.normal(size=(6, dY))
+    c0 = rng.normal(size=dY)
+    h = parity_features(bits, planted) @ V + c0
+    w = np.ones(len(bits))
+    G = h - h.mean(0)                                              # centered target
+    extra = np.zeros((3, n), np.uint8)
+    extra[0, 6] = 1; extra[1, [0, 1]] = 1; extra[2, [3, 5, 6, 7]] = 1
+    idx = masks_to_indices(np.concatenate([planted, extra]))
+    C = fourier_coefficients(bits, G, w, idx, device="cpu")
+    assert np.allclose(C[:6], V, atol=1e-5)                        # exact on the full domain
+    assert np.allclose(C[6:], 0.0, atol=1e-5)                      # absent chars are zero
+    recon = h.mean(0) + xor_parity_features(bits, idx) @ C
+    assert np.allclose(recon, h, atol=1e-4)
+
+
+def test_normalized_target_parseval():
+    rng = np.random.default_rng(3)
+    n, dY = 6, 7
+    bits = _all_masks(n)
+    H = rng.normal(size=(len(bits), dY)) * 10.0 + 3.0
+    F = H / np.linalg.norm(H, axis=1, keepdims=True)               # ||F(x)|| = 1
+    c0 = F.mean(0)
+    G = F - c0
+    chi = parity_features(bits, _all_masks(n))                     # ALL 2^n characters
+    coef = chi.T @ G / len(bits)                                   # (2^n, dY)
+    total_psi = float((coef ** 2).sum())
+    assert abs(total_psi - float((G ** 2).mean(0).sum())) < 1e-8   # Parseval, exact
+    assert total_psi <= 1.0 + 1e-12                                # bounded function scale
+    # top-1 is invariant to positive per-row rescaling of the hidden state
+    Wu = rng.normal(size=(50, dY)).astype(np.float32)
+    scale = rng.uniform(0.1, 9.0, size=(len(bits), 1))
+    assert np.array_equal(unembed_top1((H * scale).astype(np.float32), Wu, device="cpu"),
+                          unembed_top1(H.astype(np.float32), Wu, device="cpu"))
+
+
+def test_learn_sense_recovers_planted():
+    # m_rows matters: deflation ghosts (finite-sample coefficient error ~1/sqrt(m))
+    # must sit below the psi gate or slots chase them instead of coordinating
+    # multi-bit picks (diagnosed at m=4096; production runs at m ~ 1e6)
+    rng = np.random.default_rng(4)
+    m_rows, n, dY = 16384, 12, 8
+    bits = rng.integers(0, 2, (m_rows, n)).astype(np.uint8)
+    planted = np.zeros((6, n), np.uint8)
+    sels = [[3], [9], [1, 6], [4, 10], [0, 5, 11], [2, 5, 7, 8]]
+    for j, sel in enumerate(sels):
+        planted[j, sel] = 1
+    mags = np.array([2.0, 0.2, 1.0, 0.3, 0.5, 0.4])                # 10x magnitude spread
+    V = rng.normal(size=(6, dY)); V /= np.linalg.norm(V, axis=1, keepdims=True)
+    G = (parity_features(bits, planted) * mags) @ V
+    G = G - G.mean(0)
+    G /= np.sqrt((G ** 2).sum(1).mean())                           # E||G||^2 = 1 (Parseval scale,
+    w = np.ones(m_rows)                                            # matching the real normalized target)
+    vm = rng.random(m_rows) < 0.15
+    total_mass = float((G ** 2).mean(0).sum())
+    # the REAL harvest loop: sense on the residual, estimate plain coefficients,
+    # deflate -- gradient matching pursuit (re-found chars earn psi ~ 0)
+    G_res = G.astype(np.float32).copy()
+    seen, got, stopped = set(), set(), []
+    for rnd in range(6):
+        res = learn_sense_chunk(bits, G_res, w, vm, profile=(8, 8, 8, 16),
+                                lam=0.1, steps=400, min_steps=64, patience=5,
+                                check_every=16, lr=0.05, batch=2048, npairs=256,
+                                device="cpu", seed=rnd)
+        idx_f, psi_f = dedupe_indices(res["idx"], res["psi"], seen)
+        keep = psi_f > 3.0 / int(vm.sum())                         # psi gate vs the val noise floor
+        idx_f = idx_f[keep]
+        stopped.append(res["stopped_at"])
+        if len(idx_f) == 0:
+            continue
+        C = fourier_coefficients(bits, G_res, w, idx_f, device="cpu")
+        G_res = G_res - xor_parity_features(bits, idx_f) @ C       # deflate
+        got |= {tuple(r[r >= 0]) for r in idx_f}
+        if float((G_res ** 2).sum(1).mean()) < 0.02 * total_mass:
+            break
+    for sel in sels:                                               # magnitude-free: ALL found
+        assert tuple(sel) in got, f"planted {sel} not recovered (got {sorted(got)})"
+    assert min(stopped) <= 400 and len(res["history"]) >= 1
+    # deflation drove the residual to (near) nothing: the function was captured
+    assert float((G_res ** 2).sum(1).mean()) < 0.05 * total_mass
+
+
 def test_ste_hard_forward_matches_parity():
     import torch
     rng = np.random.default_rng(0)
@@ -771,3 +901,33 @@ def test_fit_recovers_planted_soft_teacher():
                             parity_features(bits[half:], masks), P[half:], counts[half:],
                             steps=800, lr=0.1, device="cpu")
     assert fit["val_kl"] < 0.05
+
+
+def test_load_fork_levels_hidden_unit_rows_pooled_stats(tmp_path, monkeypatch):
+    # the paper's vector-GL contract: ||F(x)||_2 <= 1.  target="hidden" must
+    # return per-row UNIT-normalized F under POOLED per-dim standardization
+    # (one scale across levels, else the tree's psi values are incomparable)
+    import qary_lsh_dataset_gl as Q
+
+    monkeypatch.setattr(Q, "ROOT", str(tmp_path))
+    rng = np.random.default_rng(7)
+    m_fibers, g, depth, fill_len, V, B, d = 4, 3, 2, 61, 5, 2, 6
+    codes = rng.integers(0, 2, (V, B)).astype(np.uint8)
+    Hs = []
+    for j in range(depth):
+        m = m_fibers * g
+        H = rng.normal(3.0 * j, 1.0 + j, (m, d)).astype(np.float16)  # level-dependent stats
+        np.savez(Q._oracle_table_path(fill_len, m_fibers, g, j),
+                 gtoks=rng.integers(0, V, (m, j + 1)),
+                 H=H, P=np.zeros((m, 2), np.float32),
+                 fiber_gid=np.repeat(np.arange(m_fibers), g))
+        Hs.append(H.astype(np.float64))
+    levels = Q._load_fork_levels(fill_len, m_fibers, g, depth, codes, target="hidden")
+    allH = np.concatenate(Hs)
+    mu, sd = allH.mean(0), allH.std(0)                             # pooled, NOT per level
+    for j, (bits, F, fib) in enumerate(levels):
+        norms = np.linalg.norm(F.astype(np.float64), axis=1)
+        assert np.allclose(norms, 1.0, atol=1e-5)                  # exact unit rows
+        Y = (Hs[j] - mu[None, :]) / (sd[None, :] + 1e-6)
+        expect = Y / np.linalg.norm(Y, axis=1, keepdims=True)
+        assert np.allclose(F, expect, atol=1e-3)                   # pooled stats used

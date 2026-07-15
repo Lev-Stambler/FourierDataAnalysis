@@ -61,7 +61,8 @@ SENS_POSITIONS = [0, 1, 2, 3, 4, 5, 6, 7, 11, 15, 23, 31, 47, 63, 95, 124]
 
 ROOT = "/cache/canonical/qary_lsh_gl"
 A10_PER_SECOND = 0.000306
-BUDGET = 30.0   # raised for the FineWeb-Edu data-scaling run to KL <= 1.0
+BUDGET = 100.0  # raised for grad-sense (1M-char harvest on H100; ledger counts
+                # wall-seconds at the A10 rate, so H100 hours under-count ~3.6x)
 
 app = modal.App("canonical-qary-lsh-gl")
 vol = modal.Volume.from_name("fda-cache", create_if_missing=True)
@@ -985,6 +986,221 @@ def fit_mlp_hidden(bits, Hs, w, vm, bits_te, hidden=2048, steps=3000, lr=1e-3,
     return {"pred_te": pred, "val_mse": best}
 
 
+# ------------------------------------------ gradient-sensed character harvest
+
+def masks_to_indices(masks, width=4):
+    """(K, n) uint8 parity masks -> (K, width) int16 SORTED bit indices, -1
+    padded (the canonical character key; degree must be <= width)."""
+    masks = np.asarray(masks, dtype=np.uint8)
+    assert masks.sum(1).max(initial=0) <= width
+    idx = np.full((len(masks), width), -1, dtype=np.int16)
+    for j in range(len(masks)):
+        sel = np.flatnonzero(masks[j])
+        idx[j, :len(sel)] = sel
+    return idx
+
+
+def dedupe_indices(idx, psi, seen):
+    """Drop degree-0 rows, in-batch duplicates and characters already in
+    ``seen`` (a set of canonical key bytes, updated IN PLACE; first wins).
+    Returns the kept (idx, psi)."""
+    idx = np.asarray(idx, dtype=np.int16); psi = np.asarray(psi)
+    keep = []
+    for j, row in enumerate(idx):
+        sel = np.sort(row[row >= 0])
+        if len(sel) == 0:
+            continue
+        key = sel.astype(np.int16).tobytes()
+        if key in seen:
+            continue
+        seen.add(key)
+        keep.append(j)
+    return idx[keep], psi[keep]
+
+
+def xor_parity_features(bits, idx):
+    """(D, K) ±1 Walsh characters from (K, <=4) bit-index rows (-1 = unused):
+    XOR of the selected bits, so a duplicated index cancels exactly like the
+    ±1 product.  torch-in/torch-out on the tensor's device, else numpy.
+    Materializes (D, K) -- callers tile at scale."""
+    import torch
+    if torch.is_tensor(bits):
+        idx_t = torch.as_tensor(np.asarray(idx, np.int64), device=bits.device)
+        par = torch.zeros((len(bits), len(idx_t)), dtype=torch.uint8, device=bits.device)
+        for s in range(idx_t.shape[1]):
+            sel = idx_t[:, s]; v = sel >= 0
+            if bool(v.any()):
+                par[:, v] ^= bits[:, sel[v]]
+        return 1.0 - 2.0 * par.float()
+    idx = np.asarray(idx, np.int64)
+    par = np.zeros((len(bits), len(idx)), np.uint8)
+    for s in range(idx.shape[1]):
+        sel = idx[:, s]; v = sel >= 0
+        if v.any():
+            par[:, v] ^= bits[:, sel[v]]
+    return (1.0 - 2.0 * par).astype(np.float32)
+
+
+def _weighted_psi(F, G, w):
+    """Fourier weight per character: psi_j = || sum_i w_i F_ij G_i / sum w ||^2.
+    On a unit-normalized centered target Parseval bounds sum_S psi_S <= 1."""
+    c = (F * w[:, None]).t() @ G / w.sum()
+    return (c.float() ** 2).sum(1)
+
+
+def _soft_features(X, sel_logits, temp):
+    """Fully SOFT relaxation of the selection product: each slot is a softmax
+    mixture over bits, feature = product of mixture values.  Its psi senses the
+    SUPERPOSITION of all characters under the slots' joint distribution -- so a
+    degree-d slot gets gradient toward a heavy character even when no partner
+    slot has locked yet (the hard/STE product has exactly-zero gradient there).
+    Anneal temp down and the mixture concentrates onto the hard character."""
+    import torch
+    feats = []
+    for L in sel_logits:
+        K_d, d, n = L.shape
+        S = torch.softmax(L / temp, dim=-1)
+        feats.append((X @ S.reshape(K_d * d, n).t()).view(len(X), K_d, d).prod(-1))
+    return torch.cat(feats, dim=1)
+
+
+def learn_sense_chunk(bits, G, w, vm, profile=(4096, 4096, 4096, 4096), lam=0.1,
+                      steps=300, min_steps=64, patience=3, check_every=16,
+                      lr=0.02, batch=4096, temp=(1.0, 0.1), npairs=None,
+                      device=None, seed=0, log_fn=None):
+    """One gradient-sense harvest round.  Fresh selection logits with an
+    explicit per-degree profile (deg 1..len(profile)); influence objective
+    -mean_j log(psi_j + eps) (magnitude-free: every slot must find SOME real
+    Fourier weight); training senses through the SOFT annealed product
+    (_soft_features -- the hard/STE product has zero gradient toward a char
+    until all partner slots align); diversity = squared weighted correlation
+    of randomly sampled feature pairs; early stopping on val mean-log-psi of
+    the HARD characters.  Cross-round anti-duplication is the CALLER's job via
+    DEFLATION: pass the residual G - sum(accepted c_S chi_S) as the target and
+    re-finding an accepted character earns psi ~ 0 by construction (gradient
+    matching pursuit).  Returns in-round-deduped hardened characters as index
+    rows + their held-out psi on THIS target."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(seed)
+    bits_t = bits if torch.is_tensor(bits) else \
+        torch.tensor(np.asarray(bits, np.uint8), device=device)
+    dev = bits_t.device
+    G_t = G if torch.is_tensor(G) else torch.tensor(np.asarray(G, np.float32), device=dev)
+    w_t = torch.tensor(np.asarray(w, np.float32), device=dev)
+    vmask = torch.tensor(np.asarray(vm, bool), device=dev)
+    tr = torch.nonzero(~vmask).ravel()
+    va = torch.nonzero(vmask).ravel()[:32768]                     # capped val subsample
+    n = bits_t.shape[1]
+    K = int(sum(profile))
+    npairs = npairs or 4 * K
+    gen = torch.Generator(device="cpu").manual_seed(seed)
+    logits = [(0.1 * torch.randn(k, d, n, generator=gen)).to(dev).requires_grad_(True)
+              for d, k in enumerate(profile, start=1) if k > 0]
+    opt = torch.optim.Adam(logits, lr=lr)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps)
+    amp = torch.autocast(device_type="cuda", dtype=torch.bfloat16,
+                         enabled=dev.type == "cuda")
+
+    def val_mean_log_psi(T):
+        # early-stop metric follows the SOFT sensing objective at the current
+        # temperature: hard-char psi sits at the noise floor while mixtures are
+        # still concentrating and would cut every round at min_steps
+        with torch.no_grad(), amp:
+            F = _soft_features(1.0 - 2.0 * bits_t[va].float(), logits, T)
+            psi = _weighted_psi(F, G_t[va].float(), w_t[va])
+        return float(torch.log(psi + 1e-8).mean())
+
+    best, bad, stopped_at, history = -np.inf, 0, steps, []
+    for t in range(steps):
+        T = temp[0] + (temp[1] - temp[0]) * t / max(steps - 1, 1)
+        bi = tr[torch.randint(len(tr), (min(batch, len(tr)),),
+                              generator=gen).to(dev)]
+        wb = w_t[bi]
+        with amp:
+            F = _soft_features(1.0 - 2.0 * bits_t[bi].float(), logits, T)
+            psi = _weighted_psi(F, G_t[bi].float(), wb)
+            pi = torch.randint(K, (npairs,), generator=gen).to(dev)
+            pj = torch.randint(K, (npairs,), generator=gen).to(dev)
+            ok = pi != pj
+            corr = ((F[:, pi] * F[:, pj]) * wb[:, None]).sum(0).float() / wb.sum()
+            div = (corr[ok] ** 2).mean()
+            loss = -torch.log(psi + 1e-8).mean() + lam * div
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(logits, 1.0)
+        opt.step()
+        sched.step()
+        if log_fn is not None and t % check_every == 0:
+            log_fn(t, {"mean_log_psi": float(torch.log(psi + 1e-8).mean()),
+                       "mean_psi": float(psi.mean()), "pair_corr2": float(div),
+                       "temp": T, "lr": float(sched.get_last_lr()[0])})
+        if (t + 1) % check_every == 0 and t + 1 >= min_steps:
+            m = val_mean_log_psi(temp[1])                          # fixed reference temp:
+            history.append((t + 1, m))                             # comparable across checks
+            if m > best + 1e-3:
+                best, bad = m, 0
+            else:
+                bad += 1
+            if bad >= patience:
+                stopped_at = t + 1
+                break
+    masks, _ = harden_masks([L.detach().cpu().numpy() for L in logits], n)
+    idx = masks_to_indices(masks)
+    with torch.no_grad():
+        psi_va = _weighted_psi(xor_parity_features(bits_t[va], idx),
+                               G_t[va].float(), w_t[va]).cpu().numpy()
+    idx_d, psi_d = dedupe_indices(idx, psi_va, set())
+    return {"idx": idx_d, "psi": psi_d, "stopped_at": stopped_at, "history": history}
+
+
+def fourier_coefficients(bits, G, w, idx, device=None, char_chunk=8192,
+                         ctx_chunk=65536):
+    """PLAIN weighted dataset Fourier coefficients of the (already centered)
+    target: c_S = sum_i w_i chi_S(x_i) G_i / sum_i w_i.  Double-tiled; returns
+    (K, dY) float32."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    bits_t = bits if torch.is_tensor(bits) else \
+        torch.tensor(np.asarray(bits, np.uint8), device=device)
+    dev = bits_t.device
+    G_t = G if torch.is_tensor(G) else torch.tensor(np.asarray(G, np.float32), device=dev)
+    w_t = torch.tensor(np.asarray(w, np.float32), device=dev)
+    idx = np.asarray(idx, np.int16)
+    C = torch.zeros((len(idx), G_t.shape[1]), dtype=torch.float32, device=dev)
+    for klo in range(0, len(idx), char_chunk):
+        sub = idx[klo:klo + char_chunk]
+        for dlo in range(0, len(bits_t), ctx_chunk):
+            F = xor_parity_features(bits_t[dlo:dlo + ctx_chunk], sub)
+            wG = G_t[dlo:dlo + ctx_chunk].float() * w_t[dlo:dlo + ctx_chunk, None]
+            C[klo:klo + len(sub)] += F.t() @ wG
+    return (C / float(w_t.sum())).cpu().numpy()
+
+
+def reconstruct_ladder(bits, idx, C, c0, order, ks, Wu, tstar, w, device=None,
+                       char_chunk=8192):
+    """Cumulative plain-Fourier reconstruction F_hat = c0 + sum c_S chi_S,
+    walking characters in ``order`` and snapshotting full-vocab top-1 at each
+    k in ks (single pass).  Returns [{'k', 'top1'}, ...]."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    bits_t = bits if torch.is_tensor(bits) else \
+        torch.tensor(np.asarray(bits, np.uint8), device=device)
+    dev = bits_t.device
+    C_t = torch.as_tensor(np.asarray(C, np.float32), device=dev)
+    order = np.asarray(order)
+    Fhat = torch.zeros((len(bits_t), C_t.shape[1]), dtype=torch.float32, device=dev)
+    out, pos = [], 0
+    for k in [int(min(k, len(order))) for k in sorted(set(ks))]:
+        while pos < k:
+            sub = order[pos:pos + min(char_chunk, k - pos)]
+            Fhat += xor_parity_features(bits_t, np.asarray(idx)[sub]) @ C_t[sub]
+            pos += len(sub)
+        pred = unembed_top1(Fhat.cpu().numpy() + np.asarray(c0)[None, :], Wu)
+        out.append({"k": k, "top1": weighted_agreement(pred, tstar, w)})
+    return out
+
+
 # ------------------------------------------- sensitivity -> degree bounds core
 
 def _sens_from_groups(F):
@@ -1622,18 +1838,28 @@ def _load_fork_levels(fill_len, m_fibers, g, depth, codes, target="slots"):
     """Assemble the tree's per-level fork bit-data from cached oracle tables:
     level j = fork that resampled the newest j+1 tokens (p_back=j).  Returns
     a list of (bits (m, (j+1)*B) newest-first, F (m,V) centered, gid (m,)).
-    target="hidden" -> F is the centered teacher pre-head hidden state H (the
-    real Dataset-GL target for top-1); "slots" -> the legacy centered 512-slot P."""
+    target="hidden" -> F is the teacher pre-head hidden state H, per-dim
+    standardized with POOLED stats (one scale across levels, so psi is
+    comparable level-to-level) and per-row UNIT-normalized -- the paper's
+    vector-GL contract ||F(x)||_2 <= 1 that makes the tau^2/4 gate meaningful
+    (psi in [0,1]); "slots" -> the legacy centered 512-slot P."""
     B = codes.shape[1]
+    tables = [np.load(_oracle_table_path(fill_len, m_fibers, g, j))
+              for j in range(depth)]
+    if target == "hidden":                                        # pooled per-dim stats so
+        allH = np.concatenate([d["H"].astype(np.float64) for d in tables])
+        mu, sd = allH.mean(0), allH.std(0)                        # psi weights dims evenly
+        print(f"[fork-levels] hidden target row-normalized "
+              f"(d={allH.shape[1]}, pooled stats over {len(allH)} rows)", flush=True)
     levels = []
-    for j in range(depth):
-        d = np.load(_oracle_table_path(fill_len, m_fibers, g, j))
+    for j, d in enumerate(tables):
         gt = d["gtoks"]                                            # (m, j+1) gen order
         toks_newest_first = gt[:, ::-1]                            # block0 = newest token
         bits = np.asarray(codes, np.uint8)[toks_newest_first].reshape(len(gt), -1)
-        if target == "hidden":                                    # standardize per dim so
-            Y = d["H"].astype(np.float64)                         # psi weights all dims evenly
-            F = ((Y - Y.mean(0)[None, :]) / (Y.std(0)[None, :] + 1e-6)).astype(np.float32)
+        if target == "hidden":
+            Y = (d["H"].astype(np.float64) - mu[None, :]) / (sd[None, :] + 1e-6)
+            F = (Y / (np.linalg.norm(Y, axis=1, keepdims=True) + 1e-12)
+                 ).astype(np.float32)                             # ||F(x)||_2 = 1
         else:
             Y = d["P"].astype(np.float64)
             F = (Y - Y.mean(0)[None, :]).astype(np.float32)
@@ -2138,6 +2364,18 @@ def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
     for name in ("lsh", "ctrl"):
         codes = ztab[name]; B = codes.shape[1]; nb = depth * B
         levels = _load_fork_levels(fill_len, m_fibers, g, depth, codes, target="hidden")
+        # null guardrail: psi of level-0 deg-1 chars with row-permuted F (pairing
+        # broken) must sit BELOW the keep threshold, else the gate is vacuous
+        # and the tree would enumerate noise (the tau-scale bug class)
+        bits0, F0, gid0 = levels[0]
+        perm = np.random.default_rng(0).permutation(len(F0))
+        null = forked_gl_tree([(bits0, F0[perm], gid0)], B, tau=0.0, max_width=B)
+        null_max = float(null["psi"].max()) if len(null["psi"]) else 0.0
+        thresh = tau * tau / 4.0
+        print(f"[gltree:{name}] null_max {null_max:.2e} vs thresh {thresh:.2e}",
+              flush=True)
+        assert null_max < thresh, \
+            f"vacuous gate: null_max {null_max:.2e} >= tau^2/4 {thresh:.2e}"
         tree = forked_gl_tree(levels, B, tau, max_width=max_width,
                               progress=lambda j, D, kept: print(
                                   f"[gltree:{name}] level {j+1}/{D} kept {len(kept)}",
@@ -2383,6 +2621,317 @@ def dl_fourier(m_train: int = 16000, m_test: int = 3000, fill_len: int = 61,
         torch.cuda.empty_cache()
     _write_json(f"{ROOT}/summary_dlfourier_M{m_train}_K{k1}_{k2}_{k3}.json", summary)
     _record("dl-fourier", started, {"profile": list(profile), "lam": lam})
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
+def _plain_path(ctx, n_spans, skip, tag):
+    return f"{ROOT}/plain_ctx{ctx}_N{n_spans}_s{skip}_{tag}.npz"
+
+
+@app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=43200,
+              memory=32768, secrets=HF_SECRET)
+def make_plain_data(n_spans: int = 1_000_000, ctx: int = CTX, skip: int = 0,
+                    tag: str = "plain_tr", span_lo: int = 0, span_hi: int = 0,
+                    batch: int = 128):
+    """PLAIN streamed supervision: FineWeb-Edu spans, ONE teacher forward each
+    (pre-head hidden h at the last position + full-vocab argmax t*).  No
+    fibers, no fills, no pairing -- those are Dataset-GL requirements; anything
+    that only needs (context-bits, teacher-output) pairs scales to millions of
+    contexts by streaming.  Sharded like make_data: span_lo/span_hi-restricted
+    workers write shards; the unrestricted call concatenates.  Saves tokens
+    int32 (N, ctx), H fp16 (N, d_model), tstar int32."""
+    import os, time
+    import torch
+    vol.reload()
+    out = _plain_path(ctx, n_spans, skip, tag)
+    if os.path.exists(out):
+        return out
+    _budget("plain-data", 15.0)
+    started = time.time()
+    model, tok, q = _load_teacher()
+    shard_dir = f"{ROOT}/plain_shards_ctx{ctx}_N{n_spans}_s{skip}_{tag}"
+    os.makedirs(shard_dir, exist_ok=True)
+    chunk = 25_000
+    hi = span_hi if span_hi else n_spans
+    todo = [lo for lo in range(span_lo, hi, chunk)
+            if not os.path.exists(f"{shard_dir}/s{lo}.npz")]
+    if todo:
+        # one stream pass covers this worker's whole missing range (skip counts
+        # qualifying spans from the stream start, so shards are deterministic)
+        base = todo[0]
+        spans = _stream_spans(tok, min(hi, todo[-1] + chunk) - base, span_len=ctx,
+                              corpus=FINEWEB_EDU, skip=skip + base)
+        for lo in todo:
+            sl = spans[lo - base: lo - base + min(chunk, hi - lo)]
+            H = np.empty((len(sl), 0), dtype=np.float16)
+            hs, ts = [], []
+            for b in range(0, len(sl), batch):
+                ids = torch.tensor(sl[b:b + batch], dtype=torch.long, device="cuda")
+                h, t = _capture_hidden(model, ids, q)
+                hs.append(h.cpu().numpy().astype(np.float16))
+                ts.append(t.cpu().numpy().astype(np.int32))
+            sp = f"{shard_dir}/s{lo}.npz"
+            np.savez(sp + ".tmp.npz", tokens=sl.astype(np.int32),
+                     H=np.concatenate(hs), tstar=np.concatenate(ts))
+            os.replace(sp + ".tmp.npz", sp)
+            vol.commit()
+            print(f"[plain] {min(lo + chunk, hi)}/{n_spans} spans "
+                  f"(worker {span_lo}:{hi})", flush=True)
+    if span_lo != 0 or (span_hi and span_hi < n_spans):
+        return f"plain shards {span_lo}:{hi} of N{n_spans} done"
+    parts = [np.load(f"{shard_dir}/s{lo}.npz") for lo in range(0, n_spans, chunk)]
+    # uncompressed savez: fp16 hidden states barely compress and zlib on ~2.5GB
+    # costs minutes per save
+    np.savez(out.replace(".npz", ".tmp.npz"),
+             tokens=np.concatenate([p["tokens"] for p in parts]),
+             H=np.concatenate([p["H"] for p in parts]),
+             tstar=np.concatenate([p["tstar"] for p in parts]))
+    os.replace(out.replace(".npz", ".tmp.npz"), out)
+    vol.commit()
+    _record("plain-data", started, {"n_spans": n_spans, "tag": tag})
+    print(f"saved {out}", flush=True)
+    return out
+
+
+@app.function(image=image, volumes={"/cache": vol}, timeout=43200, memory=8192)
+def gen_plain_data(n_spans: int = 1_000_000, ctx: int = CTX, skip: int = 0,
+                   tag: str = "plain_tr", n_shards: int = 8):
+    """Fan-out plain-data generation: N GPU workers label disjoint span ranges
+    (deterministic stream positions => bytewise identical to serial), then the
+    unrestricted call concatenates."""
+    import os
+    vol.reload()
+    out = _plain_path(ctx, n_spans, skip, tag)
+    if os.path.exists(out):
+        return out
+    chunk = 25_000
+    n_chunks = (n_spans + chunk - 1) // chunk
+    per = (n_chunks + n_shards - 1) // n_shards
+    handles = []
+    for wkr in range(n_shards):
+        lo = wkr * per * chunk
+        hi = min((wkr + 1) * per * chunk, n_spans)
+        if lo >= n_spans:
+            break
+        handles.append(make_plain_data.spawn(n_spans, ctx, skip, tag, lo, hi))
+    print(f"[gen-plain] {len(handles)} workers x ~{per * chunk} spans", flush=True)
+    for h in handles:
+        print(h.get(), flush=True)
+    return make_plain_data.remote(n_spans, ctx, skip, tag)
+
+
+GS_MILESTONES = [1_000, 10_000, 50_000] + list(range(100_000, 1_000_001, 100_000))
+
+
+@app.function(image=image, gpu="H100", volumes={"/cache": vol}, timeout=43200,
+              memory=65536, secrets=WANDB_SECRET + HF_SECRET)
+def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
+               target_chars: int = 1_000_000, chunk: int = 16384,
+               steps: int = 300, min_steps: int = 64, patience: int = 3,
+               lam: float = 0.1, batch: int = 4096, lr: float = 0.02,
+               kappa: float = 4.0, rounds_cap: int = 200,
+               encoding: str = "lsh", mlp: int = 0, seed: int = 0):
+    """Gradient-sensed sparse Fourier spectroscopy (gradient matching pursuit):
+    ROUNDS of [sense the heaviest fresh characters of degree 1..4 in the
+    RESIDUAL via soft-annealed selection + -log psi] -> [estimate their PLAIN
+    dataset Fourier coefficients] -> [deflate the residual], on the
+    UNIT-NORMALIZED centered pre-head target (Parseval: total mass <= 1, psi
+    absolute).  Escalation-friendly: a checkpoint on the volume resumes the
+    harvest, so runs with growing --target-chars (1k -> 10k -> 50k -> ...)
+    each only harvest the delta and log held-out top-1 at every character
+    milestone crossed (the character-scaling curve)."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("grad-sense", 30.0)
+    started = time.time()
+    te_p = make_plain_data.local(n_test, CTX, 0, "plain_test")
+    tr_p = make_plain_data.local(n_train, CTX, 3 * n_test, "plain_tr")
+    Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    codes = dict(np.load(f"{ROOT}/codes.npz"))[encoding]
+    B = codes.shape[1]; nb = win * B
+    dtr, dte = np.load(tr_p), np.load(te_p)
+    bits_tr = context_bits(dtr["tokens"].astype(np.int64), codes)[:, :nb]
+    bits_te = context_bits(dte["tokens"].astype(np.int64), codes)[:, :nb]
+    t_te = dte["tstar"].astype(np.int64)
+    w_tr = np.ones(len(bits_tr)); w_te = np.ones(len(bits_te))
+
+    def normalize(H):
+        F = H.astype(np.float32)
+        return F / (np.linalg.norm(F, axis=1, keepdims=True) + 1e-8)
+    F_tr = normalize(dtr["H"])
+    c0 = F_tr.mean(0)
+    sane = weighted_agreement(unembed_top1(dte["H"].astype(np.float32), Wu), t_te, w_te)
+    mass0 = float(((F_tr - c0) ** 2).sum(1).mean())               # Parseval: <= 1
+    print(f"[gradsense:{encoding}] sanity {sane:.4f} total mass {mass0:.4f} "
+          f"n={nb} bits x {len(bits_tr)} contexts", flush=True)
+
+    dev = "cuda"
+    bits_tr_t = torch.tensor(bits_tr, device=dev)
+    bits_te_t = torch.tensor(bits_te, device=dev)
+    G_res = torch.tensor(F_tr - c0[None, :], dtype=torch.float32, device=dev)
+    del F_tr
+    vm = np.random.default_rng(0).random(len(bits_tr)) < 0.05
+    n_val = int(min(vm.sum(), 32768))
+    trs = np.random.default_rng(1).choice(np.flatnonzero(~vm),
+                                          min(50_000, int((~vm).sum())), replace=False)
+    t_trs = dtr["tstar"].astype(np.int64)[trs]
+
+    # ---- resume from checkpoint (escalation runs harvest only the delta)
+    ckpt = f"{ROOT}/gradsense_ckpt_{encoding}_win{win}_N{n_train}.npz"
+    idx_all = np.zeros((0, 4), np.int16); psi_all = np.zeros(0)
+    C_all = np.zeros((0, G_res.shape[1]), np.float32)
+    seen = set()
+    if os.path.exists(ckpt):
+        z = np.load(ckpt)
+        idx_all, psi_all = z["idx"], z["psi"]
+        C_all = z["C"].astype(np.float32)
+        dedupe_indices(idx_all, psi_all, seen)                    # rebuild the seen set
+        print(f"[gradsense:{encoding}] resume {len(idx_all)} chars", flush=True)
+
+    def apply_chars(bits_t, target, idx, C, sign=1.0, cchunk=8192):
+        Ct = torch.as_tensor(C, dtype=torch.float32, device=dev)
+        for klo in range(0, len(idx), cchunk):
+            F = xor_parity_features(bits_t, idx[klo:klo + cchunk])
+            target += sign * (F @ Ct[klo:klo + cchunk])
+        return target
+
+    Fhat_te = torch.zeros((len(bits_te_t), G_res.shape[1]), device=dev)
+    Fhat_trs = torch.zeros((len(trs), G_res.shape[1]), device=dev)
+    if len(idx_all):
+        G_res = apply_chars(bits_tr_t, G_res, idx_all, C_all, sign=-1.0)
+        Fhat_te = apply_chars(bits_te_t, Fhat_te, idx_all, C_all)
+        Fhat_trs = apply_chars(bits_tr_t[torch.tensor(trs, device=dev)],
+                               Fhat_trs, idx_all, C_all)
+
+    def top1(Fhat, tstar, w):
+        pred = unembed_top1(Fhat.cpu().numpy() + c0[None, :], Wu)
+        return weighted_agreement(pred, tstar, w)
+
+    run = _wandb_run(f"gradsense-{encoding}-N{n_train}-K{target_chars}",
+                     {"encoding": encoding, "n_train": n_train, "win": win,
+                      "target_chars": target_chars, "chunk": chunk, "lam": lam,
+                      "batch": batch, "kappa": kappa, "sanity": sane})
+    gstep = [0]
+
+    def wb(payload):
+        if run is not None:
+            run.log(payload, step=gstep[0])
+
+    milestones = [m for m in GS_MILESTONES if m <= target_chars]
+    if target_chars not in milestones:
+        milestones.append(target_chars)
+    crossed = {m for m in milestones if m <= len(idx_all)}
+    profile = (chunk // 4,) * 4
+    rnd, dry = 0, 0
+    while len(idx_all) < target_chars and rnd < rounds_cap and dry < 3:
+        t0 = time.time()
+
+        def log_fn(t, payload):
+            gstep[0] += 16
+            wb(payload)
+        res = learn_sense_chunk(bits_tr_t, G_res, w_tr, vm, profile=profile,
+                                lam=lam, steps=steps, min_steps=min_steps,
+                                patience=patience, check_every=16, lr=lr,
+                                batch=batch, device=dev,
+                                seed=seed * 10_000 + rnd, log_fn=log_fn)
+        idx_f, psi_f = dedupe_indices(res["idx"], res["psi"], seen)
+        gate = kappa / n_val
+        kept = psi_f > gate
+        idx_k, psi_k = idx_f[kept], psi_f[kept]
+        if len(idx_k) == 0:
+            dry += 1; rnd += 1
+            print(f"[gradsense:{encoding}] round {rnd}: dry ({len(res['idx'])} raw, "
+                  f"{len(idx_f)} fresh, 0 kept)", flush=True)
+            continue
+        dry = 0
+        C_k = fourier_coefficients(bits_tr_t, G_res, w_tr, idx_k, device=dev)
+        G_res = apply_chars(bits_tr_t, G_res, idx_k, C_k, sign=-1.0)
+        Fhat_te = apply_chars(bits_te_t, Fhat_te, idx_k, C_k)
+        Fhat_trs = apply_chars(bits_tr_t[torch.tensor(trs, device=dev)],
+                               Fhat_trs, idx_k, C_k)
+        idx_all = np.concatenate([idx_all, idx_k])
+        psi_all = np.concatenate([psi_all, psi_k])
+        C_all = np.concatenate([C_all, C_k])
+        res_mass = float((G_res ** 2).sum(1).mean())
+        deg_k = (np.asarray(idx_k) >= 0).sum(1)
+        wb({"chars_accepted": len(idx_all), "fresh": len(idx_k),
+            "dup_rate": 1.0 - len(idx_f) / max(len(res["idx"]), 1),
+            "kept_rate": len(idx_k) / max(len(idx_f), 1),
+            "mean_psi_accepted": float(psi_k.mean()),
+            "max_psi_accepted": float(psi_k.max()),
+            "residual_mass": res_mass, "captured_mass": mass0 - res_mass,
+            "early_stop_step": res["stopped_at"],
+            "chars_per_min": len(idx_k) / max((time.time() - t0) / 60, 1e-9),
+            **{f"deg{d}_accepted": int((deg_k == d).sum()) for d in (1, 2, 3, 4)}})
+        print(f"[gradsense:{encoding}] round {rnd}: +{len(idx_k)} "
+              f"(total {len(idx_all)}, residual {res_mass:.4f}/{mass0:.4f}, "
+              f"stop@{res['stopped_at']})", flush=True)
+        for m in milestones:                                       # character-scaling curve
+            if m not in crossed and len(idx_all) >= m:
+                crossed.add(m)
+                te1, tr1 = top1(Fhat_te, t_te, w_te), top1(Fhat_trs, t_trs, np.ones(len(trs)))
+                wb({"milestone_chars": m, "TEST_top1": te1, "TRAIN_top1": tr1,
+                    "milestone_residual_mass": res_mass})
+                print(f"[gradsense:{encoding}] === {m} chars: TEST top-1 {te1:.4f} "
+                      f"(train {tr1:.4f}, captured {mass0 - res_mass:.4f})", flush=True)
+        rnd += 1
+        if rnd % 8 == 0:
+            np.savez(ckpt + ".tmp.npz", idx=idx_all, psi=psi_all,
+                     C=C_all.astype(np.float16))
+            os.replace(ckpt + ".tmp.npz", ckpt)
+            vol.commit()
+    np.savez(ckpt + ".tmp.npz", idx=idx_all, psi=psi_all, C=C_all.astype(np.float16))
+    os.replace(ckpt + ".tmp.npz", ckpt)
+
+    final_te, final_trs = top1(Fhat_te, t_te, w_te), top1(Fhat_trs, t_trs, np.ones(len(trs)))
+    res_mass = float((G_res ** 2).sum(1).mean())
+    ks = [m for m in milestones if m <= len(idx_all)] or [len(idx_all)]
+    ladder = reconstruct_ladder(bits_te_t, idx_all, C_all, c0,
+                                np.argsort(-psi_all), ks, Wu, t_te, w_te)
+    # random control: same realized degree profile, PLAIN coefficients of the
+    # original target, same ladder
+    rng = np.random.default_rng(7)
+    deg_all = (idx_all >= 0).sum(1)
+    r_rows, r_seen = [], set()
+    for d in (1, 2, 3, 4):
+        need = int((deg_all == d).sum())
+        while need > 0:
+            row = np.full(4, -1, np.int16)
+            row[:d] = np.sort(rng.choice(nb, d, replace=False)).astype(np.int16)
+            key = row[:d].tobytes()
+            if key in r_seen:
+                continue
+            r_seen.add(key); r_rows.append(row); need -= 1
+    ctl_ladder = []
+    if r_rows:
+        r_idx = np.stack(r_rows)
+        G0 = torch.tensor(normalize(dtr["H"]) - c0[None, :], dtype=torch.float32,
+                          device=dev)
+        C_r = fourier_coefficients(bits_tr_t, G0, w_tr, r_idx, device=dev)
+        del G0
+        ctl_ladder = reconstruct_ladder(bits_te_t, r_idx, C_r, c0,
+                                        np.arange(len(r_idx)), ks, Wu, t_te, w_te)
+    mlp_top1 = None
+    if mlp:
+        fit = fit_mlp_hidden(bits_tr, normalize(dtr["H"]) - c0[None, :], w_tr, vm,
+                             bits_te, hidden=2048, steps=3000, batch=8192, seed=seed)
+        mlp_top1 = weighted_agreement(
+            unembed_top1(fit["pred_te"] + c0[None, :], Wu), t_te, w_te)
+    summary = {"encoding": encoding, "n_train": n_train, "win": win,
+               "target_chars": target_chars, "chars": int(len(idx_all)),
+               "sanity_top1": sane, "TEST_top1": final_te, "TRAIN_sub_top1": final_trs,
+               "residual_mass": res_mass, "captured_mass": mass0 - res_mass,
+               "total_mass": mass0, "ladder": ladder, "control_ladder": ctl_ladder,
+               "mlp_top1": mlp_top1,
+               "deg_hist": {str(d): int((deg_all == d).sum()) for d in (1, 2, 3, 4)}}
+    if run is not None:
+        run.summary.update({k: v for k, v in summary.items()
+                            if not isinstance(v, (list, dict))})
+        run.finish()
+    _write_json(f"{ROOT}/summary_gradsense_{encoding}_K{target_chars}.json", summary)
+    _record("grad-sense", started, {"encoding": encoding, "chars": int(len(idx_all))})
     print(json.dumps(summary), flush=True)
     return summary
 
@@ -3389,7 +3938,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          resample: str = "conditional", corpus: str = "fineweb",
          positions: str = "", target: str = "hidden",
          k1: int = 512, k2: int = 512, k3: int = 256, lam: float = 0.1,
-         batch: int = 8192):
+         batch: int = 8192, n_train: int = 1_000_000, n_test: int = 50_000,
+         target_chars: int = 1_000_000, chunk: int = 16384, win: int = 61,
+         kappa: float = 4.0, mlp: int = 0):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -3443,6 +3994,13 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "dl-fourier":                                        # learned STE parities
         print(dl_fourier.remote(m_fibers, 3000, fill_len, r, k1, k2, k3,
                                 lam, steps, 0.02, batch))
+    if stage == "plain-data":                                        # streamed plain supervision
+        print(make_plain_data.remote(n_test, CTX, 0, "plain_test"))
+        print(gen_plain_data.remote(n_train, CTX, 3 * n_test, "plain_tr", 8))
+    if stage == "grad-sense":                                        # gradient matching pursuit
+        print(grad_sense.remote(n_train, n_test, win, target_chars, chunk, steps,
+                                64, patience, lam, batch, 0.02, kappa, 200,
+                                encoding if encoding != "all" else "lsh", mlp))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":
