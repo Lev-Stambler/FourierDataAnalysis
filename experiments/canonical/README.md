@@ -92,7 +92,9 @@ need projections, not independent averages; `sequential_deflate(block=512)`).
 | **+ 160,000 (deg-2 test-optimal)** | **0.233** | **3.49** |
 | + 400,000 | 0.232 | 3.48 |
 | deg-1+2 **+ 100,000 exact deg-3 triples** (`deg3-fit`) | 0.251 | 3.19 |
-| deg-1+2 **+ 200,000 triples — still climbing at the cap** | **0.254** | **3.13** |
+| deg-1+2 + 200,000 triples | 0.254 | 3.13 |
+| deg-1+2 **+ 1M STAGED triples (809k local-first + far)** | **0.2642** | **3.09** |
+| + 2M triples / + quads on the overfit base | 0.254–0.256 | — |
 
 - **+58% relative top-1 over deg-1**; deg-2 captures 0.233 of the 0.609 post-deg-1 residual;
   overfit onset only below ~4× floor. Beats every prior model in the program incl. the old
@@ -107,6 +109,16 @@ need projections, not independent averages; `sequential_deflate(block=512)`).
 - Fail-loud lessons baked into code + tests: batch deflation amplifies duplicate clusters
   (1−m)²; residual must never grow; ψ ≤ total mass; floor-relative gates (ψ noise
   concentrates within √(2/dY)≈4% of floor).
+- **Sparsity audit** (`_sparsity_stats`): deg-2 IS sparse (N_eff 18.4k; half the pair energy
+  in 8,982 chars); deg-3 is a diffuse sea (N_eff 855k; k50 = 496k of 2.5M) — the ladder's
+  ~1M turnover is dust-coefficient noise, so MORE DATA extends it (4M contexts generating).
+  Far-anchored triples (5.07M above 4× floor — long-range copy-gating shape) help only when
+  fitted AFTER locals (staged order); global ψ-ranking displaced better locals (0.2466).
+  Deg-4 quads: 3.46M above floor from 2k pair-anchors, but flat when fitted on the OVERFIT
+  2.5M-triple base — next rerun caps each layer at its test-optimal count first.
+  DIAG (failure modes): copy cases 0.38 vs non-copy 0.19; teacher token in our top-5 48%;
+  RARE targets (<100 train occurrences, 26% of cases) fail at ~3% regardless of copy —
+  and only 17% of them even appear in the 32-token window (context-coverage, not gating).
 - **Degree 3 works the same way** (`deg3-fit`): a triple's coefficient is the PAIR map of
   the sign-flipped target (`psi3(a,b,c) = deg2map(G·χ_c)[a,b]`; one global projection shared
   across anchors — the rowwise flip commutes). 378k triples above 6× floor in the newest 3
