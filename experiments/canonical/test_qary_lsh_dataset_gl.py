@@ -849,6 +849,30 @@ def test_deg2_exact_psi_finds_planted_pairs():
     assert abs(mass_r - float((G ** 2).sum(1).mean())) < 1e-5      # r >= dY: no loss
 
 
+def test_deg3_via_anchored_deg2_map():
+    # a triple's coefficient is the PAIR coefficient of the sign-flipped
+    # target: psi3(a,b,c) = deg2_exact_psi(bits, G * chi_c)[a,b] -- the tested
+    # pair enumerator reused verbatim per anchor bit c
+    rng = np.random.default_rng(23)
+    n, dY = 10, 6
+    bits = _all_masks(n)
+    planted = np.zeros((1, n), np.uint8)
+    planted[0, [1, 4, 7]] = 1                                      # deg-3 triple
+    V = rng.normal(size=(1, dY)); V /= np.linalg.norm(V)
+    G = (0.7 * parity_features(bits, planted) @ V).astype(np.float32)
+    G -= G.mean(0)
+    w = np.ones(len(bits))
+    xc = (1.0 - 2.0 * bits[:, 7].astype(np.float32))               # anchor c = 7
+    psi3, _ = deg2_exact_psi(bits, G * xc[:, None], w, r=dY, device="cpu")
+    assert abs(psi3[1, 4] - 0.49) < 1e-3                           # the planted triple
+    mask = np.ones((n, n), bool); np.fill_diagonal(mask, False)
+    mask[1, 4] = mask[4, 1] = False
+    # chi_7 * chi_7 cancels: anchoring on 7 exposes {1,4}; row/col 7 shows the
+    # PAIR {1,4,7,7}={1,4} view of other anchors -- everything else ~0
+    psi3[7, :] = psi3[:, 7] = 0.0
+    assert psi3[mask].max() < 1e-6
+
+
 def test_sequential_deflate_handles_duplicates_and_constants():
     # the first grad-sense smoke diverged because BATCH deflation computed all
     # coefficients against one residual snapshot: an on-data duplicate cluster

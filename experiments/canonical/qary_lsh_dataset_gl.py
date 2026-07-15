@@ -3386,6 +3386,136 @@ def deg2_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
     return summary
 
 
+@app.function(image=image, gpu="H100", volumes={"/cache": vol}, timeout=43200,
+              memory=65536, secrets=WANDB_SECRET + HF_SECRET)
+def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
+             r2: int = 64, n_pairs: int = 160_000, blocks: int = 3, r3: int = 16,
+             kappa: float = 6.0, per_anchor: int = 3000, max_tris: int = 200_000,
+             encoding: str = "lsh"):
+    """Degree 3, EXACTLY, on top of the deg-1+2 model: a triple's coefficient
+    is the PAIR coefficient of the sign-flipped target (psi3(a,b,c) =
+    deg2_exact_psi(bits, G*chi_c)[a,b]), so the tested pair enumerator runs
+    once per anchor bit.  Anchors/pairs restricted to the newest ``blocks``
+    token blocks (deg-2 said ~all significant mass lives there: same-block
+    quadratics + adjacent-token bigrams).  Enumerated triples above a
+    kappa x floor gate are fit by block-OMP on the deg-1+2-deflated residual;
+    the TEST ladder extends the deg-2 curve."""
+    import time
+    import torch
+    vol.reload()
+    _budget("deg3-fit", 10.0)
+    started = time.time()
+    te_p = make_plain_data.local(n_test, CTX, 0, "plain_test")
+    tr_p = make_plain_data.local(n_train, CTX, 3 * n_test, "plain_tr")
+    Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    codes = dict(np.load(f"{ROOT}/codes.npz"))[encoding]
+    B = codes.shape[1]; nb = win * B
+    z2 = np.load(f"{ROOT}/deg2exact_{encoding}_win{win}_r{r2}.npz")
+    K2 = int(min((z2["top_psi"] > 2.0 * float(z2["floor"])).sum(), n_pairs))
+    idx2 = np.full((K2, 4), -1, np.int16)
+    idx2[:, 0] = z2["top_a"][:K2]; idx2[:, 1] = z2["top_b"][:K2]
+    dtr, dte = np.load(tr_p), np.load(te_p)
+    bits_tr = context_bits(dtr["tokens"].astype(np.int64), codes)[:, :nb]
+    bits_te = context_bits(dte["tokens"].astype(np.int64), codes)[:, :nb]
+    t_te = dte["tstar"].astype(np.int64)
+    w_tr, w_te = np.ones(len(bits_tr)), np.ones(len(bits_te))
+    F = dtr["H"].astype(np.float32)
+    F /= (np.linalg.norm(F, axis=1, keepdims=True) + 1e-8)
+    c0 = F.mean(0)
+    dev = "cuda"
+    bits_t = torch.tensor(bits_tr, device=dev)
+    G_t = torch.tensor(F - c0[None, :], device=dev)
+    del F
+    W1 = torch.as_tensor(z2["W1"].astype(np.float32), device=dev)
+    b1 = torch.as_tensor(z2["b1"].astype(np.float32), device=dev)
+    for lo in range(0, len(bits_t), 131072):
+        G_t[lo:lo + 131072] -= \
+            (1.0 - 2.0 * bits_t[lo:lo + 131072].float()) @ W1 + b1
+    C2, G_t = sequential_deflate(bits_t, G_t, w_tr, idx2, device=dev, block=512)
+    res12 = float((G_t ** 2).sum(1).mean())
+    bte_t = torch.tensor(bits_te, device=dev)
+    base_te = (1.0 - 2.0 * bte_t.float()) @ W1 + b1
+    Ct2 = torch.as_tensor(C2, device=dev)
+    for klo in range(0, K2, 8192):
+        base_te += xor_parity_features(bte_t, idx2[klo:klo + 8192]) @ \
+            Ct2[klo:klo + 8192]
+    s_bar = float(np.linalg.norm(dtr["H"][:100_000].astype(np.float32), axis=1).mean())
+    H_te_f32 = dte["H"].astype(np.float32)
+    base_top1 = weighted_agreement(
+        unembed_top1(base_te.cpu().numpy() + c0[None, :], Wu), t_te, w_te)
+    base_kl = _full_kl((base_te.cpu().numpy() + c0[None, :]) * s_bar, H_te_f32,
+                       Wu, w_te, device=dev)
+    print(f"[deg3fit:{encoding}:w{win}] deg-1+{K2} pairs base: top-1 "
+          f"{base_top1:.4f} KL {base_kl:.4f} (residual {res12:.4f})", flush=True)
+    # ---- anchored triple enumeration over the newest `blocks` token blocks
+    t0 = time.time()
+    combos = [(i, i) for i in range(blocks)] + \
+             [(i, j) for i in range(blocks) for j in range(blocks) if i != j]
+    found = {}
+    for (pb, ab) in combos:                                        # pair block, anchor block
+        sub = np.arange(pb * B, (pb + 1) * B)
+        bits_sub = bits_t[:, torch.as_tensor(sub, device=dev)].contiguous()
+        for cl in range(B):
+            c = ab * B + cl
+            xc = (1.0 - 2.0 * bits_t[:, c].float())[:, None]
+            psi3, mr = deg2_exact_psi(bits_sub, G_t * xc, w_tr, r=r3, device=dev)
+            gate = kappa * mr / len(bits_t)
+            iu = np.triu_indices(len(sub), k=1)
+            vals = psi3[iu]
+            good = np.flatnonzero(vals > gate)
+            if len(good) > per_anchor:
+                good = good[np.argsort(-vals[good])[:per_anchor]]
+            for gidx in good:
+                tri = tuple(sorted((int(sub[iu[0][gidx]]), int(sub[iu[1][gidx]]),
+                                    int(c))))
+                if len(set(tri)) < 3:
+                    continue
+                if vals[gidx] > found.get(tri, 0.0):
+                    found[tri] = float(vals[gidx])
+    tris = sorted(found.items(), key=lambda kv: -kv[1])[:max_tris]
+    print(f"[deg3fit:{encoding}:w{win}] {len(found)} distinct triples above "
+          f"{kappa}x floor ({time.time() - t0:.0f}s); fitting top "
+          f"{len(tris)}", flush=True)
+    summary = {"encoding": encoding, "win": win, "n_pairs": K2,
+               "base_top1": base_top1, "base_kl": base_kl,
+               "n_triples_found": len(found), "blocks": blocks, "ladder": []}
+    if tris:
+        idx3 = np.full((len(tris), 4), -1, np.int16)
+        for j, (tri, _) in enumerate(tris):
+            idx3[j, :3] = tri
+        C3, G_t = sequential_deflate(bits_t, G_t, w_tr, idx3, device=dev,
+                                     block=512)
+        res123 = float((G_t ** 2).sum(1).mean())
+        ks = sorted({k for k in (1_000, 5_000, 20_000, 50_000, 100_000,
+                                 200_000) if k <= len(tris)} | {len(tris)})
+        ladder = reconstruct_ladder(bte_t, idx3, C3, c0, np.arange(len(tris)),
+                                    ks, Wu, t_te, w_te,
+                                    kl_ref=(H_te_f32, s_bar), base=base_te)
+        cum_cap = np.cumsum((C3.astype(np.float64) ** 2).sum(1))
+        for entry in ladder:
+            entry["cum_captured"] = float(cum_cap[entry["k"] - 1])
+            print(f"[deg3fit:{encoding}:w{win}] === deg-1+2 + {entry['k']} "
+                  f"triples: TEST top-1 {entry['top1']:.4f} KL "
+                  f"{entry['kl']:.4f} (captured {entry['cum_captured']:.4f})",
+                  flush=True)
+        summary["ladder"] = ladder
+        summary["deg3_captured"] = res12 - res123
+    run = _wandb_run(f"deg3fit-{encoding}-w{win}-N{n_train}",
+                     {"encoding": encoding, "win": win, "n_pairs": K2,
+                      "base_top1": base_top1})
+    if run is not None:
+        for entry in summary["ladder"]:
+            run.log({"triples": entry["k"], "TEST_top1": entry["top1"],
+                     "TEST_kl": entry["kl"]})
+        run.summary.update({"base_top1": base_top1,
+                            "n_triples_found": len(found)})
+        run.finish()
+    _write_json(f"{ROOT}/summary_deg3fit_{encoding}_win{win}.json", summary)
+    _record("deg3-fit", started, {"win": win, "triples": len(found)})
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
 def gl_tree_refit(fill_len: int = 61, depth: int = 6, fit_m: int = 8000,
                   val_frac: float = 0.15, per_deg: int = 8000, block: int = 400,
@@ -4458,6 +4588,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "deg2-fit":                                          # exact-pair reconstruction
         print(deg2_fit.remote(n_train, n_test, win, 64, target_chars,
                               encoding if encoding != "all" else "lsh"))
+    if stage == "deg3-fit":                                          # anchored triple ladder
+        print(deg3_fit.remote(n_train, n_test, win,
+                              encoding=encoding if encoding != "all" else "lsh"))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":
