@@ -908,8 +908,8 @@ def test_fourier_learn_recovers_planted_any_degree():
     warm[0, [0, 5]] = 1                                            # 2 of the deg-3 char
     warm[1, [2, 4, 7]] = 1                                         # 3 of the deg-5 char
     res = fourier_learn_chars(bits, G, w, vm, K=24, rho=0.8, lam=0.1, l1=0.0,
-                              gamma=0.1, steps=4000, lr=5e-3, batch=2048,
-                              device="cpu", seed=0, warm_masks=warm)
+                              gamma=0.1, steps=3000, lr=1e-2, batch=2048,
+                              warmup=250, device="cpu", seed=0, warm_masks=warm)
     got = {tuple(np.flatnonzero(mk)) for mk in res["masks"]}
     for sel in sels:
         assert tuple(sel) in got, f"planted {sel} not recovered (got {sorted(got)})"
