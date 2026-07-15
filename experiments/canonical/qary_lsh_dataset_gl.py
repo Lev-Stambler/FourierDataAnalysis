@@ -3527,6 +3527,52 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
                   flush=True)
         summary["ladder"] = ladder
         summary["deg3_captured"] = res12 - res123
+        # ---- failure-mode diagnostics on the FULL deg-1+2+3 model ----------
+        Ct3 = torch.as_tensor(C3, device=dev)
+        for klo in range(0, len(idx3), 8192):
+            base_te += xor_parity_features(bte_t, idx3[klo:klo + 8192]) @ \
+                Ct3[klo:klo + 8192]
+        pred = unembed_top1(base_te.cpu().numpy() + c0[None, :], Wu)
+        correct = (pred == t_te)
+        # (a) copy/induction: teacher's token already appears in the window
+        ctx_tok = dte["tokens"].astype(np.int64)[:, -win:]
+        is_copy = (ctx_tok == t_te[:, None]).any(1)
+        # (b) teacher confidence buckets (softmax max from stored hidden)
+        import torch as _t
+        conf = np.empty(len(t_te), np.float32)
+        Wt = _t.as_tensor(Wu, device=dev)
+        for lo in range(0, len(t_te), 1024):
+            lg = _t.as_tensor(H_te_f32[lo:lo + 1024], device=dev) @ Wt.t()
+            conf[lo:lo + 1024] = _t.softmax(lg, 1).max(1).values.cpu().numpy()
+        # (c) teacher-token train frequency buckets
+        cnts = np.bincount(dtr["tstar"].astype(np.int64), minlength=Wu.shape[0])
+        freq = cnts[t_te]
+        # (d) student rank of the teacher token
+        rank_hits = {5: 0, 20: 0}
+        Hp = _t.as_tensor(base_te.cpu().numpy() + c0[None, :], device=dev)
+        for lo in range(0, len(t_te), 1024):
+            lg = Hp[lo:lo + 1024] @ Wt.t()
+            for kk in rank_hits:
+                topk = lg.topk(kk, dim=1).indices.cpu().numpy()
+                rank_hits[kk] += int((topk == t_te[lo:lo + 1024, None]).any(1).sum())
+        diag = {"copy_share": float(is_copy.mean()),
+                "acc_copy": float(correct[is_copy].mean()),
+                "acc_nocopy": float(correct[~is_copy].mean()),
+                "top5": rank_hits[5] / len(t_te), "top20": rank_hits[20] / len(t_te)}
+        for name_, edges in (("conf", [0.0, 0.25, 0.5, 0.75, 1.01]),):
+            for j in range(len(edges) - 1):
+                m = (conf >= edges[j]) & (conf < edges[j + 1])
+                if m.sum() > 20:
+                    diag[f"acc_conf_{edges[j]:.2f}"] = float(correct[m].mean())
+                    diag[f"share_conf_{edges[j]:.2f}"] = float(m.mean())
+        for lo_f, hi_f, tag in ((0, 100, "rare"), (100, 10_000, "mid"),
+                                (10_000, 10 ** 12, "common")):
+            m = (freq >= lo_f) & (freq < hi_f)
+            if m.sum() > 20:
+                diag[f"acc_freq_{tag}"] = float(correct[m].mean())
+                diag[f"share_freq_{tag}"] = float(m.mean())
+        summary["diag"] = diag
+        print(f"[deg3fit:{encoding}:w{win}] DIAG {json.dumps(diag)}", flush=True)
     run = _wandb_run(f"deg3fit-{encoding}-w{win}-N{n_train}",
                      {"encoding": encoding, "win": win, "n_pairs": K2,
                       "base_top1": base_top1})
