@@ -1255,6 +1255,22 @@ def fit_deg1_exact(bits, G, w, device=None, wd=1e-3, ctx_chunk=131072):
             "b": Wa[-1].to(torch.float32).cpu().numpy()}
 
 
+def _sparsity_stats(E):
+    """Concentration report for per-character energies ||c_j||^2: effective
+    character count (participation ratio) + k needed for 50/90/99% of the
+    captured mass -- 'is the model ACTUALLY sparse'."""
+    e = np.sort(np.asarray(E, np.float64))[::-1]
+    tot = float(e.sum())
+    if tot <= 0 or len(e) == 0:
+        return {"N_eff": 0.0, "k50": 0, "k90": 0, "k99": 0, "total_energy": 0.0}
+    cum = np.cumsum(e)
+    return {"N_eff": float(tot ** 2 / (e ** 2).sum()),
+            "k50": int(np.searchsorted(cum, 0.50 * tot) + 1),
+            "k90": int(np.searchsorted(cum, 0.90 * tot) + 1),
+            "k99": int(np.searchsorted(cum, 0.99 * tot) + 1),
+            "total_energy": tot}
+
+
 def deg2_exact_psi(bits, G, w, r=64, device=None, ctx_chunk=262144, proj=None):
     """EXACT degree-2 spectroscopy, gradient-free: the plain Fourier
     coefficient of EVERY pair character chi_a*chi_b on target dim d is an
@@ -3512,10 +3528,18 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
                     continue
                 if vals[gidx] > found.get(tri, 0.0):
                     found[tri] = float(vals[gidx])
-    tris = sorted(found.items(), key=lambda kv: -kv[1])[:max_tris]
+    # STAGED ordering: LOCAL triples (all bits within the `blocks` newest
+    # blocks) first by psi, then far-anchored ones -- a global psi sort mixed
+    # 5M redundant far triples into the top-900k and DISPLACED better locals
+    # (0.2466 vs local-only 0.2633 at matched count, 2026-07-15)
+    loc = [(t, p) for t, p in found.items() if max(b // B for b in t) < blocks]
+    farr = [(t, p) for t, p in found.items() if max(b // B for b in t) >= blocks]
+    tris = (sorted(loc, key=lambda kv: -kv[1]) +
+            sorted(farr, key=lambda kv: -kv[1]))[:max_tris]
     print(f"[deg3fit:{encoding}:w{win}] {len(found)} distinct triples above "
-          f"{kappa}x floor ({time.time() - t0:.0f}s); fitting top "
-          f"{len(tris)}", flush=True)
+          f"{kappa}x floor ({len(loc)} local, {len(farr)} far; "
+          f"{time.time() - t0:.0f}s); fitting top {len(tris)} staged "
+          f"local-first", flush=True)
     summary = {"encoding": encoding, "win": win, "n_pairs": K2,
                "base_top1": base_top1, "base_kl": base_kl,
                "n_triples_found": len(found), "blocks": blocks, "ladder": []}
@@ -3527,7 +3551,8 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
                                      block=512)
         res123 = float((G_t ** 2).sum(1).mean())
         ks = sorted({k for k in (1_000, 5_000, 20_000, 50_000, 100_000,
-                                 200_000) if k <= len(tris)} | {len(tris)})
+                                 200_000, 500_000, 1_000_000, 2_000_000)
+                     if k <= len(tris)} | {len(tris)})
         ladder = reconstruct_ladder(bte_t, idx3, C3, c0, np.arange(len(tris)),
                                     ks, Wu, t_te, w_te,
                                     kl_ref=(H_te_f32, s_bar), base=base_te)
@@ -3540,6 +3565,15 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
                   flush=True)
         summary["ladder"] = ladder
         summary["deg3_captured"] = res12 - res123
+        summary["sparsity_pairs"] = _sparsity_stats((C2 ** 2).sum(1))
+        summary["sparsity_triples"] = _sparsity_stats((C3 ** 2).sum(1))
+        print(f"[deg3fit:{encoding}:w{win}] SPARSITY pairs "
+              f"{json.dumps(summary['sparsity_pairs'])} triples "
+              f"{json.dumps(summary['sparsity_triples'])}", flush=True)
+        np.savez(f"{ROOT}/deg3fit_coefs_{encoding}_win{win}.npz",
+                 idx2=idx2, C2=C2.astype(np.float16),
+                 idx3=idx3, C3=C3.astype(np.float16))
+        vol.commit()
         Ct3 = torch.as_tensor(C3, device=dev)
         for klo in range(0, len(idx3), 8192):
             base_te += xor_parity_features(bte_t, idx3[klo:klo + 8192]) @ \
