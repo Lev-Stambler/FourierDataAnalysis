@@ -1177,6 +1177,67 @@ def fourier_coefficients(bits, G, w, idx, device=None, char_chunk=8192,
     return (C / float(w_t.sum())).cpu().numpy()
 
 
+def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024):
+    """TRUE matching-pursuit deflation: subtract each character's plain
+    weighted Fourier coefficient ONE AT A TIME against the CURRENT residual,
+    in the given order.  This is the fix for the batch-deflation divergence
+    (2026-07-15 smoke): batch `G -= F(F^T W G / sum w)` computes every
+    coefficient against one residual snapshot and AMPLIFIES an on-data
+    duplicate cluster of size m by (1-m)^2; sequentially, a later duplicate
+    sees psi ~ 0 and gets coefficient ~ 0, and a constant character on the
+    centered target gets coefficient 0.  Each rank-1 update is a 1-D
+    projection, so the residual can never grow.  Returns (C (K, dY) float32,
+    G_out) with G mutated in place when given as a torch tensor."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    was_np = not torch.is_tensor(G)
+    bits_t = bits if torch.is_tensor(bits) else \
+        torch.tensor(np.asarray(bits, np.uint8), device=device)
+    dev = bits_t.device
+    G_t = G if torch.is_tensor(G) else torch.tensor(np.asarray(G, np.float32), device=dev)
+    w_t = torch.tensor(np.asarray(w, np.float32), device=dev)
+    wsum = float(w_t.sum())
+    idx = np.asarray(idx, np.int16)
+    C = np.empty((len(idx), G_t.shape[1]), np.float32)
+    for klo in range(0, len(idx), char_chunk):
+        F = xor_parity_features(bits_t, idx[klo:klo + char_chunk])
+        for j in range(F.shape[1]):
+            fw = F[:, j] * w_t
+            c = (fw @ G_t) / wsum
+            G_t -= torch.outer(F[:, j], c)
+            C[klo + j] = c.cpu().numpy()
+    return C, (G_t.cpu().numpy() if was_np else G_t)
+
+
+def fit_deg1_exact(bits, G, w, device=None, wd=1e-3, ctx_chunk=131072):
+    """Closed-form weighted LS of the target on ALL n degree-1 characters +
+    bias, with TILED fp32 Gram accumulation (fit_regression materializes the
+    D x n design in fp64 -- 65 GB at D=1M, n=8k) and one fp64 solve.
+    Subtracting this fit leaves the train residual with NO degree-1 content.
+    Returns {"W" (n, dY), "b" (dY,)}."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    bits_t = bits if torch.is_tensor(bits) else \
+        torch.tensor(np.asarray(bits, np.uint8), device=device)
+    dev = bits_t.device
+    G_t = G if torch.is_tensor(G) else torch.tensor(np.asarray(G, np.float32), device=dev)
+    w_t = torch.tensor(np.asarray(w, np.float32), device=dev)
+    n, dY = bits_t.shape[1], G_t.shape[1]
+    S = torch.zeros((n + 1, n + 1), dtype=torch.float64, device=dev)
+    bvec = torch.zeros((n + 1, dY), dtype=torch.float64, device=dev)
+    for lo in range(0, len(bits_t), ctx_chunk):
+        X = 1.0 - 2.0 * bits_t[lo:lo + ctx_chunk].float()
+        Xa = torch.cat([X, torch.ones((len(X), 1), device=dev)], dim=1)
+        wc = w_t[lo:lo + ctx_chunk]
+        S += (Xa.t() @ (Xa * wc[:, None])).double()
+        bvec += (Xa.t() @ (G_t[lo:lo + ctx_chunk].float() * wc[:, None])).double()
+    reg = wd * torch.eye(n + 1, dtype=torch.float64, device=dev)
+    reg[-1, -1] = 0.0                                             # never penalize the bias
+    Wa = torch.linalg.solve(S + reg, bvec)
+    return {"W": Wa[:-1].to(torch.float32).cpu().numpy(),
+            "b": Wa[-1].to(torch.float32).cpu().numpy()}
+
+
 def _full_kl(H_pred, H_true, Wu, w, device=None, rows=1024):
     """Weighted mean FULL-VOCAB KL(teacher || student) between the softmaxes of
     two hidden-state batches under the frozen unembedding.  NOT scale-invariant
@@ -1199,12 +1260,13 @@ def _full_kl(H_pred, H_true, Wu, w, device=None, rows=1024):
 
 
 def reconstruct_ladder(bits, idx, C, c0, order, ks, Wu, tstar, w, device=None,
-                       char_chunk=8192, kl_ref=None):
-    """Cumulative plain-Fourier reconstruction F_hat = c0 + sum c_S chi_S,
-    walking characters in ``order`` and snapshotting full-vocab top-1 at each
-    k in ks (single pass).  kl_ref=(H_true, scale) additionally reports
-    KL(teacher || student) with predictions rescaled by ``scale``.
-    Returns [{'k', 'top1'[, 'kl']}, ...]."""
+                       char_chunk=8192, kl_ref=None, base=None):
+    """Cumulative plain-Fourier reconstruction F_hat = base + c0 + sum c_S
+    chi_S, walking characters in ``order`` and snapshotting full-vocab top-1
+    at each k in ks (single pass).  ``base`` (D, dY) is a fixed starting
+    prediction (e.g. the exact degree-1 model).  kl_ref=(H_true, scale)
+    additionally reports KL(teacher || student) with predictions rescaled by
+    ``scale``.  Returns [{'k', 'top1'[, 'kl']}, ...]."""
     import torch
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     bits_t = bits if torch.is_tensor(bits) else \
@@ -1212,7 +1274,11 @@ def reconstruct_ladder(bits, idx, C, c0, order, ks, Wu, tstar, w, device=None,
     dev = bits_t.device
     C_t = torch.as_tensor(np.asarray(C, np.float32), device=dev)
     order = np.asarray(order)
-    Fhat = torch.zeros((len(bits_t), C_t.shape[1]), dtype=torch.float32, device=dev)
+    if base is not None:
+        Fhat = torch.as_tensor(np.asarray(base, np.float32), device=dev).clone() \
+            if not torch.is_tensor(base) else base.clone()
+    else:
+        Fhat = torch.zeros((len(bits_t), C_t.shape[1]), dtype=torch.float32, device=dev)
     out, pos = [], 0
     for k in [int(min(k, len(order))) for k in sorted(set(ks))]:
         while pos < k:
@@ -2758,15 +2824,19 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
                lam: float = 0.1, batch: int = 4096, lr: float = 0.02,
                kappa: float = 4.0, rounds_cap: int = 200,
                encoding: str = "lsh", mlp: int = 0, seed: int = 0):
-    """Gradient-sensed sparse Fourier spectroscopy (gradient matching pursuit):
-    ROUNDS of [sense the heaviest fresh characters of degree 1..4 in the
-    RESIDUAL via soft-annealed selection + -log psi] -> [estimate their PLAIN
-    dataset Fourier coefficients] -> [deflate the residual], on the
-    UNIT-NORMALIZED centered pre-head target (Parseval: total mass <= 1, psi
-    absolute).  Escalation-friendly: a checkpoint on the volume resumes the
-    harvest, so runs with growing --target-chars (1k -> 10k -> 50k -> ...)
-    each only harvest the delta and log held-out top-1 at every character
-    milestone crossed (the character-scaling curve)."""
+    """Gradient-sensed sparse Fourier spectroscopy (gradient matching pursuit)
+    on the UNIT-NORMALIZED centered pre-head target (Parseval: total mass <= 1,
+    psi absolute).  Two stages (Lev's KISS structure): (1) ALL degree-1
+    characters fit EXACTLY once (closed form) and subtracted -- the residual
+    has no degree-1 content, so constant/duplicate-bit equivalence classes are
+    dead on arrival; (2) ROUNDS of [sense the heaviest fresh DEGREE-2/3
+    characters in the residual via soft-annealed selection + -log psi] ->
+    [SEQUENTIAL matching-pursuit deflation (batch deflation amplifies on-data
+    duplicate clusters -- the 2026-07-15 divergence)].  Escalation-friendly:
+    a checkpoint on the volume resumes the harvest, so runs with growing
+    --target-chars (1k -> 10k -> 50k -> ...) each only harvest the delta and
+    log held-out top-1 + KL at every character milestone crossed (the
+    character-scaling curve)."""
     import os, time
     import torch
     vol.reload()
@@ -2808,13 +2878,20 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
     ckpt = f"{ROOT}/gradsense_ckpt_{encoding}_win{win}_N{n_train}.npz"
     idx_all = np.zeros((0, 4), np.int16); psi_all = np.zeros(0)
     C_all = np.zeros((0, G_res.shape[1]), np.float32)
-    seen = set()
+    seen, fit1 = set(), None
     if os.path.exists(ckpt):
         z = np.load(ckpt)
         idx_all, psi_all = z["idx"], z["psi"]
         C_all = z["C"].astype(np.float32)
+        fit1 = {"W": z["W1"].astype(np.float32), "b": z["b1"].astype(np.float32)}
         dedupe_indices(idx_all, psi_all, seen)                    # rebuild the seen set
         print(f"[gradsense:{encoding}] resume {len(idx_all)} chars", flush=True)
+
+    def save_ckpt():
+        np.savez(ckpt + ".tmp.npz", idx=idx_all, psi=psi_all,
+                 C=C_all.astype(np.float16), W1=fit1["W"].astype(np.float16),
+                 b1=fit1["b"])
+        os.replace(ckpt + ".tmp.npz", ckpt)
 
     def apply_chars(bits_t, target, idx, C, sign=1.0, cchunk=8192):
         Ct = torch.as_tensor(C, dtype=torch.float32, device=dev)
@@ -2823,13 +2900,31 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
             target += sign * (F @ Ct[klo:klo + cchunk])
         return target
 
-    Fhat_te = torch.zeros((len(bits_te_t), G_res.shape[1]), device=dev)
-    Fhat_trs = torch.zeros((len(trs), G_res.shape[1]), device=dev)
+    def deg1_pred(bits_t, cchunk=131072):
+        W1 = torch.as_tensor(fit1["W"], device=dev)
+        b1 = torch.as_tensor(fit1["b"], device=dev)
+        out = torch.empty((len(bits_t), G_res.shape[1]), device=dev)
+        for lo in range(0, len(bits_t), cchunk):
+            out[lo:lo + cchunk] = \
+                (1.0 - 2.0 * bits_t[lo:lo + cchunk].float()) @ W1 + b1
+        return out
+
+    # ---- stage 1: ALL degree-1 characters, exactly, once (Lev's step 1) --
+    # the residual then has NO degree-1 content on train, so rounds cannot
+    # rediscover deg-1 (incl. every constant/duplicate-bit equivalence class)
+    if fit1 is None:
+        t1 = time.time()
+        fit1 = fit_deg1_exact(bits_tr_t, G_res, w_tr, device=dev)
+        print(f"[gradsense:{encoding}] deg-1 exact fit ({nb} chars) "
+              f"in {time.time() - t1:.0f}s", flush=True)
+    G_res -= deg1_pred(bits_tr_t)
+    trs_t = torch.tensor(trs, device=dev)
+    Fhat_te = deg1_pred(bits_te_t)
+    Fhat_trs = deg1_pred(bits_tr_t[trs_t])
     if len(idx_all):
         G_res = apply_chars(bits_tr_t, G_res, idx_all, C_all, sign=-1.0)
         Fhat_te = apply_chars(bits_te_t, Fhat_te, idx_all, C_all)
-        Fhat_trs = apply_chars(bits_tr_t[torch.tensor(trs, device=dev)],
-                               Fhat_trs, idx_all, C_all)
+        Fhat_trs = apply_chars(bits_tr_t[trs_t], Fhat_trs, idx_all, C_all)
 
     # KL reference: teacher probs reconstructed from stored hidden states;
     # normalized predictions rescaled by the constant mean teacher norm
@@ -2845,7 +2940,10 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
         return _full_kl((Fhat.cpu().numpy() + c0[None, :]) * s_bar, H_te_f32,
                         Wu, w_te, device=dev)
     kl0 = test_kl(torch.zeros_like(Fhat_te))                       # k=0 mean-only reference
-    print(f"[gradsense:{encoding}] mean-vector-only KL {kl0:.4f}", flush=True)
+    deg1_base_te = deg1_pred(bits_te_t)                            # the deg-1-only baseline
+    deg1_top1, deg1_kl = top1(deg1_base_te, t_te, w_te), test_kl(deg1_base_te)
+    print(f"[gradsense:{encoding}] mean-only KL {kl0:.4f}; deg-1 exact: "
+          f"top-1 {deg1_top1:.4f} KL {deg1_kl:.4f}", flush=True)
 
     run = _wandb_run(f"gradsense-{encoding}-N{n_train}-K{target_chars}",
                      {"encoding": encoding, "n_train": n_train, "win": win,
@@ -2861,7 +2959,8 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
     if target_chars not in milestones:
         milestones.append(target_chars)
     crossed = {m for m in milestones if m <= len(idx_all)}
-    profile = (chunk // 4,) * 4
+    profile = (0, chunk // 2, chunk // 2)                          # deg 2/3 only: deg-1 is exact
+    prev_mass = float((G_res ** 2).sum(1).mean())
     rnd, dry = 0, 0
     while len(idx_all) < target_chars and rnd < rounds_cap and dry < 3:
         t0 = time.time()
@@ -2878,21 +2977,30 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
         gate = kappa / n_val
         kept = psi_f > gate
         idx_k, psi_k = idx_f[kept], psi_f[kept]
+        if len(idx_k) and float(psi_k.max()) > mass0 + 1e-3:       # Parseval contract
+            raise RuntimeError(f"psi {psi_k.max():.4f} > total mass {mass0:.4f} "
+                               f"at round {rnd}: residual corrupted")
         if len(idx_k) == 0:
             dry += 1; rnd += 1
             print(f"[gradsense:{encoding}] round {rnd}: dry ({len(res['idx'])} raw, "
                   f"{len(idx_f)} fresh, 0 kept)", flush=True)
             continue
         dry = 0
-        C_k = fourier_coefficients(bits_tr_t, G_res, w_tr, idx_k, device=dev)
-        G_res = apply_chars(bits_tr_t, G_res, idx_k, C_k, sign=-1.0)
+        order = np.argsort(-psi_k)
+        idx_k, psi_k = idx_k[order], psi_k[order]
+        # SEQUENTIAL matching-pursuit deflation (batch deflation amplifies
+        # on-data duplicate clusters -- the 2026-07-15 divergence)
+        C_k, G_res = sequential_deflate(bits_tr_t, G_res, w_tr, idx_k, device=dev)
         Fhat_te = apply_chars(bits_te_t, Fhat_te, idx_k, C_k)
-        Fhat_trs = apply_chars(bits_tr_t[torch.tensor(trs, device=dev)],
-                               Fhat_trs, idx_k, C_k)
+        Fhat_trs = apply_chars(bits_tr_t[trs_t], Fhat_trs, idx_k, C_k)
         idx_all = np.concatenate([idx_all, idx_k])
         psi_all = np.concatenate([psi_all, psi_k])
         C_all = np.concatenate([C_all, C_k])
         res_mass = float((G_res ** 2).sum(1).mean())
+        if res_mass > prev_mass * 1.001 + 1e-9:                    # projections never grow
+            raise RuntimeError(f"deflation diverged at round {rnd}: "
+                               f"{prev_mass:.4f} -> {res_mass:.4f}")
+        prev_mass = res_mass
         deg_k = (np.asarray(idx_k) >= 0).sum(1)
         wb({"chars_accepted": len(idx_all), "fresh": len(idx_k),
             "dup_rate": 1.0 - len(idx_f) / max(len(res["idx"]), 1),
@@ -2902,7 +3010,7 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
             "residual_mass": res_mass, "captured_mass": mass0 - res_mass,
             "early_stop_step": res["stopped_at"],
             "chars_per_min": len(idx_k) / max((time.time() - t0) / 60, 1e-9),
-            **{f"deg{d}_accepted": int((deg_k == d).sum()) for d in (1, 2, 3, 4)}})
+            **{f"deg{d}_accepted": int((deg_k == d).sum()) for d in (2, 3)}})
         print(f"[gradsense:{encoding}] round {rnd}: +{len(idx_k)} "
               f"(total {len(idx_all)}, residual {res_mass:.4f}/{mass0:.4f}, "
               f"stop@{res['stopped_at']})", flush=True)
@@ -2918,26 +3026,24 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
                       f"captured {mass0 - res_mass:.4f})", flush=True)
         rnd += 1
         if rnd % 8 == 0:
-            np.savez(ckpt + ".tmp.npz", idx=idx_all, psi=psi_all,
-                     C=C_all.astype(np.float16))
-            os.replace(ckpt + ".tmp.npz", ckpt)
+            save_ckpt()
             vol.commit()
-    np.savez(ckpt + ".tmp.npz", idx=idx_all, psi=psi_all, C=C_all.astype(np.float16))
-    os.replace(ckpt + ".tmp.npz", ckpt)
+    save_ckpt()
 
     final_te, final_trs = top1(Fhat_te, t_te, w_te), top1(Fhat_trs, t_trs, np.ones(len(trs)))
     final_kl = test_kl(Fhat_te)
     res_mass = float((G_res ** 2).sum(1).mean())
     ks = [m for m in milestones if m <= len(idx_all)] or [len(idx_all)]
+    # sensed chars in psi order ON TOP of the exact deg-1 base
     ladder = reconstruct_ladder(bits_te_t, idx_all, C_all, c0,
                                 np.argsort(-psi_all), ks, Wu, t_te, w_te,
-                                kl_ref=(H_te_f32, s_bar))
-    # random control: same realized degree profile, PLAIN coefficients of the
-    # original target, same ladder
+                                kl_ref=(H_te_f32, s_bar), base=deg1_base_te)
+    # random control: same realized deg-2/3 profile, PLAIN coefficients of the
+    # deg-1-FREE residual target, same deg-1 base, same ladder
     rng = np.random.default_rng(7)
     deg_all = (idx_all >= 0).sum(1)
     r_rows, r_seen = [], set()
-    for d in (1, 2, 3, 4):
+    for d in (2, 3):
         need = int((deg_all == d).sum())
         while need > 0:
             row = np.full(4, -1, np.int16)
@@ -2951,11 +3057,12 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
         r_idx = np.stack(r_rows)
         G0 = torch.tensor(normalize(dtr["H"]) - c0[None, :], dtype=torch.float32,
                           device=dev)
+        G0 -= deg1_pred(bits_tr_t)
         C_r = fourier_coefficients(bits_tr_t, G0, w_tr, r_idx, device=dev)
         del G0
         ctl_ladder = reconstruct_ladder(bits_te_t, r_idx, C_r, c0,
                                         np.arange(len(r_idx)), ks, Wu, t_te, w_te,
-                                        kl_ref=(H_te_f32, s_bar))
+                                        kl_ref=(H_te_f32, s_bar), base=deg1_base_te)
     mlp_top1 = None
     if mlp:
         fit = fit_mlp_hidden(bits_tr, normalize(dtr["H"]) - c0[None, :], w_tr, vm,
@@ -2966,10 +3073,11 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
                "target_chars": target_chars, "chars": int(len(idx_all)),
                "sanity_top1": sane, "TEST_top1": final_te, "TRAIN_sub_top1": final_trs,
                "TEST_kl": final_kl, "kl_mean_only": kl0, "s_bar": s_bar,
+               "deg1_top1": deg1_top1, "deg1_kl": deg1_kl,
                "residual_mass": res_mass, "captured_mass": mass0 - res_mass,
                "total_mass": mass0, "ladder": ladder, "control_ladder": ctl_ladder,
                "mlp_top1": mlp_top1,
-               "deg_hist": {str(d): int((deg_all == d).sum()) for d in (1, 2, 3, 4)}}
+               "deg_hist": {str(d): int((deg_all == d).sum()) for d in (2, 3)}}
     if run is not None:
         run.summary.update({k: v for k, v in summary.items()
                             if not isinstance(v, (list, dict))})

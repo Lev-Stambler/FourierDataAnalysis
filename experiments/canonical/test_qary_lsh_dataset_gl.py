@@ -25,10 +25,12 @@ from qary_lsh_dataset_gl import (
     decorrelation_penalty,
     dedupe_indices,
     draw_fibers,
+    fit_deg1_exact,
     fit_mlp_hidden,
     fourier_coefficients,
     learn_sense_chunk,
     masks_to_indices,
+    sequential_deflate,
     xor_parity_features,
     fit_regression,
     fit_softmax_slots,
@@ -766,49 +768,96 @@ def test_normalized_target_parseval():
 
 
 def test_learn_sense_recovers_planted():
-    # m_rows matters: deflation ghosts (finite-sample coefficient error ~1/sqrt(m))
-    # must sit below the psi gate or slots chase them instead of coordinating
-    # multi-bit picks (diagnosed at m=4096; production runs at m ~ 1e6)
+    # the REAL two-stage pipeline: (1) exact closed-form fit of ALL degree-1
+    # characters, subtract; (2) rounds sense degree 2/3 on the deg-1-free
+    # residual, accepted chars deflated SEQUENTIALLY (matching pursuit).
+    # m_rows matters: deflation ghosts (finite-sample error ~1/sqrt(m)) must
+    # sit below the psi gate (diagnosed at m=4096; production m ~ 1e6)
     rng = np.random.default_rng(4)
     m_rows, n, dY = 16384, 12, 8
     bits = rng.integers(0, 2, (m_rows, n)).astype(np.uint8)
-    planted = np.zeros((6, n), np.uint8)
-    sels = [[3], [9], [1, 6], [4, 10], [0, 5, 11], [2, 5, 7, 8]]
-    for j, sel in enumerate(sels):
+    bits[:, 7] = 0                                                 # constant on-data bit
+    planted = np.zeros((5, n), np.uint8)
+    deg1 = [[3], [9]]
+    deep = [[1, 6], [4, 10], [0, 5, 11]]
+    for j, sel in enumerate(deg1 + deep):
         planted[j, sel] = 1
-    mags = np.array([2.0, 0.2, 1.0, 0.3, 0.5, 0.4])                # 10x magnitude spread
-    V = rng.normal(size=(6, dY)); V /= np.linalg.norm(V, axis=1, keepdims=True)
+    mags = np.array([2.0, 0.2, 1.0, 0.3, 0.5])                     # 10x magnitude spread
+    V = rng.normal(size=(5, dY)); V /= np.linalg.norm(V, axis=1, keepdims=True)
     G = (parity_features(bits, planted) * mags) @ V
     G = G - G.mean(0)
     G /= np.sqrt((G ** 2).sum(1).mean())                           # E||G||^2 = 1 (Parseval scale,
     w = np.ones(m_rows)                                            # matching the real normalized target)
     vm = rng.random(m_rows) < 0.15
     total_mass = float((G ** 2).mean(0).sum())
-    # the REAL harvest loop: sense on the residual, estimate plain coefficients,
-    # deflate -- gradient matching pursuit (re-found chars earn psi ~ 0)
-    G_res = G.astype(np.float32).copy()
+    # stage 1: ALL degree-1 characters fit exactly, once, and subtracted
+    fit1 = fit_deg1_exact(bits, G, w, device="cpu")
+    X = 1.0 - 2.0 * bits.astype(np.float32)
+    G_res = (G - X @ fit1["W"] - fit1["b"]).astype(np.float32)
+    deg23_mass = float((mags[2:] ** 2).sum() / (mags ** 2).sum()) * total_mass
+    assert float((G_res ** 2).sum(1).mean()) < deg23_mass * 1.05   # deg-1 content gone
+    # stage 2: rounds sense deg 2/3 on the residual, sequential deflation
     seen, got, stopped = set(), set(), []
     for rnd in range(6):
-        res = learn_sense_chunk(bits, G_res, w, vm, profile=(8, 8, 8, 16),
+        res = learn_sense_chunk(bits, G_res, w, vm, profile=(0, 8, 16),
                                 lam=0.1, steps=400, min_steps=64, patience=5,
                                 check_every=16, lr=0.05, batch=2048, npairs=256,
                                 device="cpu", seed=rnd)
         idx_f, psi_f = dedupe_indices(res["idx"], res["psi"], seen)
         keep = psi_f > 3.0 / int(vm.sum())                         # psi gate vs the val noise floor
-        idx_f = idx_f[keep]
+        idx_f, psi_f = idx_f[keep], psi_f[keep]
         stopped.append(res["stopped_at"])
         if len(idx_f) == 0:
             continue
-        C = fourier_coefficients(bits, G_res, w, idx_f, device="cpu")
-        G_res = G_res - xor_parity_features(bits, idx_f) @ C       # deflate
+        C, G_res = sequential_deflate(bits, G_res, w,
+                                      idx_f[np.argsort(-psi_f)], device="cpu")
         got |= {tuple(r[r >= 0]) for r in idx_f}
         if float((G_res ** 2).sum(1).mean()) < 0.02 * total_mass:
             break
-    for sel in sels:                                               # magnitude-free: ALL found
+    for sel in deep:                                               # magnitude-free: ALL found
         assert tuple(sel) in got, f"planted {sel} not recovered (got {sorted(got)})"
     assert min(stopped) <= 400 and len(res["history"]) >= 1
-    # deflation drove the residual to (near) nothing: the function was captured
+    # both stages together captured (near) everything
     assert float((G_res ** 2).sum(1).mean()) < 0.05 * total_mass
+
+
+def test_sequential_deflate_handles_duplicates_and_constants():
+    # the first grad-sense smoke diverged because BATCH deflation computed all
+    # coefficients against one residual snapshot: an on-data duplicate cluster
+    # of size m (305 constant LSH tie-break bit columns make distinct masks the
+    # same function) has Gram eigenvalue m and gets AMPLIFIED by (1-m)^2.
+    # Sequential (true matching-pursuit) deflation must handle those natively:
+    # a later duplicate sees psi ~ 0, a constant char gets coefficient 0.
+    rng = np.random.default_rng(11)
+    n, dY = 10, 6
+    bits = _all_masks(n)                                           # full domain: distinct free-bit
+    bits[:, 3] = 0                                                 # chars exactly orthogonal
+    bits[:, 7] = bits[:, 2]                                        # constant + duplicate columns
+    m_rows = len(bits)
+    masks = np.zeros((2, n), np.uint8)
+    masks[0, 2] = 1; masks[1, [5, 8]] = 1
+    V = rng.normal(size=(2, dY))
+    G = parity_features(bits, masks) @ V
+    G = (G - G.mean(0)).astype(np.float32)
+    w = np.ones(m_rows)
+    order = np.zeros((4, n), np.uint8)
+    order[0, 2] = 1                                                # the real char
+    order[1, 7] = 1                                                # on-data dup of {2}
+    order[2, 3] = 1                                                # constant char
+    order[3, [5, 8]] = 1                                           # the other real char
+    idx = masks_to_indices(order)
+    C, G_out = sequential_deflate(bits, G.copy(), w, idx, device="cpu")
+    assert np.allclose(C[0], V[0], atol=1e-6)                      # plain coefficient
+    assert np.abs(C[1]).max() < 1e-5                               # dup copy: ~0
+    assert np.abs(C[2]).max() < 1e-5                               # constant char: ~0
+    assert np.allclose(C[3], V[1], atol=1e-6)
+    assert float((G_out ** 2).mean()) < 1e-10                      # fully captured
+    # the batch version on the same set is EXACTLY the diverging update: the
+    # {2},{7} pair forms a Gram eigenvalue-2 cluster (kept as the pinned
+    # counterexample for why the harvest loop must never use it)
+    Cb = fourier_coefficients(bits, G, w, idx, device="cpu")
+    G_batch = G - xor_parity_features(bits, idx) @ Cb
+    assert float((G_batch ** 2).mean()) > float((G_out ** 2).mean())
 
 
 def test_full_kl_zero_on_teacher_and_positive_off():
