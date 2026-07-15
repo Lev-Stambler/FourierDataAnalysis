@@ -122,6 +122,55 @@ def test_end_to_end_synthetic_exact_recovery():
     assert model["C"].shape[0] == summary["K"]
 
 
+def _triple_parity(bits, a, b, c):
+    return (1.0 - 2.0 * (bits[:, a] ^ bits[:, b] ^ bits[:, c])).astype(np.float32)
+
+
+def test_deg3_anchored_recovers_planted_triple():
+    rng = np.random.default_rng(5)
+    D, n = 40_000, 20
+    bits = rng.integers(0, 2, (D, n), dtype=np.uint8)
+    g = (0.4 * _triple_parity(bits, 2, 7, 13)
+         + 0.02 * rng.standard_normal(D).astype(np.float32))
+    pair_idx = np.array([[2, 7, -1, -1], [4, 9, -1, -1]], np.int16)  # anchor 1 hits
+    M3 = edu_gl.deg3_anchored_psi(bits, g, pair_idx, anchor_chunk=1)
+    assert abs(M3[13, 0] - 0.4) < 0.02                # coefficient at (2,7)+13
+    floor = float((g ** 2).mean()) / D
+    idx3, psi3 = edu_gl.select_triples(M3, pair_idx, floor, max_triples=10)
+    assert tuple(idx3[0, :3]) == (2, 7, 13)
+    assert psi3[0] > 100 * floor
+    # deflating the found triple removes the planted signal
+    C3, g_out = edu_gl.sequential_deflate(bits, g, idx3[:1], block=1)
+    assert abs(C3[0] - 0.4) < 0.02
+    assert float((np.asarray(g_out) ** 2).mean()) < 0.01
+
+
+def test_end_to_end_with_deg3():
+    q, w = 64, 6
+    codes = edu_gl.token_id_codes(q)
+
+    def f(bits):
+        return (0.2 * _pair_parity(bits, 5, 9)
+                + 0.3 * _triple_parity(bits, 5, 9, 20)
+                - 0.15 * _triple_parity(bits, 2, 14, 33))
+
+    def draw(D, seed):
+        wins = np.random.default_rng(seed).integers(0, q, (D, w))
+        bits = edu_gl.window_bits(wins, codes)
+        return bits, 2.5 + 2.5 * f(bits)
+
+    bits_tr, y_tr = draw(50_000, 20)
+    bits_te, y_te = draw(5_000, 21)
+    summary, _ = edu_gl.fit_core(
+        bits_tr, y_tr, {"test": (bits_te, y_te)}, max_pairs=50, ks=(10,),
+        deg3_anchors=50, max_triples=50, ks3=(10,), device="cpu")
+    # triple (2,14,33) has NO planted pair inside it -- only (5,9,20) is
+    # anchored-reachable, so R2 lands near the reachable ceiling, not 0.99
+    assert summary["ladder3"][-1]["test"]["r2"] > summary["ladder"][-1]["test"]["r2"]
+    r2 = summary["ladder3"][-1]["test"]["r2"]
+    assert r2 > 0.5, r2
+
+
 def test_score_metrics_sane():
     y = np.array([0.5, 2.0, 3.5, 4.5, 1.0])
     perfect = edu_gl.score_metrics(edu_gl.normalize_scores(y), y)

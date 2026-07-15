@@ -137,6 +137,23 @@ def xor_parity_features(bits, idx):
     return (1.0 - 2.0 * par).astype(np.float32)
 
 
+def mask_parity_features(bits, masks, ctx_chunk=262144):
+    """(D, K) +-1 parities of DENSE bit-masks of any degree: fp32 GEMM is
+    exact (bit counts << 2^24), 1 - 2*((bits @ m^T) % 2).
+    crib: canonical sequential_deflate masks branch L1207-1219."""
+    import torch
+    if torch.is_tensor(bits):
+        m_t = torch.as_tensor(np.asarray(masks, np.float32), device=bits.device)
+        out = torch.empty((len(bits), len(m_t)), device=bits.device)
+        for lo in range(0, len(bits), ctx_chunk):
+            bf = bits[lo:lo + ctx_chunk].float()
+            out[lo:lo + ctx_chunk] = 1.0 - 2.0 * ((bf @ m_t.t()) % 2.0)
+        return out
+    m = np.asarray(masks, np.float32)
+    return (1.0 - 2.0 * ((np.asarray(bits, np.float32) @ m.T) % 2.0)) \
+        .astype(np.float32)
+
+
 def fit_deg1_exact(bits, y, device=None, wd=1e-3, ctx_chunk=131072):
     """Closed-form LS of the (centered) scalar target on ALL n degree-1
     characters + bias: tiled fp32 Gram accumulation, one fp64 solve, never
@@ -190,7 +207,8 @@ def deg2_psi_scalar(bits, g, device=None, ctx_chunk=131072):
     return psi2.cpu().numpy(), float((g_t.float() ** 2).mean())
 
 
-def sequential_deflate(bits, g, idx, device=None, char_chunk=1024, block=512):
+def sequential_deflate(bits, g, idx, device=None, char_chunk=1024, block=512,
+                       masks=None):
     """TRUE matching-pursuit deflation of a scalar residual: subtract each
     character's plain Fourier coefficient against the CURRENT residual, in the
     given order.  Batch deflation is a KNOWN FAILURE (amplifies on-data
@@ -208,12 +226,18 @@ def sequential_deflate(bits, g, idx, device=None, char_chunk=1024, block=512):
         torch.tensor(np.asarray(bits, np.uint8), device=device)
     dev = bits_t.device
     g_t = g if torch.is_tensor(g) else torch.tensor(np.asarray(g, np.float32), device=dev)
-    idx = np.asarray(idx, np.int16)
+    if masks is not None:
+        masks = np.asarray(masks, np.uint8)
+        idx = np.zeros((len(masks), 4), np.int16)                 # length only
+        _feat = lambda lo, hi: mask_parity_features(bits_t, masks[lo:hi])
+    else:
+        idx = np.asarray(idx, np.int16)
+        _feat = lambda lo, hi: xor_parity_features(bits_t, idx[lo:hi])
     D = len(bits_t)
     C = np.empty(len(idx), np.float32)
     if block > 1:
         for klo in range(0, len(idx), block):
-            F = xor_parity_features(bits_t, idx[klo:klo + block])
+            F = _feat(klo, min(klo + block, len(idx)))
             k = F.shape[1]
             S = torch.zeros((k, k), dtype=torch.float32, device=dev)
             bvec = torch.zeros((k,), dtype=torch.float32, device=dev)
@@ -229,12 +253,65 @@ def sequential_deflate(bits, g, idx, device=None, char_chunk=1024, block=512):
             C[klo:klo + k] = C_b.cpu().numpy()
         return C, (g_t.cpu().numpy() if was_np else g_t)
     for klo in range(0, len(idx), char_chunk):
-        F = xor_parity_features(bits_t, idx[klo:min(klo + char_chunk, len(idx))])
+        F = _feat(klo, min(klo + char_chunk, len(idx)))
         for j in range(F.shape[1]):
             c = float(F[:, j] @ g_t) / D
             g_t -= c * F[:, j]
             C[klo + j] = c
     return C, (g_t.cpu().numpy() if was_np else g_t)
+
+
+def deg3_anchored_psi(bits, g, pair_idx, device=None, anchor_chunk=256):
+    """EXACT anchored degree-3 spectroscopy: for every anchor pair (a,b) and
+    every third bit c, the plain Fourier coefficient of chi_a chi_b chi_c on
+    the residual g is M3[c, j] = mean(g * chi_{ab_j} * x_c) -- one
+    (n x D)(D x A) GEMM sweep over anchor chunks.  Anchoring on the top
+    deflated pairs is the same local-first heuristic as the canonical deg-3
+    stage (qary_lsh_dataset_gl.py deg3_fit).  Returns M3 (n, A) float32."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    bits_t = bits if torch.is_tensor(bits) else \
+        torch.tensor(np.asarray(bits, np.uint8), device=device)
+    dev = bits_t.device
+    g_t = g if torch.is_tensor(g) else torch.tensor(np.asarray(g, np.float32), device=dev)
+    D, n = bits_t.shape
+    A = len(pair_idx)
+    ft = torch.bfloat16 if dev.type == "cuda" else torch.float32
+    M3 = torch.zeros((n, A), dtype=torch.float32, device=dev)
+    for alo in range(0, A, anchor_chunk):
+        ahi = min(alo + anchor_chunk, A)
+        Chi = xor_parity_features(bits_t, pair_idx[alo:ahi])       # (D, a)
+        Chi *= g_t[:, None]
+        acc = torch.zeros((n, ahi - alo), dtype=torch.float32, device=dev)
+        for lo in range(0, D, 131072):
+            X = 1.0 - 2.0 * bits_t[lo:lo + 131072].to(ft)
+            acc += (X.t() @ Chi[lo:lo + 131072].to(ft)).float()
+        M3[:, alo:ahi] = acc / D
+    return M3.cpu().numpy()
+
+
+def select_triples(M3, pair_idx, floor, max_triples):
+    """Candidate triples (a, b, c) from the anchored map: psi3 = M3^2 above
+    2x floor, c not in the anchor pair, canonical-sorted and deduped keeping
+    each triple's highest-psi occurrence, ordered by psi desc, capped."""
+    n, A = M3.shape
+    psi3 = M3.astype(np.float64) ** 2
+    cs, js = np.nonzero(psi3 > 2.0 * floor)
+    if len(cs) == 0:
+        return np.zeros((0, 4), np.int16), np.zeros(0)
+    a = pair_idx[js, 0].astype(np.int64); b = pair_idx[js, 1].astype(np.int64)
+    c = cs.astype(np.int64)
+    keep = (c != a) & (c != b)                       # duplicated bit = deg-1 alias
+    a, b, c, vals = a[keep], b[keep], c[keep], psi3[cs[keep], js[keep]]
+    tri = np.sort(np.stack([a, b, c], 1), axis=1)
+    keys = (tri[:, 0] * n + tri[:, 1]) * n + tri[:, 2]
+    order = np.argsort(-vals, kind="stable")
+    _, first = np.unique(keys[order], return_index=True)
+    sel = order[first]                               # max-psi occurrence per triple
+    sel = sel[np.argsort(-vals[sel], kind="stable")][:max_triples]
+    idx3 = np.full((len(sel), 4), -1, np.int16)
+    idx3[:, :3] = tri[sel]
+    return idx3, vals[sel]
 
 
 # --------------------------------------------------------------------- metrics
@@ -278,7 +355,9 @@ def score_metrics(pred_norm, y_raw):
 # ------------------------------------------------------------------------- fit
 
 def fit_core(bits_tr, y_tr_raw, evals, max_pairs=400_000, block=512, device=None,
-             ks=(100, 1_000, 10_000, 50_000, 200_000), log=None, ctx_chunk=131072):
+             ks=(100, 1_000, 10_000, 50_000, 200_000), log=None, ctx_chunk=131072,
+             deg3_anchors=0, max_triples=200_000,
+             ks3=(1_000, 10_000, 50_000, 100_000)):
     """The whole calculated pipeline: c0 -> exact deg-1 -> exact deg-2 psi with
     noise floor -> matching-pursuit deflation -> cumulative pair ladder.
     ``evals`` maps tag -> (bits, y_raw); metrics per rung per tag.
@@ -353,7 +432,45 @@ def fit_core(bits_tr, y_tr_raw, evals, max_pairs=400_000, block=512, device=None
                   **{f"{t}_{m}": entry[t][m] for t in eb
                      for m in ("r2", "mse", "spearman", "f1_ge3")}})
     summary["ladder"] = ladder
-    return summary, {"c0": c0, "W1": W1, "b1": np.float32(b1), "idx": idx, "C": C}
+    idx3 = np.zeros((0, 4), np.int16)
+    C3 = np.zeros(0, np.float32)
+    if deg3_anchors and K:
+        # deg-3 on the deg-2 residual, anchored on the top deflated pairs --
+        # run with max_pairs at the val-selected deg-2 rung so the residual
+        # (and the eval base) is the val-optimal deg-2 model, not the noise tail
+        anch = np.argsort(-np.abs(C))[:deg3_anchors]
+        M3 = deg3_anchored_psi(bits_t, g, idx[anch], device=dev)
+        floor3 = float((g ** 2).mean()) / D
+        idx3, psi3 = select_triples(M3, idx[anch], floor3, max_triples)
+        print(f"[fit] deg-3: {deg3_anchors} anchors, floor {floor3:.3e}, "
+              f"{len(idx3)} triples kept (max psi {psi3[0]:.3e})"
+              if len(idx3) else "[fit] deg-3: no triples above floor", flush=True)
+        if len(idx3):
+            C3, g = sequential_deflate(bits_t, g, idx3, device=dev, block=block)
+            summary["res_deg3"] = float((g ** 2).mean())
+            C3_t = torch.tensor(C3, device=dev)
+            lo = 0
+            ladder3 = []
+            for k in sorted({k for k in ks3 if k < len(idx3)} | {len(idx3)}):
+                for blo in range(lo, k, 4096):
+                    hi = min(blo + 4096, k)
+                    for t in eb:
+                        adds[t] += xor_parity_features(eb[t], idx3[blo:hi]) @ C3_t[blo:hi]
+                lo = k
+                entry = {"k3": int(k)}
+                for t in eb:
+                    entry[t] = score_metrics((base[t] + adds[t]).cpu().numpy(),
+                                             evals[t][1])
+                ladder3.append(entry)
+                print(f"[fit] === deg-2 + {k} triples: "
+                      + " ".join(f"{t} R2 {entry[t]['r2']:.4f}" for t in eb),
+                      flush=True)
+                emit({"triples": k,
+                      **{f"{t}3_{m}": entry[t][m] for t in eb
+                         for m in ("r2", "mse", "spearman")}})
+            summary["ladder3"] = ladder3
+    return summary, {"c0": c0, "W1": W1, "b1": np.float32(b1), "idx": idx, "C": C,
+                     "idx3": idx3, "C3": C3}
 
 
 # ------------------------------------------------------------------------ data
@@ -524,7 +641,8 @@ def build_codes(encoding, b=B_LSH):
               memory=32768, secrets=WANDB_SECRET)
 def fit(encoding: str = "lsh", w: int = W_WIN, b: int = B_LSH,
         max_pairs: int = 400_000, n_train: int = 1_000_000,
-        n_val: int = 25_000, n_test: int = 25_000, block: int = 512):
+        n_val: int = 25_000, n_test: int = 25_000, block: int = 512,
+        deg3_anchors: int = 0, max_triples: int = 200_000):
     """Encode -> fit_core -> compression accounting -> save model + summary."""
     vol.reload()
     data = np.load(_data_path(w, n_train, n_val, n_test))
@@ -538,6 +656,7 @@ def fit(encoding: str = "lsh", w: int = W_WIN, b: int = B_LSH,
                       "n_train": n_train, "max_pairs": max_pairs})
     summary, model = fit_core(bits_tr, data["y_tr"], evals,
                               max_pairs=max_pairs, block=block,
+                              deg3_anchors=deg3_anchors, max_triples=max_triples,
                               log=(run.log if run is not None else None))
     n_params = int(np.load(f"{ROOT}/emb.npz")["n_params"])
     teacher_bytes = 4 * n_params
@@ -657,13 +776,15 @@ def show():
 @app.local_entrypoint()
 def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
          b: int = B_LSH, max_pairs: int = 400_000, n_train: int = 1_000_000,
-         n_val: int = 25_000, n_test: int = 25_000, batch: int = 256):
+         n_val: int = 25_000, n_test: int = 25_000, batch: int = 256,
+         deg3_anchors: int = 0, max_triples: int = 200_000):
     if stage == "label":
         print(label.remote(n_train, n_val, n_test, w, batch))
     elif stage == "fit":
         encs = ("lsh", "ctrl", "tokid") if encoding == "all" else (encoding,)
         for enc in encs:
-            fit.remote(enc, w, b, max_pairs, n_train, n_val, n_test)
+            fit.remote(enc, w, b, max_pairs, n_train, n_val, n_test,
+                       512, deg3_anchors, max_triples)
     elif stage == "ceilings":
         ceilings.remote(w, n_train, n_val, n_test)
     elif stage == "show":
