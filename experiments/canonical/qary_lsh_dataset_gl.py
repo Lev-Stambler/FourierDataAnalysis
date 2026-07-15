@@ -1579,17 +1579,26 @@ def _fork_and_label(model, PRE_ext, w, G_branches, q, slot_ids, batch_fibers=48,
             H = np.empty((M * G_branches, hb.shape[1]), dtype=np.float16)
         H[lo * G_branches:lo * G_branches + bf * G_branches] = hb.cpu().numpy().astype(np.float16)
         if selfcheck and lo == 0:
-            # fail loudly if the forked cache does not reproduce a fresh forward:
-            # branch 0 of fiber 0 must match re-forwarding [PRE_ext[0], its fills]
-            seq = np.concatenate([PRE_ext[0], toks[0]])[None, :]
-            with torch.inference_mode():
-                ref = model(input_ids=torch.tensor(seq, device="cuda"),
-                            return_dict=True, logits_to_keep=1).logits[0, -1, :q]
-                ref = torch.softmax(ref.float(), -1)[slot_t].cpu().numpy()
-            got = term[0, slot_t].cpu().numpy()
-            err = float(np.abs(ref - got).max())
-            assert err < 1e-2, f"forked cache mismatch (max slot err {err})"
-            print(f"[fork] self-check ok (max slot err {err:.2e})", flush=True)
+            # fail loudly if the forked cache does not reproduce a fresh forward.
+            # A REAL fork bug (wrong conditioning) breaks EVERY sequence by
+            # O(0.1-1); fp16 incremental-decode-vs-full-forward noise is a
+            # per-sequence lottery with a heavy tail (observed 1.5e-3 typical,
+            # 2.3e-2 tail) -- so check branch 0 of several fibers and gate on
+            # the MEDIAN, not a single-sample max
+            errs = []
+            for fi in range(min(4, bf)):
+                seq = np.concatenate([PRE_ext[fi], toks[fi * G_branches]])[None, :]
+                with torch.inference_mode():
+                    ref = model(input_ids=torch.tensor(seq, device="cuda"),
+                                return_dict=True, logits_to_keep=1).logits[0, -1, :q]
+                    ref = torch.softmax(ref.float(), -1)[slot_t].cpu().numpy()
+                got = term[fi * G_branches, slot_t].cpu().numpy()
+                errs.append(float(np.abs(ref - got).max()))
+            err = float(np.median(errs))
+            assert err < 1e-2, \
+                f"forked cache mismatch (median slot err {err}, all {errs})"
+            print(f"[fork] self-check ok (median slot err {err:.2e}, "
+                  f"max {max(errs):.2e})", flush=True)
         base = lo * G_branches
         Gt[base:base + bf * G_branches] = toks
         picked = term[:, slot_t].cpu().numpy()
