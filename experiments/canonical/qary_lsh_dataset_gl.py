@@ -1926,7 +1926,8 @@ def make_oracle_data(m_fibers: int = 2000, g: int = 24, p_back: int = 0,
     return out
 
 
-def _load_fork_levels(fill_len, m_fibers, g, depth, codes, target="slots"):
+def _load_fork_levels(fill_len, m_fibers, g, depth, codes, target="slots",
+                      deg1_W=None, fiber_center=False):
     """Assemble the tree's per-level fork bit-data from cached oracle tables:
     level j = fork that resampled the newest j+1 tokens (p_back=j).  Returns
     a list of (bits (m, (j+1)*B) newest-first, F (m,V) centered, gid (m,)).
@@ -1934,28 +1935,54 @@ def _load_fork_levels(fill_len, m_fibers, g, depth, codes, target="slots"):
     standardized with POOLED stats (one scale across levels, so psi is
     comparable level-to-level) and per-row UNIT-normalized -- the paper's
     vector-GL contract ||F(x)||_2 <= 1 that makes the tau^2/4 gate meaningful
-    (psi in [0,1]); "slots" -> the legacy centered 512-slot P."""
+    (psi in [0,1]); "slots" -> the legacy centered 512-slot P.
+    deg1_W (nb, d): subtract the deg-1 flat-fit prediction of the RESAMPLED
+    bits from H (raw units) so unary structure zeroes out on purpose.
+    fiber_center: subtract each fiber's mean AFTER standardization -- kills
+    the rollout-density pollutant E[F|z]E[chi_S|z] (measured corr 0.998 with
+    raw psi, and top-512 raw-vs-functional overlap = 0 at deg-2), leaving the
+    within-fiber covariance spectrum psi actually prunes on.  Frozen-stub
+    deg-1 contributions are fiber-constant, so centering absorbs the blocks
+    deg1_W cannot see at shallow levels."""
     B = codes.shape[1]
     tables = [np.load(_oracle_table_path(fill_len, m_fibers, g, j))
               for j in range(depth)]
-    if target == "hidden":                                        # pooled per-dim stats so
-        allH = np.concatenate([d["H"].astype(np.float64) for d in tables])
-        mu, sd = allH.mean(0), allH.std(0)                        # psi weights dims evenly
-        print(f"[fork-levels] hidden target row-normalized "
-              f"(d={allH.shape[1]}, pooled stats over {len(allH)} rows)", flush=True)
-    levels = []
-    for j, d in enumerate(tables):
-        gt = d["gtoks"]                                            # (m, j+1) gen order
-        toks_newest_first = gt[:, ::-1]                            # block0 = newest token
-        bits = np.asarray(codes, np.uint8)[toks_newest_first].reshape(len(gt), -1)
-        if target == "hidden":
-            Y = (d["H"].astype(np.float64) - mu[None, :]) / (sd[None, :] + 1e-6)
-            F = (Y / (np.linalg.norm(Y, axis=1, keepdims=True) + 1e-12)
-                 ).astype(np.float32)                             # ||F(x)||_2 = 1
-        else:
+    if target != "hidden":
+        levels = []
+        for d in tables:
+            gt = d["gtoks"]                                        # (m, j+1) gen order
+            bits = np.asarray(codes, np.uint8)[gt[:, ::-1]].reshape(len(gt), -1)
             Y = d["P"].astype(np.float64)
-            F = (Y - Y.mean(0)[None, :]).astype(np.float32)
-        levels.append((bits, F, d["fiber_gid"]))
+            levels.append((bits, (Y - Y.mean(0)[None, :]).astype(np.float32),
+                           d["fiber_gid"]))
+        return levels
+    bits_l, Ys, gids = [], [], []
+    for d in tables:
+        gt = d["gtoks"]                                            # (m, j+1) gen order
+        bits = np.asarray(codes, np.uint8)[gt[:, ::-1]].reshape(len(gt), -1)
+        Y = d["H"].astype(np.float64)
+        if deg1_W is not None:                                    # unary zero-out
+            Y = Y - (1.0 - 2.0 * bits.astype(np.float64)) \
+                @ np.asarray(deg1_W, np.float64)[:bits.shape[1]]
+        bits_l.append(bits); Ys.append(Y); gids.append(d["fiber_gid"])
+    if fiber_center:                                              # density zero-out FIRST,
+        for k, (Y, fib) in enumerate(zip(Ys, gids)):              # so pooled stats reflect
+            _, gi = np.unique(np.asarray(fib), return_inverse=True)   # within-fiber scale
+            fm = np.zeros((int(gi.max()) + 1, Y.shape[1]))
+            np.add.at(fm, gi, Y)
+            Ys[k] = Y - (fm / np.bincount(gi)[:, None])[gi]
+    allY = np.concatenate(Ys)
+    mu, sd = allY.mean(0), allY.std(0)                            # pooled per-dim stats
+    print(f"[fork-levels] hidden target row-normalized "
+          f"(d={allY.shape[1]}, pooled stats over {len(allY)} rows, "
+          f"deg1_resid={deg1_W is not None}, fiber_center={fiber_center})",
+          flush=True)
+    levels = []
+    for bits, Y, fib in zip(bits_l, Ys, gids):
+        Y = (Y - mu[None, :]) / (sd[None, :] + 1e-6)
+        F = (Y / (np.linalg.norm(Y, axis=1, keepdims=True) + 1e-12)
+             ).astype(np.float32)                                 # ||F(x)||_2 = 1
+        levels.append((bits, F, fib))
     return levels
 
 
@@ -2980,10 +3007,14 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
         if len(idx_k) and float(psi_k.max()) > mass0 + 1e-3:       # Parseval contract
             raise RuntimeError(f"psi {psi_k.max():.4f} > total mass {mass0:.4f} "
                                f"at round {rnd}: residual corrupted")
+        top_psi = np.sort(psi_f)[::-1][:8] if len(psi_f) else np.zeros(0)
+        floor = float((G_res ** 2).sum(1).mean()) / n_val          # val psi noise floor
         if len(idx_k) == 0:
             dry += 1; rnd += 1
             print(f"[gradsense:{encoding}] round {rnd}: dry ({len(res['idx'])} raw, "
-                  f"{len(idx_f)} fresh, 0 kept)", flush=True)
+                  f"{len(idx_f)} fresh, 0 kept; top psi "
+                  f"{np.array2string(top_psi, precision=6, floatmode='fixed')} vs "
+                  f"gate {gate:.2e}, floor {floor:.2e})", flush=True)
             continue
         dry = 0
         order = np.argsort(-psi_k)
