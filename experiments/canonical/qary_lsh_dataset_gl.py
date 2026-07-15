@@ -3275,6 +3275,92 @@ def deg2_exact(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 61,
     return summary
 
 
+@app.function(image=image, gpu="H100", volumes={"/cache": vol}, timeout=43200,
+              memory=65536, secrets=WANDB_SECRET + HF_SECRET)
+def deg2_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
+             r: int = 64, max_pairs: int = 400_000, encoding: str = "lsh"):
+    """Deg-1 exact + the EXACT top deg-2 pairs (from deg2_exact's enumeration),
+    plain Fourier coefficients on the deg-1-free residual, cumulative TEST
+    top-1 + KL ladder over the pair count -- the character-scaling curve with
+    exactly-enumerated characters (no gradient search anywhere)."""
+    import time
+    import torch
+    vol.reload()
+    _budget("deg2-fit", 8.0)
+    started = time.time()
+    te_p = make_plain_data.local(n_test, CTX, 0, "plain_test")
+    tr_p = make_plain_data.local(n_train, CTX, 3 * n_test, "plain_tr")
+    Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    codes = dict(np.load(f"{ROOT}/codes.npz"))[encoding]
+    B = codes.shape[1]; nb = win * B
+    z2 = np.load(f"{ROOT}/deg2exact_{encoding}_win{win}_r{r}.npz")
+    floor = float(z2["floor"])
+    keep = z2["top_psi"] > 2.0 * floor
+    K = int(min(keep.sum(), max_pairs))
+    idx = np.full((K, 4), -1, np.int16)
+    idx[:, 0] = z2["top_a"][:K]; idx[:, 1] = z2["top_b"][:K]
+    psi = z2["top_psi"][:K].astype(np.float64)
+    dtr, dte = np.load(tr_p), np.load(te_p)
+    bits_tr = context_bits(dtr["tokens"].astype(np.int64), codes)[:, :nb]
+    bits_te = context_bits(dte["tokens"].astype(np.int64), codes)[:, :nb]
+    t_te = dte["tstar"].astype(np.int64)
+    w_tr, w_te = np.ones(len(bits_tr)), np.ones(len(bits_te))
+    F = dtr["H"].astype(np.float32)
+    F /= (np.linalg.norm(F, axis=1, keepdims=True) + 1e-8)
+    c0 = F.mean(0)
+    dev = "cuda"
+    bits_t = torch.tensor(bits_tr, device=dev)
+    G_t = torch.tensor(F - c0[None, :], device=dev)
+    del F
+    W1 = torch.as_tensor(z2["W1"].astype(np.float32), device=dev)
+    b1 = torch.as_tensor(z2["b1"].astype(np.float32), device=dev)
+    for lo in range(0, len(bits_t), 131072):
+        G_t[lo:lo + 131072] -= \
+            (1.0 - 2.0 * bits_t[lo:lo + 131072].float()) @ W1 + b1
+    bte_t = torch.tensor(bits_te, device=dev)
+    deg1_te = (1.0 - 2.0 * bte_t.float()) @ W1 + b1
+    s_bar = float(np.linalg.norm(dtr["H"][:100_000].astype(np.float32), axis=1).mean())
+    H_te_f32 = dte["H"].astype(np.float32)
+    deg1_top1 = weighted_agreement(
+        unembed_top1(deg1_te.cpu().numpy() + c0[None, :], Wu), t_te, w_te)
+    deg1_kl = _full_kl((deg1_te.cpu().numpy() + c0[None, :]) * s_bar, H_te_f32,
+                       Wu, w_te, device=dev)
+    print(f"[deg2fit:{encoding}:w{win}] deg-1 top-1 {deg1_top1:.4f} KL "
+          f"{deg1_kl:.4f}; fitting {K} exact pairs (psi {psi[0]:.2e}.."
+          f"{psi[K - 1]:.2e})", flush=True)
+    t0 = time.time()
+    C = fourier_coefficients(bits_t, G_t, w_tr, idx, device=dev)
+    print(f"[deg2fit:{encoding}:w{win}] coefficients in "
+          f"{time.time() - t0:.0f}s", flush=True)
+    ks = sorted({k for k in (5, 100, 1_500, 6_000, 18_000, 48_000, 160_000,
+                             400_000) if k <= K} | {K})
+    ladder = reconstruct_ladder(bte_t, idx, C, c0, np.arange(K), ks, Wu,
+                                t_te, w_te, kl_ref=(H_te_f32, s_bar),
+                                base=deg1_te)
+    for entry in ladder:
+        entry["cum_psi"] = float(psi[:entry["k"]].sum())
+        print(f"[deg2fit:{encoding}:w{win}] === deg-1 + {entry['k']} pairs: "
+              f"TEST top-1 {entry['top1']:.4f} KL {entry['kl']:.4f} "
+              f"(cum psi {entry['cum_psi']:.4f})", flush=True)
+    summary = {"encoding": encoding, "win": win, "n_train": n_train,
+               "deg1_top1": deg1_top1, "deg1_kl": deg1_kl,
+               "K": K, "pair_floor": floor, "ladder": ladder}
+    run = _wandb_run(f"deg2fit-{encoding}-w{win}-N{n_train}",
+                     {"encoding": encoding, "win": win, "K": K,
+                      "deg1_top1": deg1_top1})
+    if run is not None:
+        for entry in ladder:
+            run.log({"pairs": entry["k"], "TEST_top1": entry["top1"],
+                     "TEST_kl": entry["kl"], "cum_psi": entry["cum_psi"]})
+        run.summary.update({"deg1_top1": deg1_top1,
+                            "best_top1": max(e["top1"] for e in ladder)})
+        run.finish()
+    _write_json(f"{ROOT}/summary_deg2fit_{encoding}_win{win}.json", summary)
+    _record("deg2-fit", started, {"win": win, "K": K})
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
 def gl_tree_refit(fill_len: int = 61, depth: int = 6, fit_m: int = 8000,
                   val_frac: float = 0.15, per_deg: int = 8000, block: int = 400,
@@ -4344,6 +4430,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "deg2-exact":                                        # exact pair enumeration
         print(deg2_exact.remote(n_train, n_test, win, 64,
                                 encoding if encoding != "all" else "lsh"))
+    if stage == "deg2-fit":                                          # exact-pair reconstruction
+        print(deg2_fit.remote(n_train, n_test, win, 64, target_chars,
+                              encoding if encoding != "all" else "lsh"))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":
