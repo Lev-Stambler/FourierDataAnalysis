@@ -3413,7 +3413,7 @@ def deg2_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
 def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
              r2: int = 64, n_pairs: int = 160_000, blocks: int = 3, r3: int = 16,
              kappa: float = 6.0, per_anchor: int = 3000, max_tris: int = 200_000,
-             encoding: str = "lsh", far: int = 0):
+             encoding: str = "lsh", far: int = 0, deg4_anchors: int = 0):
     """Degree 3, EXACTLY, on top of the deg-1+2 model: a triple's coefficient
     is the PAIR coefficient of the sign-flipped target (psi3(a,b,c) =
     deg2_exact_psi(bits, G*chi_c)[a,b]), so the tested pair enumerator runs
@@ -3540,11 +3540,64 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
                   flush=True)
         summary["ladder"] = ladder
         summary["deg3_captured"] = res12 - res123
-        # ---- failure-mode diagnostics on the FULL deg-1+2+3 model ----------
         Ct3 = torch.as_tensor(C3, device=dev)
         for klo in range(0, len(idx3), 8192):
             base_te += xor_parity_features(bte_t, idx3[klo:klo + 8192]) @ \
                 Ct3[klo:klo + 8192]
+        # ---- optional degree 4: anchor on the top FITTED pair characters
+        # (flip the target by chi_a*chi_b -- the pair map then enumerates
+        # quadruples (c,d,a,b); pairs-of-bigrams / gated token quadratics)
+        if deg4_anchors and len(tris):
+            t0 = time.time()
+            sub4 = np.arange(0, 2 * B)                            # (c,d) in newest 2 blocks
+            bits_sub4 = bits_t[:, :2 * B].contiguous()
+            found4 = {}
+            for j in range(min(deg4_anchors, K2)):
+                a, b = int(idx2[j, 0]), int(idx2[j, 1])
+                xab = (1.0 - 2.0 * bits_t[:, a].float()) * \
+                      (1.0 - 2.0 * bits_t[:, b].float())
+                psi4, mr = deg2_exact_psi(bits_sub4, G_p * xab[:, None], w_tr,
+                                          proj=eye3, device=dev)
+                gate4 = kappa * mr / len(bits_t)
+                iu4 = np.triu_indices(len(sub4), k=1)
+                vals4 = psi4[iu4]
+                good4 = np.flatnonzero(vals4 > gate4)
+                if len(good4) > per_anchor:
+                    good4 = good4[np.argsort(-vals4[good4])[:per_anchor]]
+                for gidx in good4:
+                    quad = tuple(sorted((int(iu4[0][gidx]), int(iu4[1][gidx]),
+                                         a, b)))
+                    if len(set(quad)) < 4:
+                        continue
+                    if vals4[gidx] > found4.get(quad, 0.0):
+                        found4[quad] = float(vals4[gidx])
+            quads = sorted(found4.items(), key=lambda kv: -kv[1])[:max_tris]
+            print(f"[deg3fit:{encoding}:w{win}] deg-4: {len(found4)} distinct "
+                  f"quads above {kappa}x floor ({time.time() - t0:.0f}s); "
+                  f"fitting top {len(quads)}", flush=True)
+            summary["n_quads_found"] = len(found4)
+            if quads:
+                idx4 = np.stack([np.array(q, np.int16) for q, _ in quads])
+                C4, G_t = sequential_deflate(bits_t, G_t, w_tr, idx4,
+                                             device=dev, block=512)
+                ks4 = sorted({k for k in (5_000, 20_000, 50_000, 100_000,
+                                          200_000) if k <= len(quads)}
+                             | {len(quads)})
+                ladder4 = reconstruct_ladder(bte_t, idx4, C4, c0,
+                                             np.arange(len(quads)), ks4, Wu,
+                                             t_te, w_te,
+                                             kl_ref=(H_te_f32, s_bar),
+                                             base=base_te)
+                for entry in ladder4:
+                    print(f"[deg3fit:{encoding}:w{win}] === deg-1+2+3 + "
+                          f"{entry['k']} quads: TEST top-1 {entry['top1']:.4f} "
+                          f"KL {entry['kl']:.4f}", flush=True)
+                summary["ladder4"] = ladder4
+                Ct4 = torch.as_tensor(C4, device=dev)
+                for klo in range(0, len(idx4), 8192):
+                    base_te += xor_parity_features(bte_t, idx4[klo:klo + 8192]) \
+                        @ Ct4[klo:klo + 8192]
+        # ---- failure-mode diagnostics on the FULL final model --------------
         pred = unembed_top1(base_te.cpu().numpy() + c0[None, :], Wu)
         correct = (pred == t_te)
         # (a) copy/induction: teacher's token already appears in the window
@@ -4612,7 +4665,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          batch: int = 8192, n_train: int = 1_000_000, n_test: int = 50_000,
          target_chars: int = 1_000_000, chunk: int = 16384, win: int = 61,
          kappa: float = 4.0, mlp: int = 0, variant: str = "raw",
-         blocks: int = 3, max_tris: int = 200_000, far: int = 0):
+         blocks: int = 3, max_tris: int = 200_000, far: int = 0,
+         deg4: int = 0):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -4683,7 +4737,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "deg3-fit":                                          # anchored triple ladder
         print(deg3_fit.remote(n_train, n_test, win, 64, 160_000, blocks, 16,
                               kappa, 3000, max_tris,
-                              encoding if encoding != "all" else "lsh", far))
+                              encoding if encoding != "all" else "lsh", far,
+                              deg4))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":
