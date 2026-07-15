@@ -1238,6 +1238,46 @@ def fit_deg1_exact(bits, G, w, device=None, wd=1e-3, ctx_chunk=131072):
             "b": Wa[-1].to(torch.float32).cpu().numpy()}
 
 
+def deg2_exact_psi(bits, G, w, r=64, device=None, ctx_chunk=262144):
+    """EXACT degree-2 spectroscopy, gradient-free: the plain Fourier
+    coefficient of EVERY pair character chi_a*chi_b on target dim d is an
+    entry of the n x n map M_d = X^T (g_d w X) / sum w, so one GEMM per dim
+    enumerates all n(n-1)/2 pairs at once.  The target is first projected
+    onto its top-r weighted-PCA dims (psi2 is then a LOWER bound on the true
+    pair weight; the retained mass is returned).  Per-pair estimation noise
+    ~ mass_r / D -- far below any val-subsample sensing gate.  Returns
+    (psi2 (n, n) float32 symmetric with zero diagonal, mass_r)."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    bits_t = bits if torch.is_tensor(bits) else \
+        torch.tensor(np.asarray(bits, np.uint8), device=device)
+    dev = bits_t.device
+    G_t = G if torch.is_tensor(G) else torch.tensor(np.asarray(G, np.float32), device=dev)
+    w_t = torch.tensor(np.asarray(w, np.float32), device=dev)
+    wsum = float(w_t.sum())
+    D, n = bits_t.shape
+    r_eff = int(min(r, G_t.shape[1]))
+    # weighted PCA of the target -> top-r directions
+    C = torch.zeros((G_t.shape[1],) * 2, dtype=torch.float64, device=dev)
+    for lo in range(0, D, ctx_chunk):
+        Gc = G_t[lo:lo + ctx_chunk].float()
+        C += (Gc.t() @ (Gc * w_t[lo:lo + ctx_chunk, None])).double()
+    evals, evecs = torch.linalg.eigh(C / wsum)
+    U = evecs[:, -r_eff:].to(torch.float32)                       # (dY, r)
+    mass_r = float(evals[-r_eff:].sum())
+    ft = torch.bfloat16 if dev.type == "cuda" else torch.float32
+    psi2 = torch.zeros((n, n), dtype=torch.float32, device=dev)
+    for d in range(r_eff):
+        M = torch.zeros((n, n), dtype=torch.float32, device=dev)
+        for lo in range(0, D, ctx_chunk):
+            X = (1.0 - 2.0 * bits_t[lo:lo + ctx_chunk].to(ft))
+            pd = (G_t[lo:lo + ctx_chunk].float() @ U[:, d]) * w_t[lo:lo + ctx_chunk]
+            M += (X.t() @ (X * pd[:, None].to(ft))).float()
+        psi2 += (M / wsum) ** 2
+    psi2.fill_diagonal_(0.0)
+    return psi2.cpu().numpy(), mass_r
+
+
 def _full_kl(H_pred, H_true, Wu, w, device=None, rows=1024):
     """Weighted mean FULL-VOCAB KL(teacher || student) between the softmaxes of
     two hidden-state batches under the frozen unembedding.  NOT scale-invariant
@@ -3140,6 +3180,101 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
     return summary
 
 
+@app.function(image=image, gpu="H100", volumes={"/cache": vol}, timeout=21600,
+              memory=65536, secrets=WANDB_SECRET + HF_SECRET)
+def deg2_exact(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 61,
+               r: int = 64, encoding: str = "lsh"):
+    """Gradient-free enumeration of EVERY degree-2 character's Fourier weight
+    on the deg-1-free residual of the normalized pre-head target -- the
+    decisive check on 'the deg-2 spectrum is diffuse'.  One n x n GEMM per
+    projected target dim covers all n(n-1)/2 pairs with per-pair noise floor
+    mass_r/D (~7e-7 at 1M contexts, ~22x below the harvest's val gate).
+    Self-sufficient: fits deg-1 exactly inline (also reporting its held-out
+    top-1 for this window), so any --win runs standalone."""
+    import time
+    import torch
+    vol.reload()
+    _budget("deg2-exact", 5.0)
+    started = time.time()
+    te_p = make_plain_data.local(n_test, CTX, 0, "plain_test")
+    tr_p = make_plain_data.local(n_train, CTX, 3 * n_test, "plain_tr")
+    Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    codes = dict(np.load(f"{ROOT}/codes.npz"))[encoding]
+    B = codes.shape[1]; nb = win * B
+    dtr, dte = np.load(tr_p), np.load(te_p)
+    bits_tr = context_bits(dtr["tokens"].astype(np.int64), codes)[:, :nb]
+    bits_te = context_bits(dte["tokens"].astype(np.int64), codes)[:, :nb]
+    t_te = dte["tstar"].astype(np.int64)
+    w_tr, w_te = np.ones(len(bits_tr)), np.ones(len(bits_te))
+    F = dtr["H"].astype(np.float32)
+    F /= (np.linalg.norm(F, axis=1, keepdims=True) + 1e-8)
+    c0 = F.mean(0)
+    dev = "cuda"
+    bits_t = torch.tensor(bits_tr, device=dev)
+    G_t = torch.tensor(F - c0[None, :], device=dev)
+    del F
+    mass0 = float((G_t ** 2).sum(1).mean())
+    fit1 = fit_deg1_exact(bits_t, G_t, w_tr, device=dev)
+    W1 = torch.as_tensor(fit1["W"], device=dev)
+    b1 = torch.as_tensor(fit1["b"], device=dev)
+    for lo in range(0, len(bits_t), 131072):
+        G_t[lo:lo + 131072] -= \
+            (1.0 - 2.0 * bits_t[lo:lo + 131072].float()) @ W1 + b1
+    res_mass = float((G_t ** 2).sum(1).mean())
+    bte_t = torch.tensor(bits_te, device=dev)
+    deg1_te = (1.0 - 2.0 * bte_t.float()) @ W1 + b1
+    deg1_top1 = weighted_agreement(
+        unembed_top1(deg1_te.cpu().numpy() + c0[None, :], Wu), t_te, w_te)
+    print(f"[deg2exact:{encoding}:w{win}] deg-1 top-1 {deg1_top1:.4f}; "
+          f"residual {res_mass:.4f}/{mass0:.4f}; n={nb} bits", flush=True)
+    t0 = time.time()
+    psi2, mass_r = deg2_exact_psi(bits_t, G_t, w_tr, r=r, device=dev)
+    D = len(bits_t)
+    floor = mass_r / D
+    iu = np.triu_indices(nb, k=1)
+    vals = psi2[iu].astype(np.float64)
+    npairs = len(vals)
+    counts = {str(k): int((vals > k * floor).sum())
+              for k in (2, 4, 6, 10, 30, 100, 300, 1000)}
+    debiased = float(vals.sum() - npairs * floor)
+    top = np.argsort(-vals)[:1_000_000]
+    top50 = [{"a": int(iu[0][t]), "b": int(iu[1][t]),
+              "back_a": int(iu[0][t] // B), "back_b": int(iu[1][t] // B),
+              "psi": float(vals[t]), "x_floor": float(vals[t] / floor)}
+             for t in top[:50]]
+    summary = {"encoding": encoding, "win": win, "r": r, "n_train": n_train,
+               "n_bits": int(nb), "n_pairs": int(npairs),
+               "deg1_top1": deg1_top1, "total_mass": mass0,
+               "residual_mass": res_mass, "mass_r": mass_r,
+               "pair_noise_floor": floor,
+               "counts_above_floor_multiple": counts,
+               "deg2_total_mass_debiased": debiased,
+               "psi_max": float(vals[top[0]]), "top50": top50,
+               "enum_seconds": time.time() - t0}
+    np.savez_compressed(f"{ROOT}/deg2exact_{encoding}_win{win}_r{r}.npz",
+                        top_a=iu[0][top].astype(np.int16),
+                        top_b=iu[1][top].astype(np.int16),
+                        top_psi=vals[top].astype(np.float32),
+                        floor=floor, mass_r=mass_r, res_mass=res_mass,
+                        W1=fit1["W"].astype(np.float16), b1=fit1["b"])
+    vol.commit()
+    print(f"[deg2exact:{encoding}:w{win}] floor {floor:.3e}; max psi "
+          f"{vals[top[0]]:.3e} ({vals[top[0]] / floor:.1f}x floor); counts "
+          f"{counts}; debiased deg-2 mass {debiased:.4f} "
+          f"(residual {res_mass:.4f})", flush=True)
+    run = _wandb_run(f"deg2exact-{encoding}-w{win}-N{n_train}",
+                     {k: v for k, v in summary.items()
+                      if not isinstance(v, (list, dict))})
+    if run is not None:
+        run.summary.update({k: v for k, v in summary.items()
+                            if not isinstance(v, (list, dict))})
+        run.finish()
+    _write_json(f"{ROOT}/summary_deg2exact_{encoding}_win{win}.json", summary)
+    _record("deg2-exact", started, {"win": win, "encoding": encoding})
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
 def gl_tree_refit(fill_len: int = 61, depth: int = 6, fit_m: int = 8000,
                   val_frac: float = 0.15, per_deg: int = 8000, block: int = 400,
@@ -4206,6 +4341,9 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         print(grad_sense.remote(n_train, n_test, win, target_chars, chunk, steps,
                                 64, patience, lam, batch, 0.02, kappa, 200,
                                 encoding if encoding != "all" else "lsh", mlp))
+    if stage == "deg2-exact":                                        # exact pair enumeration
+        print(deg2_exact.remote(n_train, n_test, win, 64,
+                                encoding if encoding != "all" else "lsh"))
     if stage == "wandb-ping":
         print(wandb_ping.remote())
     if stage == "sensitivity":
