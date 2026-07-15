@@ -24,8 +24,10 @@ Check groups:
       estimator unbiasedness; blindness flatness; subcube profile R_k
   11. Normalized Parseval identities: constant-free Parseval, closeness, and
       reconstruction over the dataset
+  12. Gated Fourier correlation memory: Boolean lag spectrum, unfolded
+      key-value identity, q-ary degree-two bound, and stacked degree growth
 """
-import itertools, random
+import cmath, itertools, math, random
 
 random.seed(1)
 TOL = 1e-9
@@ -594,5 +596,144 @@ err_k = sum((f1[x] - sum(fD1[S] * chi(S, x) for S in Lk) / C_Dk) ** 2 for x in D
 check(f"subcube reconstruction: ||fhat_D||_1 = {Mk:.1f} = C_D = {C_Dk:.1f}, tau={tauk:.3f}, "
       f"|L|={len(Lk)}=2^|K|, E_D[(1-g)^2] = {err_k:.2e}",
       abs(Mk - C_Dk) < TOL and abs(tauk - 0.25) < TOL and len(Lk) == 2 ** len(Ksub) and err_k < TOL)
+
+# =====================================================================
+# Round 6: gated Fourier correlation memory
+# =====================================================================
+print("\n--- Round 6: gated Fourier correlation memory ---")
+
+# (a) The scalar Boolean recurrence has exactly one constant coefficient and
+#     the predicted past/current degree-two coefficients gamma^(n-1-s).
+n = 6
+gamma = 0.37
+cube = list(itertools.product((-1, 1), repeat=n))
+toy = {}
+for x in cube:
+    memory = 0.0
+    for z in x:
+        memory = gamma * memory + z
+    toy[x] = x[-1] * memory
+
+toy_hat = {S: fhat_unif(n, toy, S) for S in subsets(range(n))}
+toy_expected = {frozenset(): 1.0}
+for s in range(n - 1):
+    toy_expected[frozenset((s, n - 1))] = gamma ** (n - 1 - s)
+toy_ok = all(abs(toy_hat[S] - toy_expected.get(S, 0.0)) < TOL for S in toy_hat)
+check("correlation memory: Boolean spectrum is constant plus geometric past/current pairs", toy_ok)
+
+
+def matvec(A, x):
+    return [sum(a * b for a, b in zip(row, x)) for row in A]
+
+
+def dot(x, y):
+    return sum(a * b for a, b in zip(x, y))
+
+
+def outer(x, y):
+    return [[a * b for b in y] for a in x]
+
+
+def matadd_scaled(A, scale, B):
+    return [[scale * A[i][j] + B[i][j] for j in range(len(A[0]))]
+            for i in range(len(A))]
+
+
+# (b) A two-dimensional head agrees with the explicitly unfolded sum at every
+#     prefix.  This tests the exact orientation M = v k^T and r = M q.
+Q = [[0.6, -0.2], [0.1, 0.7]]
+K = [[-0.3, 0.8], [0.5, 0.2]]
+V = [[0.9, 0.1], [-0.4, 0.6]]
+gamma = 0.73
+x = (1, -1, -1, 1, -1)
+memory = [[0.0, 0.0], [0.0, 0.0]]
+keys, values = [], []
+unfold_ok = True
+for t, z in enumerate(x):
+    features = [1.0, float(z)]
+    q = matvec(Q, features)
+    k = matvec(K, features)
+    v = matvec(V, features)
+    memory = matadd_scaled(memory, gamma, outer(v, k))
+    read = matvec(memory, q)
+    keys.append(k); values.append(v)
+    direct = [0.0, 0.0]
+    for s in range(t + 1):
+        weight = gamma ** (t - s) * dot(keys[s], q)
+        for i in range(2):
+            direct[i] += weight * values[s][i]
+    unfold_ok &= all(abs(a - b) < TOL for a, b in zip(read, direct))
+check("correlation memory: iterative matrix state equals unfolded key-value sum", unfold_ok)
+
+# (c) Over Z_3, real sine/cosine token features still produce no token-support
+#     degree above two in one correlation layer.
+qary = 3
+nq = 4
+omega = cmath.exp(2j * math.pi / qary)
+points = list(itertools.product(range(qary), repeat=nq))
+
+
+def trig_features(z):
+    angle = 2 * math.pi * z / qary
+    return [1.0, math.cos(angle), math.sin(angle)]
+
+
+qw = [0.4, -0.7, 0.3]
+kw = [-0.2, 0.5, 0.8]
+vw = [0.6, 0.1, -0.4]
+gamma = 0.61
+qary_output = {}
+for point in points:
+    memory = 0.0
+    read = 0.0
+    for z in point:
+        features = trig_features(z)
+        query = dot(qw, features)
+        key = dot(kw, features)
+        value = dot(vw, features)
+        memory = gamma * memory + value * key
+        read = memory * query
+    qary_output[point] = read
+
+
+def categorical_hat(values, alpha):
+    total = 0j
+    for point, value in values.items():
+        phase = sum(a * z for a, z in zip(alpha, point))
+        total += value * omega ** (-phase)
+    return total / (qary ** len(alpha))
+
+
+qary_degree_ok = True
+for alpha in itertools.product(range(qary), repeat=nq):
+    if sum(a != 0 for a in alpha) > 2:
+        qary_degree_ok &= abs(categorical_hat(qary_output, alpha)) < 1e-8
+check("correlation memory: one q-ary layer has no token-support degree above two", qary_degree_ok)
+
+# (d) A two-layer scalar stack obeys D_2 <= 6.  The test uses n=8 so degrees
+#     seven and eight are present and must vanish rather than being vacuous.
+def scalar_memory_layer(inputs, gate, aq, ak, av, residual, read_weight):
+    memory = 0.0
+    outputs = []
+    for h in inputs:
+        query, key, value = aq * h, ak * h, av * h
+        memory = gate * memory + value * key
+        read = memory * query
+        outputs.append(residual * h + read_weight * read)
+    return outputs
+
+
+n = 8
+cube = list(itertools.product((-1, 1), repeat=n))
+stacked = {}
+for point in cube:
+    first = scalar_memory_layer(point, 0.43, 0.7, -0.4, 0.5, 0.6, 0.3)
+    second = scalar_memory_layer(first, 0.57, -0.3, 0.45, 0.25, 0.5, -0.2)
+    stacked[point] = second[-1]
+stack_degree_ok = all(
+    abs(fhat_unif(n, stacked, S)) < 1e-8
+    for S in subsets(range(n)) if len(S) > 6
+)
+check("correlation memory: two-layer linear stack has no degree above six", stack_degree_ok)
 
 print("\nAll checks passed.")
