@@ -156,6 +156,9 @@ need projections, not independent averages; `sequential_deflate(block=512)`).
 - Fail-loud lessons baked into code + tests: batch deflation amplifies duplicate clusters
   (1−m)²; residual must never grow; ψ ≤ total mass; floor-relative gates (ψ noise
   concentrates within √(2/dY)≈4% of floor).
+- **Uncapped 4M coda** (run stopped early, verdicts in): 800k pairs = 0.2405 base; the
+  6M-triple fit re-found the turnover (2M: 0.2964 > 6M: 0.2914) — per-layer caps are the
+  regularizer at every data scale; test-optimal triples ≈ 2–2.5M at 4M contexts.
 - **DATA SCALING IS THE ENGINE**: 1M→4M contexts moved the stack 0.2642→0.3007 (KL 3.09→
   2.62) with every layer STILL capped (pairs 400k/1.2M, triples 2.5M/10.9M resolvable, quads
   2.5M/3.4M); the 1M overfit turnovers were coefficient noise, not structure limits. 4M DIAG:
