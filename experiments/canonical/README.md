@@ -119,6 +119,15 @@ need projections, not independent averages; `sequential_deflate(block=512)`).
   DIAG (failure modes): copy cases 0.38 vs non-copy 0.19; teacher token in our top-5 48%;
   RARE targets (<100 train occurrences, 26% of cases) fail at ~3% regardless of copy —
   and only 17% of them even appear in the 32-token window (context-coverage, not gating).
+- **Learned decomposition (`fourier-learn`, Track B) — a supported null**: inclusion-gate
+  characters (any degree, log-space product, STE to the closest character, bounded
+  coefficients, leave-one-out −log ψ sensing) recover planted chars to deg-5 from warm
+  prefixes in tests, but on the real residual four design iterations (cold start; full-warm;
+  coefficient-anchored; dust-explorer on the fully-deflated residual) all fail to grow
+  degree or discover beyond the enumeration frontier (final: 4,096 long-span dust chars,
+  captured 4e-4). Each iteration's failure mode is test-pinned (sign-blind STE gradients;
+  coefficient–mask deadlock; down-degree migration toward unfitted heavy chars). Gradient
+  exploration adds nothing over exact enumeration on this representation.
 - **Degree 3 works the same way** (`deg3-fit`): a triple's coefficient is the PAIR map of
   the sign-flipped target (`psi3(a,b,c) = deg2map(G·χ_c)[a,b]`; one global projection shared
   across anchors — the rowwise flip commutes). 378k triples above 6× floor in the newest 3
