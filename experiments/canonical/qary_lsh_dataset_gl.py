@@ -2436,14 +2436,20 @@ def sensitivity(m_fibers: int = 1000, g: int = 16, resample: str = "conditional"
               memory=32768, secrets=WANDB_SECRET)
 def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
                  fill_len: int = 61, tau: float = 0.02, max_width: int = 128,
-                 flat_m: int = 16000, flat_r: int = 8):
+                 flat_m: int = 16000, flat_r: int = 8, variant: str = "raw"):
     """THE ACTUAL Dataset GL for full-vocab top-1: forked_gl_tree on the teacher
     HIDDEN-state target recovers heavy multi-degree Walsh characters (per
     encoding), then ALL of them are fit on the flat table -> unembed -> top-1.
     NO deg-1 correlation shortcut, NO projection, NO per-degree feature cap.
     Intermittent W&B logging per tree level AND per fit degree of how much of
     the target we account for: TEST top-1, R2 (hidden variance explained), and
-    the fraction of recovered Fourier (psi) mass."""
+    the fraction of recovered Fourier (psi) mass.
+    variant="resid": subtract the exact deg-1 flat fit from H AND per-fiber
+    center inside the fork target (unary + rollout-density pollutants zeroed
+    on purpose -- raw psi had corr 0.998 with the pure-density spectrum and
+    ZERO top-512 overlap with the functional ranking at deg-2), so the tree
+    prunes on within-fiber covariance; the ladder then fits deg-1 + the
+    discovered chars jointly."""
     import os, time
     import torch
     vol.reload()
@@ -2479,10 +2485,18 @@ def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
         ss_tot = float((n[:, None] * (Htrue - mu[None, :]) ** 2).sum())
         return 1.0 - ss_res / ss_tot
 
-    summary = {"depth": depth, "tau": tau, "encodings": {}}
+    summary = {"depth": depth, "tau": tau, "variant": variant, "encodings": {}}
+    sfx = "" if variant == "raw" else f"_{variant}"
     for name in ("lsh", "ctrl"):
         codes = ztab[name]; B = codes.shape[1]; nb = depth * B
-        levels = _load_fork_levels(fill_len, m_fibers, g, depth, codes, target="hidden")
+        bt = context_bits(c_tr, codes)[:, :nb]; bte = context_bits(c_te, codes)[:, :nb]
+        deg1_W = None
+        if variant == "resid":                                    # exact unary base
+            f1 = fit_deg1_exact(bt, meanH_tr.astype(np.float32), n_tr)
+            deg1_W = f1["W"]
+        levels = _load_fork_levels(fill_len, m_fibers, g, depth, codes,
+                                   target="hidden", deg1_W=deg1_W,
+                                   fiber_center=(variant == "resid"))
         # null guardrail: psi of level-0 deg-1 chars with row-permuted F (pairing
         # broken) must sit BELOW the keep threshold, else the gate is vacuous
         # and the tree would enumerate noise (the tau-scale bug class)
@@ -2504,13 +2518,13 @@ def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
             if len(masks) else np.zeros(0, int)
         print(f"[gltree:{name}] {len(masks)} chars, deg hist "
               f"{np.bincount(deg, minlength=depth+1).tolist()}", flush=True)
-        bt = context_bits(c_tr, codes)[:, :nb]; bte = context_bits(c_te, codes)[:, :nb]
         sane = weighted_agreement(unembed_top1(meanH_te, Wu), t_te, n_te)
         # persist masks so the fit is re-tunable without re-running the tree
-        np.savez_compressed(f"{ROOT}/gltree_top1_masks_{name}_d{depth}.npz",
+        np.savez_compressed(f"{ROOT}/gltree_top1_masks_{name}_d{depth}{sfx}.npz",
                             masks=masks, psi=psi, deg=deg); vol.commit()
-        run = _wandb_run(f"gltree-{name}-hidden-d{depth}",
+        run = _wandb_run(f"gltree-{name}-hidden-d{depth}{sfx}",
                          {"encoding": name, "depth": depth, "tau": tau,
+                          "variant": variant,
                           "n_chars": int(len(masks)), "sanity": sane})
         psitot = float(psi.sum()) if len(psi) else 1.0
         # fit the tree's characters HEAVIEST-FIRST (masks are psi-sorted) in blocks
@@ -2522,8 +2536,12 @@ def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
         ks = list(range(1000, max_chars + 1, 1000))
         if not ks or ks[-1] < max_chars:
             ks.append(max_chars)
+        base_masks = np.eye(nb, dtype=np.uint8) if variant == "resid" else \
+            np.zeros((0, nb), np.uint8)                           # deg-1 base joins the fit
+        if variant == "resid":
+            ks = [0] + ks                                         # k=0 = deg-1-only rung
         for k in ks:
-            md = masks[:k]                                        # top-k by psi
+            md = np.concatenate([base_masks, masks[:k]])          # top-k by psi
             Ftr = parity_features(bt, md); Fte = parity_features(bte, md)
             best = None
             for wd in (10.0, 100.0, 1000.0):
@@ -2552,8 +2570,8 @@ def gl_tree_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
         summary["encodings"][name] = {"n_chars": int(len(masks)), "sanity": sane,
                                       "ladder": ladder}
         torch.cuda.empty_cache()
-    _write_json(f"{ROOT}/summary_gltree_top1_d{depth}.json", summary)
-    _record("gl-tree-top1", started, {"depth": depth})
+    _write_json(f"{ROOT}/summary_gltree_top1_d{depth}{sfx}.json", summary)
+    _record("gl-tree-top1", started, {"depth": depth, "variant": variant})
     print(json.dumps(summary), flush=True)
     return summary
 
@@ -2849,7 +2867,7 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
                target_chars: int = 1_000_000, chunk: int = 16384,
                steps: int = 300, min_steps: int = 64, patience: int = 3,
                lam: float = 0.1, batch: int = 4096, lr: float = 0.02,
-               kappa: float = 4.0, rounds_cap: int = 200,
+               kappa: float = 1.25, rounds_cap: int = 200,
                encoding: str = "lsh", mlp: int = 0, seed: int = 0):
     """Gradient-sensed sparse Fourier spectroscopy (gradient matching pursuit)
     on the UNIT-NORMALIZED centered pre-head target (Parseval: total mass <= 1,
@@ -3001,7 +3019,10 @@ def grad_sense(n_train: int = 1_000_000, n_test: int = 50_000, win: int = 61,
                                 batch=batch, device=dev,
                                 seed=seed * 10_000 + rnd, log_fn=log_fn)
         idx_f, psi_f = dedupe_indices(res["idx"], res["psi"], seen)
-        gate = kappa / n_val
+        # floor-relative gate: psi noise on the val subsample concentrates
+        # within ~sqrt(2/dY) ~ 4% of the floor (1024-dim averaging), so even
+        # kappa = 1.25 x floor is a ~6-sigma acceptance
+        gate = kappa * float((G_res ** 2).sum(1).mean()) / n_val
         kept = psi_f > gate
         idx_k, psi_k = idx_f[kept], psi_f[kept]
         if len(idx_k) and float(psi_k.max()) > mass0 + 1e-3:       # Parseval contract
@@ -4123,7 +4144,7 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
          k1: int = 512, k2: int = 512, k3: int = 256, lam: float = 0.1,
          batch: int = 8192, n_train: int = 1_000_000, n_test: int = 50_000,
          target_chars: int = 1_000_000, chunk: int = 16384, win: int = 61,
-         kappa: float = 4.0, mlp: int = 0):
+         kappa: float = 4.0, mlp: int = 0, variant: str = "raw"):
     if stage in ("data", "all"):
         print(make_data.remote(m_fibers, r, 0, fill_len))
     if stage == "fit-deg1":
@@ -4169,7 +4190,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
         gen_data.remote(3000, r, fill_len, "edu", 0, "edu_test", 4)
         print(gen_data.remote(m_fibers, r, fill_len, "edu", 9000, "edu_tr", 8))
     if stage == "gl-tree-top1":                                       # the ACTUAL Dataset GL
-        print(gl_tree_top1.remote(m_fibers, g, depth, fill_len, tau, max_width))
+        print(gl_tree_top1.remote(m_fibers, g, depth, fill_len, tau, max_width,
+                                  variant=variant))
     if stage == "refit-top1":                                        # degree-first re-fit
         print(refit_top1.remote(depth, fill_len))
     if stage == "stream-top1":
