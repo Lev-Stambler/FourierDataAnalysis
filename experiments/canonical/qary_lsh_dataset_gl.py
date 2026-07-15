@@ -1255,7 +1255,7 @@ def fit_deg1_exact(bits, G, w, device=None, wd=1e-3, ctx_chunk=131072):
             "b": Wa[-1].to(torch.float32).cpu().numpy()}
 
 
-def deg2_exact_psi(bits, G, w, r=64, device=None, ctx_chunk=262144):
+def deg2_exact_psi(bits, G, w, r=64, device=None, ctx_chunk=262144, proj=None):
     """EXACT degree-2 spectroscopy, gradient-free: the plain Fourier
     coefficient of EVERY pair character chi_a*chi_b on target dim d is an
     entry of the n x n map M_d = X^T (g_d w X) / sum w, so one GEMM per dim
@@ -1273,15 +1273,28 @@ def deg2_exact_psi(bits, G, w, r=64, device=None, ctx_chunk=262144):
     w_t = torch.tensor(np.asarray(w, np.float32), device=dev)
     wsum = float(w_t.sum())
     D, n = bits_t.shape
-    r_eff = int(min(r, G_t.shape[1]))
-    # weighted PCA of the target -> top-r directions
-    C = torch.zeros((G_t.shape[1],) * 2, dtype=torch.float64, device=dev)
-    for lo in range(0, D, ctx_chunk):
-        Gc = G_t[lo:lo + ctx_chunk].float()
-        C += (Gc.t() @ (Gc * w_t[lo:lo + ctx_chunk, None])).double()
-    evals, evecs = torch.linalg.eigh(C / wsum)
-    U = evecs[:, -r_eff:].to(torch.float32)                       # (dY, r)
-    mass_r = float(evals[-r_eff:].sum())
+    if proj is not None:
+        # fixed orthonormal projection supplied by the caller (still a valid
+        # lower bound; anchored triple sweeps share ONE global projection --
+        # the rowwise sign flip commutes with it, saving a PCA per anchor)
+        U = proj if torch.is_tensor(proj) else \
+            torch.as_tensor(np.asarray(proj, np.float32), device=dev)
+        r_eff = U.shape[1]
+        mass_r = 0.0
+        for lo in range(0, D, ctx_chunk):
+            P = G_t[lo:lo + ctx_chunk].float() @ U
+            mass_r += float(((P ** 2).sum(1) * w_t[lo:lo + ctx_chunk]).sum())
+        mass_r /= wsum
+    else:
+        r_eff = int(min(r, G_t.shape[1]))
+        # weighted PCA of the target -> top-r directions
+        C = torch.zeros((G_t.shape[1],) * 2, dtype=torch.float64, device=dev)
+        for lo in range(0, D, ctx_chunk):
+            Gc = G_t[lo:lo + ctx_chunk].float()
+            C += (Gc.t() @ (Gc * w_t[lo:lo + ctx_chunk, None])).double()
+        evals, evecs = torch.linalg.eigh(C / wsum)
+        U = evecs[:, -r_eff:].to(torch.float32)                   # (dY, r)
+        mass_r = float(evals[-r_eff:].sum())
     ft = torch.bfloat16 if dev.type == "cuda" else torch.float32
     psi2 = torch.zeros((n, n), dtype=torch.float32, device=dev)
     for d in range(r_eff):
@@ -3447,8 +3460,21 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
                        Wu, w_te, device=dev)
     print(f"[deg3fit:{encoding}:w{win}] deg-1+{K2} pairs base: top-1 "
           f"{base_top1:.4f} KL {base_kl:.4f} (residual {res12:.4f})", flush=True)
-    # ---- anchored triple enumeration over the newest `blocks` token blocks
+    # ---- anchored triple enumeration over the newest `blocks` token blocks.
+    # ONE global top-r3 projection of the residual is shared by every anchor
+    # (the rowwise sign flip commutes with projection: (G*xc)U = (GU)*xc) --
+    # a per-anchor PCA would cost ~1e15 MACs x 798 anchors
     t0 = time.time()
+    Ccov = torch.zeros((G_t.shape[1],) * 2, dtype=torch.float64, device=dev)
+    for lo in range(0, len(G_t), 262144):
+        Gc = G_t[lo:lo + 262144].float()
+        Ccov += (Gc.t() @ Gc).double()
+    _, evecs = torch.linalg.eigh(Ccov)
+    U3 = evecs[:, -r3:].to(torch.float32)
+    G_p = torch.empty((len(G_t), r3), device=dev)
+    for lo in range(0, len(G_t), 262144):
+        G_p[lo:lo + 262144] = G_t[lo:lo + 262144].float() @ U3
+    eye3 = torch.eye(r3, device=dev)
     combos = [(i, i) for i in range(blocks)] + \
              [(i, j) for i in range(blocks) for j in range(blocks) if i != j]
     found = {}
@@ -3458,7 +3484,8 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
         for cl in range(B):
             c = ab * B + cl
             xc = (1.0 - 2.0 * bits_t[:, c].float())[:, None]
-            psi3, mr = deg2_exact_psi(bits_sub, G_t * xc, w_tr, r=r3, device=dev)
+            psi3, mr = deg2_exact_psi(bits_sub, G_p * xc, w_tr, proj=eye3,
+                                      device=dev)
             gate = kappa * mr / len(bits_t)
             iu = np.triu_indices(len(sub), k=1)
             vals = psi3[iu]

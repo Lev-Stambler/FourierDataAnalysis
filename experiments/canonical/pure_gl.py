@@ -151,8 +151,9 @@ def pure_gl_top1(m_fibers: int = 1500, g: int = 16, depth: int = 6,
             if len(masks) else np.zeros(0, int)
         print(f"[puregl:{name}] {len(masks)} chars, deg hist "
               f"{np.bincount(deg, minlength=depth+1).tolist()}", flush=True)
-        np.savez_compressed(f"{Q.ROOT}/pure_gl_masks_{name}_d{depth}.npz",
-                            masks=masks, psi=psi, deg=deg)
+        np.savez_compressed(
+            f"{Q.ROOT}/pure_gl_masks_{name}_f{fill_len}_d{depth}.npz",
+            masks=masks, psi=psi, deg=deg)
         Q.vol.commit()
         bt = Q.context_bits(c_tr, codes)[:, :nb]
         bte = Q.context_bits(c_te, codes)[:, :nb]
@@ -315,3 +316,80 @@ def kl_refit(prefix: str = "pure_gl_masks", encodings: str = "lsh,ctrl",
 def kl_refit_main(prefix: str = "pure_gl_masks", encodings: str = "lsh,ctrl",
                   ks: str = "1000,5000"):
     print(kl_refit.remote(prefix=prefix, encodings=encodings, ks=ks))
+
+
+@Q.app.function(image=Q.image.add_local_python_source("qary_lsh_dataset_gl"),
+                gpu="A10G", volumes={"/cache": Q.vol}, timeout=21600,
+                memory=32768, secrets=Q.WANDB_SECRET)
+def gl_recon_eval(prefix: str = "pure_gl_masks", encodings: str = "lsh,ctrl",
+                  ks: str = "0,1000,5000", depth: int = 6, fill_len: int = 61,
+                  flat_m: int = 16000, flat_r: int = 8):
+    """CLOSED-FORM Dataset-GL evaluation -- coefficients are CALCULATED, never
+    optimized (no Adam, no ridge).  Base = exact weighted deg-1 LS
+    (fit_deg1_exact); the tree's characters then get their plain weighted
+    dataset Fourier coefficients by sequential matching-pursuit deflation
+    against the deg-1 TRAIN residual (sequential_deflate, psi order);
+    reconstruct_ladder snapshots TEST full-vocab top-1 and KL at each k
+    (k=0 rung = the deg-1 base alone)."""
+    import json
+    import os
+    Q.vol.reload()
+    te_tbl = Q.make_data.local(3000, flat_r, 0, fill_len, "edu", 0, "edu_test")
+    tr_tbl = Q.make_data.local(flat_m, flat_r, 0, fill_len, "edu", 9000, "edu_tr")
+    te_lbl = Q.relabel_hidden.local(3000, fill_len, flat_r, "edu_test")
+    tr_lbl = Q.relabel_hidden.local(flat_m, fill_len, flat_r, "edu_tr")
+    Wu = np.load(f"{Q.ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    ztab = dict(np.load(f"{Q.ROOT}/codes.npz"))
+
+    def collapse(tbl, lbl):
+        d = np.load(tbl); L = np.load(lbl)
+        ctx = np.concatenate([d["PRE"][d["fiber_id"]], d["G"]], axis=1)
+        rows, inv, cnt = np.unique(ctx, axis=0, return_inverse=True,
+                                   return_counts=True)
+        Hs = np.zeros((len(rows), L["H"].shape[1]), np.float64)
+        np.add.at(Hs, inv, L["H"].astype(np.float64))
+        tg = np.empty(len(rows), np.int64); tg[inv] = L["tstar"]
+        return rows, (Hs / cnt[:, None]).astype(np.float32), \
+            cnt.astype(np.float64), tg
+
+    c_tr, mH_tr, n_tr, t_tr = collapse(tr_tbl, tr_lbl)
+    c_te, mH_te, n_te, t_te = collapse(te_tbl, te_lbl)
+    sane = Q.weighted_agreement(Q.unembed_top1(mH_te, Wu), t_te, n_te)
+    klist = sorted({int(x) for x in ks.split(",")})
+    out = {}
+    for name in encodings.split(","):
+        codes = ztab[name]; B = codes.shape[1]; nb = depth * B
+        bt = Q.context_bits(c_tr, codes)[:, :nb]
+        bte = Q.context_bits(c_te, codes)[:, :nb]
+        f1 = Q.fit_deg1_exact(bt, mH_tr, n_tr)                    # closed form
+        X_tr = 1.0 - 2.0 * bt.astype(np.float32)
+        X_te = 1.0 - 2.0 * bte.astype(np.float32)
+        base_tr = X_tr @ f1["W"] + f1["b"]
+        base_te = X_te @ f1["W"] + f1["b"]
+        G_res = mH_tr - base_tr                                   # deg-1-free residual
+        c0 = (G_res * (n_tr / n_tr.sum())[:, None]).sum(0)        # deg-0 of residual
+        p = f"{Q.ROOT}/{prefix}_{name}_f{fill_len}_d{depth}.npz"
+        if not os.path.exists(p):
+            p = f"{Q.ROOT}/{prefix}_{name}_d{depth}.npz"          # legacy f61 name
+        md = np.load(p)["masks"][:max(klist)]
+        idx = Q.masks_to_indices(md, width=depth)
+        C, _ = Q.sequential_deflate(bt, G_res, n_tr, idx)         # calculated coeffs
+        ladder = Q.reconstruct_ladder(bte, idx, C, c0,
+                                      np.arange(len(idx)), klist, Wu, t_te,
+                                      n_te, kl_ref=(mH_te, 1.0), base=base_te)
+        for rec in ladder:
+            print(f"[glrecon:{name}] k={rec['k']} top1 {rec['top1']:.4f} "
+                  f"KL {rec.get('kl', float('nan')):.4f} (sanity {sane:.3f})",
+                  flush=True)
+        out[name] = ladder
+    Q._write_json(f"{Q.ROOT}/summary_gl_recon_{prefix}_f{fill_len}.json",
+                  {"sanity": sane, "ladders": out})
+    print(json.dumps(out), flush=True)
+    return out
+
+
+@Q.app.local_entrypoint()
+def gl_recon_main(prefix: str = "pure_gl_masks", encodings: str = "lsh,ctrl",
+                  ks: str = "0,1000,5000", fill_len: int = 61):
+    print(gl_recon_eval.remote(prefix=prefix, encodings=encodings, ks=ks,
+                               fill_len=fill_len))

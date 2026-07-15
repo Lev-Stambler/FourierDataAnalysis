@@ -865,6 +865,10 @@ def test_deg3_via_anchored_deg2_map():
     xc = (1.0 - 2.0 * bits[:, 7].astype(np.float32))               # anchor c = 7
     psi3, _ = deg2_exact_psi(bits, G * xc[:, None], w, r=dY, device="cpu")
     assert abs(psi3[1, 4] - 0.49) < 1e-3                           # the planted triple
+    # the shared-global-projection fast path must agree (identity projection)
+    psi3b, _ = deg2_exact_psi(bits, G * xc[:, None], w, device="cpu",
+                              proj=np.eye(dY, dtype=np.float32))
+    assert np.allclose(psi3b, psi3, atol=1e-5)
     mask = np.ones((n, n), bool); np.fill_diagonal(mask, False)
     mask[1, 4] = mask[4, 1] = False
     # chi_7 * chi_7 cancels: anchoring on 7 exposes {1,4}; row/col 7 shows the
