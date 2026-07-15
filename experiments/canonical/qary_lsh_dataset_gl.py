@@ -1177,7 +1177,8 @@ def fourier_coefficients(bits, G, w, idx, device=None, char_chunk=8192,
     return (C / float(w_t.sum())).cpu().numpy()
 
 
-def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024, block=1):
+def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024, block=1,
+                       masks=None):
     """TRUE matching-pursuit deflation: subtract each character's plain
     weighted Fourier coefficient ONE AT A TIME against the CURRENT residual,
     in the given order.  This is the fix for the batch-deflation divergence
@@ -1203,11 +1204,28 @@ def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024, block=1):
     G_t = G if torch.is_tensor(G) else torch.tensor(np.asarray(G, np.float32), device=dev)
     w_t = torch.tensor(np.asarray(w, np.float32), device=dev)
     wsum = float(w_t.sum())
-    idx = np.asarray(idx, np.int16)
+    if masks is not None:
+        masks_t = torch.tensor(np.asarray(masks, np.float32), device=dev)
+        idx = np.zeros((len(masks_t), 4), np.int16)               # length only
+
+        def _feat(klo, hi):
+            # dense-mask parities of ANY degree: fp32 GEMM is exact (counts
+            # <= n << 2^24), (1 - 2*((bits @ m^T) % 2))
+            out = torch.empty((len(bits_t), hi - klo), device=dev)
+            for lo in range(0, len(bits_t), 262144):
+                bf = bits_t[lo:lo + 262144].float()
+                out[lo:lo + 262144] = 1.0 - 2.0 * \
+                    ((bf @ masks_t[klo:hi].t()) % 2.0)
+            return out
+    else:
+        idx = np.asarray(idx, np.int16)
+
+        def _feat(klo, hi):
+            return xor_parity_features(bits_t, idx[klo:hi])
     C = np.empty((len(idx), G_t.shape[1]), np.float32)
     if block > 1:
         for klo in range(0, len(idx), block):
-            F = xor_parity_features(bits_t, idx[klo:klo + block])
+            F = _feat(klo, min(klo + block, len(idx)))
             Fw = F * w_t[:, None]
             S = (F.t() @ Fw) / wsum
             bvec = (Fw.t() @ G_t) / wsum
@@ -1217,7 +1235,7 @@ def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024, block=1):
             C[klo:klo + len(C_b)] = C_b.cpu().numpy()
         return C, (G_t.cpu().numpy() if was_np else G_t)
     for klo in range(0, len(idx), char_chunk):
-        F = xor_parity_features(bits_t, idx[klo:klo + char_chunk])
+        F = _feat(klo, min(klo + char_chunk, len(idx)))
         for j in range(F.shape[1]):
             fw = F[:, j] * w_t
             c = (fw @ G_t) / wsum
@@ -3800,6 +3818,128 @@ def deg3_fit(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
     return summary
 
 
+@app.function(image=image, gpu="H100", volumes={"/cache": vol}, timeout=43200,
+              memory=65536, secrets=WANDB_SECRET + HF_SECRET)
+def fourier_learn(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
+                  r2: int = 64, K: int = 8192, rho: float = 0.5, lam: float = 0.1,
+                  l1: float = 0.0, gamma: float = 0.1, steps: int = 1500,
+                  lr: float = 0.05, batch: int = 8192, warm_pairs: int = 2048,
+                  warm_tris: int = 2048, encoding: str = "lsh"):
+    """Track B: directly LEARN the Fourier decomposition on the deg-1-free
+    residual -- K inclusion-gate characters of ANY degree (log-space product,
+    STE to the closest character), coefficients learned within [-rho, rho],
+    decorrelation anti-collapse + leave-one-out -log psi sensing.  Warm-starts
+    half the slots from the EXACT enumeration's top pairs/triples; the win
+    condition is hardened characters BEYOND enumeration reach (degree > 4 or
+    long-range) that survive the calculated (block-OMP) refit."""
+    import os, time
+    import torch
+    vol.reload()
+    _budget("fourier-learn", 10.0)
+    started = time.time()
+    te_p = make_plain_data.local(n_test, CTX, 0, "plain_test")
+    tr_p = make_plain_data.local(n_train, CTX, 3 * n_test, "plain_tr")
+    Wu = np.load(f"{ROOT}/lm_head.npz")["Wu"].astype(np.float32)
+    codes = dict(np.load(f"{ROOT}/codes.npz"))[encoding]
+    B = codes.shape[1]; nb = win * B
+    z2 = np.load(f"{ROOT}/deg2exact_{encoding}_win{win}_r{r2}.npz")
+    dtr, dte = np.load(tr_p), np.load(te_p)
+    bits_tr = context_bits(dtr["tokens"].astype(np.int64), codes)[:, :nb]
+    bits_te = context_bits(dte["tokens"].astype(np.int64), codes)[:, :nb]
+    t_te = dte["tstar"].astype(np.int64)
+    w_tr, w_te = np.ones(len(bits_tr)), np.ones(len(bits_te))
+    F = dtr["H"].astype(np.float32)
+    F /= (np.linalg.norm(F, axis=1, keepdims=True) + 1e-8)
+    c0 = F.mean(0)
+    dev = "cuda"
+    bits_t = torch.tensor(bits_tr, device=dev)
+    G_t = torch.tensor(F - c0[None, :], device=dev)
+    del F
+    W1 = torch.as_tensor(z2["W1"].astype(np.float32), device=dev)
+    b1 = torch.as_tensor(z2["b1"].astype(np.float32), device=dev)
+    for lo in range(0, len(bits_t), 131072):
+        G_t[lo:lo + 131072] -= \
+            (1.0 - 2.0 * bits_t[lo:lo + 131072].float()) @ W1 + b1
+    res1 = float((G_t ** 2).sum(1).mean())
+    # warm masks: top exact pairs (+ triples if a deg3fit artifact exists)
+    wm = np.zeros((0, nb), np.uint8)
+    wp = min(warm_pairs, len(z2["top_a"]))
+    m2 = np.zeros((wp, nb), np.uint8)
+    m2[np.arange(wp), z2["top_a"][:wp].astype(int)] = 1
+    m2[np.arange(wp), z2["top_b"][:wp].astype(int)] = 1
+    wm = np.concatenate([wm, m2])
+    cpath = f"{ROOT}/deg3fit_coefs_{encoding}_win{win}.npz"
+    if os.path.exists(cpath):
+        i3 = np.load(cpath)["idx3"][:warm_tris]
+        m3 = np.zeros((len(i3), nb), np.uint8)
+        for j, row in enumerate(i3):
+            m3[j, row[row >= 0].astype(int)] = 1
+        wm = np.concatenate([wm, m3])
+    vm = np.random.default_rng(0).random(len(bits_tr)) < 0.05
+    run = _wandb_run(f"fourierlearn-{encoding}-w{win}-K{K}",
+                     {"K": K, "rho": rho, "lam": lam, "gamma": gamma,
+                      "steps": steps, "warm": int(len(wm))})
+
+    def log_fn(t, payload):
+        if run is not None:
+            run.log(payload, step=t)
+    print(f"[flearn:{encoding}:w{win}] K={K} warm={len(wm)} residual "
+          f"{res1:.4f}", flush=True)
+    res = fourier_learn_chars(bits_t, G_t, w_tr, vm, K=K, rho=rho, lam=lam,
+                              l1=l1, gamma=gamma, steps=steps, lr=lr,
+                              batch=batch, warm_masks=wm, device=dev,
+                              seed=0, log_fn=log_fn)
+    masks = res["masks"]
+    deg = masks.sum(1)
+    masks = masks[deg > 0]
+    masks = np.unique(masks, axis=0)
+    deg = masks.sum(1)
+    span = np.array([(np.flatnonzero(m).max() // B) for m in masks])
+    print(f"[flearn:{encoding}:w{win}] {len(masks)} distinct hardened chars; "
+          f"deg hist {np.bincount(np.minimum(deg, 9)).tolist()}; "
+          f"deg>4: {(deg > 4).sum()}; span>3 blocks: {(span > 3).sum()}",
+          flush=True)
+    # calculated coefficients (never ship Adam's): dense block-OMP refit
+    C, G_t = sequential_deflate(bits_t, G_t, w_tr, None, device=dev,
+                                block=512, masks=masks)
+    res2 = float((G_t ** 2).sum(1).mean())
+    bte_t = torch.tensor(bits_te, device=dev)
+    base_te = (1.0 - 2.0 * bte_t.float()) @ W1 + b1
+    Ct = torch.as_tensor(C, device=dev)
+    mt = torch.tensor(masks.astype(np.float32), device=dev)
+    for klo in range(0, len(masks), 4096):
+        Fte = 1.0 - 2.0 * ((bte_t.float() @ mt[klo:klo + 4096].t()) % 2.0)
+        base_te += Fte @ Ct[klo:klo + 4096]
+    s_bar = float(np.linalg.norm(dtr["H"][:100_000].astype(np.float32), axis=1).mean())
+    H_te_f32 = dte["H"].astype(np.float32)
+    top1 = weighted_agreement(
+        unembed_top1(base_te.cpu().numpy() + c0[None, :], Wu), t_te, w_te)
+    kl = _full_kl((base_te.cpu().numpy() + c0[None, :]) * s_bar, H_te_f32,
+                  Wu, w_te, device=dev)
+    spars = _sparsity_stats((C ** 2).sum(1))
+    summary = {"encoding": encoding, "win": win, "K": K, "n_chars": int(len(masks)),
+               "warm": int(len(wm)), "TEST_top1": top1, "TEST_kl": kl,
+               "captured": res1 - res2, "val_mse": res["val_mse"],
+               "deg_hist": {str(d): int((deg == d).sum())
+                            for d in range(0, int(deg.max()) + 1)},
+               "n_deg_gt4": int((deg > 4).sum()),
+               "n_span_gt3": int((span > 3).sum()), "sparsity": spars}
+    print(f"[flearn:{encoding}:w{win}] === deg-1 + {len(masks)} LEARNED chars: "
+          f"TEST top-1 {top1:.4f} KL {kl:.4f} (captured {res1 - res2:.4f})",
+          flush=True)
+    np.savez_compressed(f"{ROOT}/flearn_{encoding}_win{win}_K{K}.npz",
+                        masks=masks, C=C.astype(np.float16))
+    vol.commit()
+    if run is not None:
+        run.summary.update({k: v for k, v in summary.items()
+                            if not isinstance(v, (list, dict))})
+        run.finish()
+    _write_json(f"{ROOT}/summary_flearn_{encoding}_win{win}_K{K}.json", summary)
+    _record("fourier-learn", started, {"win": win, "K": K})
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
 @app.function(image=image, gpu="A10G", volumes={"/cache": vol}, timeout=21600, memory=32768)
 def gl_tree_refit(fill_len: int = 61, depth: int = 6, fit_m: int = 8000,
                   val_frac: float = 0.15, per_deg: int = 8000, block: int = 400,
@@ -4874,6 +5014,10 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "deg2-fit":                                          # exact-pair reconstruction
         print(deg2_fit.remote(n_train, n_test, win, 64, target_chars,
                               encoding if encoding != "all" else "lsh"))
+    if stage == "fourier-learn":                                     # learned decomposition
+        print(fourier_learn.remote(n_train, n_test, win, 64, chunk, 0.5, lam,
+                                   0.0, 0.1, steps, 0.05, batch,
+                                   encoding=encoding if encoding != "all" else "lsh"))
     if stage == "deg3-fit":                                          # anchored triple ladder
         print(deg3_fit.remote(n_train, n_test, win, 64, 160_000, blocks, 16,
                               kappa, 3000, max_tris,

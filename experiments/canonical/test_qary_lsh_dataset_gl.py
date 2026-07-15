@@ -851,6 +851,23 @@ def test_deg2_exact_psi_finds_planted_pairs():
     assert abs(mass_r - float((G ** 2).sum(1).mean())) < 1e-5      # r >= dY: no loss
 
 
+def test_dense_mask_deflate_matches_idx_path():
+    rng = np.random.default_rng(37)
+    n, dY = 10, 6
+    bits = _all_masks(n)
+    masks = np.zeros((3, n), np.uint8)
+    masks[0, 2] = 1; masks[1, [5, 8]] = 1; masks[2, [0, 3, 7]] = 1
+    G = (parity_features(bits, masks) @ rng.normal(size=(3, dY))).astype(np.float32)
+    G -= G.mean(0)
+    w = np.ones(len(bits))
+    C1, G1 = sequential_deflate(bits, G.copy(), w, masks_to_indices(masks),
+                                device="cpu", block=2)
+    C2, G2 = sequential_deflate(bits, G.copy(), w, None, device="cpu",
+                                block=2, masks=masks)
+    assert np.allclose(C1, C2, atol=1e-5)
+    assert np.allclose(G1, G2, atol=1e-5)
+
+
 def test_logspace_ste_matches_parity_with_finite_grads():
     import torch
     rng = np.random.default_rng(29)
