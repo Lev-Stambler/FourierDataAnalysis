@@ -5017,7 +5017,8 @@ def main(stage: str = "search", tau: float = 0.1, m_fibers: int = M_FIBERS,
     if stage == "fourier-learn":                                     # learned decomposition
         print(fourier_learn.remote(n_train, n_test, win, 64, chunk, 0.5, lam,
                                    0.0, 0.1, steps, 0.05, batch,
-                                   encoding=encoding if encoding != "all" else "lsh"))
+                                   chunk // 2, chunk // 2,
+                                   encoding if encoding != "all" else "lsh"))
     if stage == "deg3-fit":                                          # anchored triple ladder
         print(deg3_fit.remote(n_train, n_test, win, 64, 160_000, blocks, 16,
                               kappa, 3000, max_tris,
