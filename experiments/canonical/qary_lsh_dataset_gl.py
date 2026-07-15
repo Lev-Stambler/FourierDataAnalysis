@@ -1309,7 +1309,8 @@ def _logspace_ste_chars(bits_f, theta, eps=1e-3):
 
 def fourier_learn_chars(bits, G, w, vm, K=16384, rho=0.5, lam=0.1, l1=0.0,
                         gamma=0.1, steps=2000, lr=0.05, batch=8192, eps=1e-3,
-                        warm_masks=None, device=None, seed=0, log_fn=None):
+                        warm_masks=None, warm_C=None, device=None, seed=0,
+                        log_fn=None):
     """Directly LEARN the Fourier decomposition of G: K characters of ANY
     degree (inclusion gates, log-space product, STE to the closest character)
     x LEARNED coefficients bounded by rho (c = rho * tanh(u)).  Anti-collapse:
@@ -1336,7 +1337,14 @@ def fourier_learn_chars(bits, G, w, vm, K=16384, rho=0.5, lam=0.1, l1=0.0,
         theta0[: len(wm)] = torch.where(wm > 0.5, torch.tensor(4.0),
                                         torch.tensor(-4.0))
     theta = theta0.to(dev).requires_grad_(True)
-    u = (0.01 * torch.randn(K, dY, generator=gen)).to(dev).requires_grad_(True)
+    u0 = 0.01 * torch.randn(K, dY, generator=gen)
+    if warm_C is not None and len(warm_C):
+        # anchor warm slots at their CALCULATED coefficients: without this the
+        # sensing term pulls triples DOWN to heavier pairs still present in
+        # the residual (v2: all warm triples collapsed to deg-2)
+        wc = torch.tensor(np.asarray(warm_C[:K], np.float32))
+        u0[: len(wc)] = torch.atanh(torch.clamp(wc / rho, -0.999, 0.999))
+    u = u0.to(dev).requires_grad_(True)
     opt = torch.optim.Adam([theta, u], lr=lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps)
 
@@ -3869,12 +3877,16 @@ def fourier_learn(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
     m2[np.arange(wp), z2["top_b"][:wp].astype(int)] = 1
     wm = np.concatenate([wm, m2])
     cpath = f"{ROOT}/deg3fit_coefs_{encoding}_win{win}.npz"
+    wc = None
     if os.path.exists(cpath):
-        i3 = np.load(cpath)["idx3"][:warm_tris]
+        zc = np.load(cpath)
+        i3 = zc["idx3"][:warm_tris]
         m3 = np.zeros((len(i3), nb), np.uint8)
         for j, row in enumerate(i3):
             m3[j, row[row >= 0].astype(int)] = 1
         wm = np.concatenate([wm, m3])
+        wc = np.concatenate([zc["C2"][:wp].astype(np.float32),
+                             zc["C3"][:len(i3)].astype(np.float32)])
     vm = np.random.default_rng(0).random(len(bits_tr)) < 0.05
     run = _wandb_run(f"fourierlearn-{encoding}-w{win}-K{K}",
                      {"K": K, "rho": rho, "lam": lam, "gamma": gamma,
@@ -3887,8 +3899,8 @@ def fourier_learn(n_train: int = 1_000_000, n_test: int = 10_000, win: int = 32,
           f"{res1:.4f}", flush=True)
     res = fourier_learn_chars(bits_t, G_t, w_tr, vm, K=K, rho=rho, lam=lam,
                               l1=l1, gamma=gamma, steps=steps, lr=lr,
-                              batch=batch, warm_masks=wm, device=dev,
-                              seed=0, log_fn=log_fn)
+                              batch=batch, warm_masks=wm, warm_C=wc,
+                              device=dev, seed=0, log_fn=log_fn)
     masks = res["masks"]
     deg = masks.sum(1)
     masks = masks[deg > 0]
