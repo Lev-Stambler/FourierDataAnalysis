@@ -46,3 +46,24 @@ Test R² vs the classifier score (val-selected rung = 50k pairs):
   noise tail (val selects the rung).
 - LSH > random codes on a scalar semantic target: 2.1× the deg-1 R², +32%
   relative at the selected rung. Token-id bits are far behind throughout.
+- Deg-3 (pair-anchored exact enumeration, 4096 anchors on the 50k residual):
+  +0.002 test R² — floor-limited at 1M rows, not evidence of absent structure.
+
+## v2: CSAMP dataset-GL pilot (edu_gl_csamp.py, 2026-07-15)
+
+Qwen3.5-0.8B fiber forks (1000 fibers × 12 forks × 6 levels, pure sampling,
+disjoint FineWeb dump), classifier-labeled; scalar pair-ψ + hereditary tree.
+Pilot verdict: **no win over the exact stack at this target/scale.**
+- Uncentered f (DC −0.78) reproduces the recorded pure-GL density inversion:
+  every child passes the gate, top-ψ chars add +0.0000. The scalar-specific
+  mechanism is the fiber-mean × density term — fixed by PER-FIBER centering
+  inside pair_psi (the estimator now measures within-fiber structure).
+- Centered ψ diagnostics: level-0 max 2.3e-5 ≈ the global spectrum scale →
+  conditioning does not concentrate this target's spectrum; ψ noise (±1e-5 at
+  132k pairs) leaves the pilot underpowered below that.
+- With a noise-calibrated gate (τ=0.0063) the tree keeps 34k chars (deg ≤6),
+  but deflating them on the 8k-row flat table adds nothing over deg-1
+  (0.0205 → 0.0188). Fork windows are NOT extra refit data — they share
+  spines within fibers (adding 72k of them dropped the base to −0.03).
+- The edu score is dominated by low-degree global (bag-of-token) structure;
+  plain-data exact enumeration with millions of rows is the stronger tool.

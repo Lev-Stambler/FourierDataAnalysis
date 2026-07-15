@@ -34,7 +34,9 @@ W_Q = 48              # generated window tokens = the function domain
 DEPTH = 6             # tree depth in token blocks, newest-first
 ROOT = f"{E.ROOT}/csamp"
 
-image = E.image.pip_install("accelerate>=1.2").add_local_python_source("edu_gl")
+image = (E.image.pip_install("accelerate>=1.2")
+         .env({"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
+         .add_local_python_source("edu_gl"))
 
 
 def _fork_path(m, g, j):
@@ -64,6 +66,15 @@ def pair_psi_scalar(bits, masks, f, gid, device=None, char_chunk=4096):
     counts = np.bincount(gi)
     n_pairs = float((counts * (counts - 1)).sum())
     assert n_pairs > 0, "no fiber has two continuations -- nothing to pair"
+    # PER-FIBER centering: the prefix largely fixes each fiber's score level
+    # mu_z, and mu_z * E[chi_S|z] (fiber-mean x density) swamps psi for EVERY
+    # character (2026-07-15: all 35k children passed the gate; lsh ladder
+    # +0.0000 -- the recorded pure-GL density inversion).  Centering within
+    # the fiber leaves the within-fiber conditional coefficient, the part a
+    # window-only student can actually use.  O(1/g) shrinkage bias is fine.
+    mu = torch.zeros(ng, device=dev).index_add_(0, gid_t, f_t)
+    mu /= torch.as_tensor(counts.astype(np.float32), device=dev)
+    f_t = f_t - mu[gid_t]
     diag = float((f_t.double() ** 2).sum())
     masks = np.asarray(masks, np.uint8)
     out = []
@@ -103,6 +114,11 @@ def gl_tree_scalar(levels, B, tau, max_width=512, device=None, progress=None):
             continue
         children = np.unique(np.concatenate(rows), axis=0)
         psi = pair_psi_scalar(bits, children[:, :w], f, gid, device=device)
+        if len(psi):
+            q = np.percentile(psi, [50, 90, 99, 100])
+            print(f"[tree] level {j}: {len(psi)} children, psi p50/p90/p99/max "
+                  f"{q[0]:.2e}/{q[1]:.2e}/{q[2]:.2e}/{q[3]:.2e} "
+                  f"(gate {thresh:.2e})", flush=True)
         heavy = np.flatnonzero(psi >= thresh)
         for i in heavy:
             key = tuple(int(x) for x in children[i])
@@ -145,7 +161,7 @@ def _stream_prefixes(qtok, n, skip=0):
     raise RuntimeError(f"stream ended at {len(pre)}/{n} prefixes")
 
 
-def _gen_tails(model, prompts, k, nret, temp=1.0, batch=64):
+def _gen_tails(model, prompts, k, nret, pad_id, temp=1.0, batch=64):
     """(P*nret, k) sampled continuations; PURE sampling (no top-k/p) so forks
     and flat fills share one law.  generate() groups returns per input row."""
     import torch
@@ -156,8 +172,10 @@ def _gen_tails(model, prompts, k, nret, temp=1.0, batch=64):
             out = model.generate(ids, do_sample=True, temperature=temp,
                                  top_k=0, top_p=1.0, max_new_tokens=k,
                                  num_return_sequences=nret,
-                                 pad_token_id=model.config.eos_token_id)
+                                 pad_token_id=pad_id)
         outs.append(out[:, ids.shape[1]:].cpu().numpy().astype(np.int32))
+        del out, ids
+    torch.cuda.empty_cache()
     return np.concatenate(outs)
 
 
@@ -176,7 +194,7 @@ def _score_texts(clf, ctok, texts, batch=256):
                 timeout=43200, memory=32768,
                 secrets=E.WANDB_SECRET + E.HF_SECRET)
 def gen_csamp(m_fibers: int = 1000, g: int = 12, r: int = 8,
-              m_test: int = 300, depth: int = DEPTH, batch: int = 64,
+              m_test: int = 300, depth: int = DEPTH, batch: int = 16,
               temp: float = 1.0):
     """Fiber prefixes + flat fills (train/test refit tables) + per-level forks,
     every window labeled by the classifier; also saves Qwen LSH/ctrl codes."""
@@ -205,6 +223,7 @@ def gen_csamp(m_fibers: int = 1000, g: int = 12, r: int = 8,
                             ctrl=E.control_codes(q, lsh.shape[1]))
         E.vol.commit()
         print(f"[gen] qwen codes saved (q={q}, B_total={lsh.shape[1]})", flush=True)
+    pad_id = qtok.eos_token_id or qtok.pad_token_id
     PRE = _stream_prefixes(qtok, m_fibers + m_test)
     PRE_tr, PRE_te = PRE[:m_fibers], PRE[m_fibers:]
 
@@ -215,7 +234,7 @@ def gen_csamp(m_fibers: int = 1000, g: int = 12, r: int = 8,
     def flat(pre, m, tag):
         p = _flat_path(m, r, tag)
         if not os.path.exists(p):
-            wins = _gen_tails(model, pre, W_Q, r, temp, batch)
+            wins = _gen_tails(model, pre, W_Q, r, pad_id, temp, batch)
             y = label_wins(wins)
             np.savez(p + ".tmp.npz", wins=wins, y=y,
                      gid=np.repeat(np.arange(m), r))
@@ -234,7 +253,7 @@ def gen_csamp(m_fibers: int = 1000, g: int = 12, r: int = 8,
             continue
         k = j + 1
         prompts = np.concatenate([PRE_tr, spine[:, :W_Q - k]], axis=1)
-        tails = _gen_tails(model, prompts, k, g, temp, batch)
+        tails = _gen_tails(model, prompts, k, g, pad_id, temp, batch)
         head = np.repeat(spine[:, :W_Q - k], g, axis=0)
         gtoks = np.concatenate([head, tails], axis=1)
         y = label_wins(gtoks)
@@ -263,12 +282,17 @@ def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
     E.vol.reload()
     codes = np.load(f"{ROOT}/qcodes.npz")[encoding]
     B = codes.shape[1]
+    dtr = np.load(_flat_path(m_fibers, r, "tr"))
+    c0 = float(E.normalize_scores(dtr["y"]).mean())
     levels = []
     for j in range(depth):
         d = np.load(_fork_path(m_fibers, g, j))
         bits = codes[d["gtoks"][:, ::-1].astype(np.int64)] \
             .reshape(len(d["gtoks"]), -1)[:, :(j + 1) * B]
-        levels.append((bits, E.normalize_scores(d["y"]), d["gid"]))
+        # CENTERED f: with |DC| ~ 0.8 the uncentered psi is dominated by the
+        # LM's density term (every child passed the gate; the recorded
+        # pure-GL failure mode) -- the deflation target is centered anyway
+        levels.append((bits, E.normalize_scores(d["y"]) - c0, d["gid"]))
     run = E._wandb_run(f"csamp-tree-{encoding}-d{depth}",
                        {"encoding": encoding, "m_fibers": m_fibers, "g": g,
                         "depth": depth, "tau": tau, "max_width": max_width})
@@ -285,21 +309,24 @@ def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
     np.savez_compressed(f"{ROOT}/tree_{encoding}_d{depth}.npz",
                         masks=masks, psi=psi, deg=deg)
     E.vol.commit()
-    dtr = np.load(_flat_path(m_fibers, r, "tr"))
     dte = np.load(_flat_path(m_test, r, "te"))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
+    nb = depth * B                                   # refit on the tree's
 
-    def full_bits(wins):
-        return codes[wins[:, ::-1].astype(np.int64)].reshape(len(wins), -1)
+    def tree_bits(wins):                             # domain only: 8k rows
+        return codes[wins[:, ::-1].astype(np.int64)] \
+            .reshape(len(wins), -1)[:, :nb]          # >> nb, well-posed deg-1
 
-    bt = torch.tensor(full_bits(dtr["wins"]), device=dev)
-    bte = torch.tensor(full_bits(dte["wins"]), device=dev)
-    ytr = E.normalize_scores(dtr["y"])
-    g_t = torch.tensor(ytr, device=dev)
+    # refit on the flat fills ONLY: fork windows share their spine within a
+    # fiber, so adding them collapses the train law onto ~m near-duplicate
+    # contexts and the deg-1 base overfits (tried 2026-07-15: 0.02 -> -0.03)
+    bt = torch.tensor(tree_bits(dtr["wins"]), device=dev)
+    bte = torch.tensor(tree_bits(dte["wins"]), device=dev)
+    g_t = torch.tensor(E.normalize_scores(dtr["y"]) - c0, device=dev)
     W1, b1 = E.fit_deg1_exact(bt, g_t, device=dev)
     W1_t = torch.tensor(W1, device=dev)
     g_t -= (1.0 - 2.0 * bt.float()) @ W1_t + b1
-    base_te = (1.0 - 2.0 * bte.float()) @ W1_t + b1
+    base_te = (1.0 - 2.0 * bte.float()) @ W1_t + (b1 + c0)
     summary = {"encoding": encoding, "n_chars": int(len(masks)),
                "per_level_kept": tree["per_level_kept"],
                "deg_hist": np.bincount(deg, minlength=depth + 1).tolist(),
@@ -307,18 +334,18 @@ def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
                "ladder": []}
     print(f"[tree:{encoding}] deg-1 base test R2 "
           f"{summary['deg1']['test']['r2']:.4f}", flush=True)
-    if len(masks):
-        pad = np.zeros((len(masks), bt.shape[1] - masks.shape[1]), np.uint8)
-        masks_full = np.concatenate([masks, pad], axis=1)
+    kmax = min(2000, len(masks))                     # 8k train rows cannot
+    if kmax:                                         # support more characters
+        masks_k = masks[:kmax]
         C, _ = E.sequential_deflate(bt, g_t, None, device=dev, block=512,
-                                    masks=masks_full)
+                                    masks=masks_k)
         add_te = torch.zeros(len(bte), device=dev)
         lo = 0
-        for k in sorted({int(x) for x in ks.split(",") if int(x) < len(masks)}
-                        | {len(masks)}):
+        for k in sorted({int(x) for x in ks.split(",") if int(x) < kmax}
+                        | {kmax}):
             for blo in range(lo, k, 4096):
                 hi = min(blo + 4096, k)
-                add_te += E.mask_parity_features(bte, masks_full[blo:hi]) \
+                add_te += E.mask_parity_features(bte, masks_k[blo:hi]) \
                     @ torch.tensor(C[blo:hi], device=dev)
             lo = k
             entry = {"k": int(k),
@@ -346,7 +373,7 @@ def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
 def csamp_main(stage: str = "tree", encoding: str = "lsh",
                m_fibers: int = 1000, g: int = 12, r: int = 8,
                m_test: int = 300, depth: int = DEPTH, tau: float = 0.05,
-               max_width: int = 512, batch: int = 64):
+               max_width: int = 512, batch: int = 16):
     if stage == "gen":
         print(gen_csamp.remote(m_fibers, g, r, m_test, depth, batch))
     elif stage == "tree":
