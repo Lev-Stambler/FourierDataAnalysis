@@ -886,6 +886,12 @@ def test_sequential_deflate_handles_duplicates_and_constants():
     Cb = fourier_coefficients(bits, G, w, idx, device="cpu")
     G_batch = G - xor_parity_features(bits, idx) @ Cb
     assert float((G_batch ** 2).mean()) > float((G_out ** 2).mean())
+    # block-OMP mode: joint LS projection per block reaches the same residual
+    # (a duplicate cluster's coefficient SPLITS across copies, summing right)
+    C2, G2 = sequential_deflate(bits, G.copy(), w, idx, device="cpu", block=4)
+    assert float((G2 ** 2).mean()) < 1e-6                          # jitter leaves ~1e-8
+    assert np.allclose(C2[0] + C2[1], V[0], atol=1e-2)             # dup pair sums to V[0]
+    assert np.allclose(C2[3], V[1], atol=1e-2)
 
 
 def test_full_kl_zero_on_teacher_and_positive_off():

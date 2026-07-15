@@ -1177,7 +1177,7 @@ def fourier_coefficients(bits, G, w, idx, device=None, char_chunk=8192,
     return (C / float(w_t.sum())).cpu().numpy()
 
 
-def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024):
+def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024, block=1):
     """TRUE matching-pursuit deflation: subtract each character's plain
     weighted Fourier coefficient ONE AT A TIME against the CURRENT residual,
     in the given order.  This is the fix for the batch-deflation divergence
@@ -1186,8 +1186,14 @@ def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024):
     duplicate cluster of size m by (1-m)^2; sequentially, a later duplicate
     sees psi ~ 0 and gets coefficient ~ 0, and a constant character on the
     centered target gets coefficient 0.  Each rank-1 update is a 1-D
-    projection, so the residual can never grow.  Returns (C (K, dY) float32,
-    G_out) with G mutated in place when given as a torch tensor."""
+    projection, so the residual can never grow.
+    ``block > 1`` = block-OMP: exact joint LS projection per block (Gram
+    solve, tiny jitter -- a duplicate cluster's coefficient SPLITS across
+    copies, summing correctly), Gauss-Seidel across blocks.  Same guarantees
+    (every block update is a projection), ~block x fewer kernel launches:
+    at 400k chars x 1M contexts the rank-1 loop is ~40 min of launch+HBM
+    overhead, block=512 is ~2 min.  Returns (C (K, dY) float32, G_out) with
+    G mutated in place when given as a torch tensor."""
     import torch
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     was_np = not torch.is_tensor(G)
@@ -1199,6 +1205,17 @@ def sequential_deflate(bits, G, w, idx, device=None, char_chunk=1024):
     wsum = float(w_t.sum())
     idx = np.asarray(idx, np.int16)
     C = np.empty((len(idx), G_t.shape[1]), np.float32)
+    if block > 1:
+        for klo in range(0, len(idx), block):
+            F = xor_parity_features(bits_t, idx[klo:klo + block])
+            Fw = F * w_t[:, None]
+            S = (F.t() @ Fw) / wsum
+            bvec = (Fw.t() @ G_t) / wsum
+            S += 1e-4 * torch.eye(len(S), device=dev)              # dup clusters: singular
+            C_b = torch.linalg.solve(S.double(), bvec.double()).float()
+            G_t -= F @ C_b
+            C[klo:klo + len(C_b)] = C_b.cpu().numpy()
+        return C, (G_t.cpu().numpy() if was_np else G_t)
     for klo in range(0, len(idx), char_chunk):
         F = xor_parity_features(bits_t, idx[klo:klo + char_chunk])
         for j in range(F.shape[1]):
