@@ -1219,8 +1219,21 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
          "eps": 1e-12},
         {"params": [A, Z, c], "lr": lr_z, "weight_decay": wd},
         {"params": [b], "lr": lr_z, "weight_decay": 0.0}])
+    # TWO-TIMESCALE: gates explore hot early then anneal to ~0 (cosine over
+    # anneal_steps) so supports freeze and (z, c) consolidate -- unannealed
+    # gate churn crashed val 0.58 -> -0.07 (the STE round-5 dynamic)
+    anneal_steps = max(1, int(steps * 0.4))
+
+    def lam_theta(s_):
+        wu = min(1.0, (s_ + 1) / max(1, warmup))
+        cos = 0.5 * (1 + np.cos(np.pi * min(1.0, s_ / anneal_steps)))
+        return wu * max(0.02, cos)
+
+    def lam_rest(s_):
+        return min(1.0, (s_ + 1) / max(1, warmup))
+
     sched = torch.optim.lr_scheduler.LambdaLR(
-        opt, lambda s_: min(1.0, (s_ + 1) / max(1, warmup)))
+        opt, [lam_theta, lam_rest, lam_rest])
 
     def predict(tok_eval, nrows=None):
         with torch.no_grad():
