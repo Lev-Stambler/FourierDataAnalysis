@@ -736,25 +736,29 @@ def _tuple_key(tok, pos, q, n_hash):
 @app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
               timeout=43200, memory=49152, secrets=WANDB_SECRET)
 def fit_qhh(n_train: int = 2_000_000, n_val: int = 25_000,
-            n_test: int = 25_000, w: int = W_WIN, rounds: int = 8,
-            per_round: int = 32, n_hash: int = 1 << 22, lam: float = 10.0,
-            min_gain: float = 2e-5):
-    """Iterated HEAVY-HITTER discovery in the q-ary basis, fully calculated:
-    each round scores every position pair (and every triple anchored on an
-    already-selected support) by the val gain of its ridge-shrunk
-    conditional-mean table on the CURRENT residual, deflates the winners,
-    and repeats until the residual spectrum runs dry.  No hand-designed
-    structure anywhere; supports of arbitrary span are discovered."""
+            n_test: int = 25_000, w: int = W_WIN, rounds: int = 24,
+            n_hash: int = 1 << 22, lam: float = 10.0,
+            min_gain: float = 1e-4):
+    """Iterated HEAVY-HITTER discovery, v2.  Candidates per round:
+    (a) OFFSET-POOLED pair tables (one shared token-pair table per offset
+        d = j - i, pooled over all positions -- translation invariance is a
+        CANDIDATE that must win, not an assumption; pooling is what makes
+        q^2 cells estimable: v1's per-position tables saw each cell ~once
+        and deflated noise, test 0.699 -> 0.692),
+    (b) raw position pairs (win when position matters),
+    (c) offset-pattern triples anchored on selected offsets.
+    Each candidate table is closed-form shrunk cell means with a 1-D
+    calculated rescale alpha = <pred,g>/<pred,pred> (fixes additive
+    overcounting of pooled sums).  Greedy top-1 per round, val-gated."""
     import torch
     vol.reload()
     data = np.load(_data_path(w, n_train, n_val, n_test))
-    tok = {k: np.ascontiguousarray(data[f"tok_{k}"])
+    tok = {k: np.ascontiguousarray(data[f"tok_{k}"]).astype(np.int64)
            for k in ("tr", "va", "te")}
     q = int(np.load(f"{ROOT}/emb.npz")["E"].shape[0])
     dev = "cuda"
-    run = _wandb_run(f"qhh-N{n_train}", {"rounds": rounds,
-                                         "per_round": per_round,
-                                         "n_hash": n_hash, "lam": lam})
+    run = _wandb_run(f"qhh2-N{n_train}", {"rounds": rounds, "n_hash": n_hash,
+                                          "lam": lam})
     yv = {k: normalize_scores(data[f"y_{k}"]) for k in ("tr", "va", "te")}
     v_uni, b0 = fit_token_table(tok["tr"], yv["tr"], q, wd=10.0)
     g = {k: torch.tensor(yv[k], device=dev)
@@ -766,83 +770,103 @@ def fit_qhh(n_train: int = 2_000_000, n_val: int = 25_000,
 
     print(f"[qhh] unigram base: val {r2('va'):.4f} test {r2('te'):.4f}",
           flush=True)
-    selected = []                                    # supports (tuples)
+    MIX = -7046029254386353131                       # 0x9E3779B97F4A7C15 as
+    tokt = {k: torch.tensor(tok[k], device=dev)      # wrapped int64
+            for k in ("tr", "va", "te")}
+
+    def _finish(h):
+        # logical top bits of the wrapped product, sign-safe: arithmetic
+        # shift then mask; n_hash is a power of two
+        return ((h * MIX) >> 40) & (n_hash - 1)
+
+    def cand_keys(cand, split):
+        """Cell ids (D, P) on GPU: ('off', d) pooled pairs, ('pos', i, j)
+        one pair, ('off3', d1, d2) pooled triples.  numpy hashing was
+        60-80ms/candidate -- 15+min rounds; GPU is ~1ms."""
+        t = tokt[split]
+        if cand[0] == "pos":
+            _, i, j = cand
+            return _finish(t[:, i] * q + t[:, j])[:, None]
+        if cand[0] == "off":
+            d = cand[1]
+            return _finish(t[:, : w - d] * q + t[:, d:])
+        d1, d2 = cand[1], cand[2]
+        span = d1 + d2
+        return _finish(((t[:, : w - span] * MIX) ^ t[:, d1: w - d2]) * MIX
+                       ^ t[:, span:])
+
+    def fit_apply(cand, splits=("tr", "va", "te")):
+        """Closed-form table + alpha on train; returns per-split preds."""
+        kt = cand_keys(cand, "tr")
+        P = kt.shape[1]
+        flat = kt.reshape(-1)
+        gs = torch.zeros(n_hash, device=dev).scatter_add_(
+            0, flat, g["tr"].repeat_interleave(P))
+        ns = torch.zeros(n_hash, device=dev).scatter_add_(
+            0, flat, torch.ones(len(flat), device=dev))
+        v = gs / (ns + lam)
+        preds = {s: v[cand_keys(cand, s)].sum(dim=1) for s in splits}
+        num = float(preds["tr"] @ g["tr"])
+        den = float(preds["tr"] @ preds["tr"]) + 1e-12
+        alpha = num / den
+        return v, alpha, {s: alpha * p for s, p in preds.items()}
+
+    selected = []
     tables = []
-
-    def keys(sup, split):                            # fresh each use: a cache
-        return torch.tensor(                         # of 2k+ 16MB tensors
-            _tuple_key(tok[split], sup, q, n_hash), device=dev)  # OOMs
-
+    best_state = (r2("va"), 0)
     for rnd in range(rounds):
-        cands = [(i, j) for i in range(w) for j in range(i + 1, w)
-                 if (i, j) not in selected]
-        for sup in selected:
-            if len(sup) == 2:
-                for k3 in range(w):
-                    if k3 not in sup:
-                        t = tuple(sorted(sup + (k3,)))
-                        if t not in selected:
-                            cands.append(t)
-        cands = list(dict.fromkeys(cands))
-        scored = []
-        vm = float((g["va"] ** 2).mean())
-        for sup in cands:
-            v = _cell_table(keys(sup, "tr").cpu().numpy(), g["tr"], n_hash,
-                            lam, dev)
-            gain = vm - float(((g["va"] - v[keys(sup, "va")]) ** 2).mean())
-            scored.append((gain, sup))
-        scored.sort(key=lambda x: -x[0])
-        picked = [s for s in scored[:per_round] if s[0] > min_gain]
-        if not picked:
-            print(f"[qhh] round {rnd}: spectrum dry (best gain "
-                  f"{scored[0][0]:.2e})", flush=True)
-            break
-        for gain, sup in picked:
-            v = _cell_table(keys(sup, "tr").cpu().numpy(), g["tr"], n_hash,
-                            lam, dev)
-            for k in ("tr", "va", "te"):
-                g[k] -= v[keys(sup, k)]
-            selected.append(sup)
-            tables.append((sup, v.cpu().numpy().astype(np.float16)))
-        deg_hist = {}
+        cands = [("off", d) for d in range(1, w)]
+        cands += [("pos", i, j) for i in range(w) for j in range(i + 1, w)]
         for s in selected:
-            deg_hist[len(s)] = deg_hist.get(len(s), 0) + 1
-        print(f"[qhh] === round {rnd}: +{len(picked)} supports "
-              f"(best gain {picked[0][0]:.2e}, degs {deg_hist}); "
-              f"val {r2('va'):.4f} test {r2('te'):.4f}", flush=True)
+            if s[0] == "off":
+                for d2 in range(1, w - s[1]):
+                    c3 = ("off3", s[1], d2)
+                    if c3 not in selected:
+                        cands.append(c3)
+        cands = [c for c in dict.fromkeys(cands) if c not in selected]
+        vm = float((g["va"] ** 2).mean())
+        best = None
+        for cand in cands:
+            _, _, preds = fit_apply(cand, splits=("tr", "va"))
+            gain = vm - float(((g["va"] - preds["va"]) ** 2).mean())
+            if best is None or gain > best[0]:
+                best = (gain, cand)
+        gain, cand = best
+        if gain < min_gain:
+            print(f"[qhh] round {rnd}: dry (best {cand} gain {gain:.2e})",
+                  flush=True)
+            break
+        v, alpha, preds = fit_apply(cand)
+        for k in ("tr", "va", "te"):
+            g[k] -= preds[k]
+        selected.append(cand)
+        tables.append((cand, alpha, v.cpu().numpy().astype(np.float16)))
+        print(f"[qhh] === round {rnd}: {cand} gain {gain:.2e} alpha "
+              f"{alpha:.3f}; val {r2('va'):.4f} test {r2('te'):.4f}",
+              flush=True)
         if run is not None:
-            run.log({"round": rnd, "n_supports": len(selected),
-                     "val_r2": r2("va"), "test_r2": r2("te")})
-    nz = sum(int((np.abs(t) > 1e-3).sum()) for _, t in tables)
-    summary = {"n_train": n_train, "rounds_run": rnd + 1,
-               "n_supports": len(selected),
-               "supports": [list(map(int, s)) for s in selected],
-               "nz_cells": nz,
-               "sparse_bytes": int(q * 2 + nz * 10),
+            run.log({"round": rnd, "val_r2": r2("va"), "test_r2": r2("te"),
+                     "gain": gain})
+    nz = sum(int((np.abs(t) > 1e-3).sum()) for _, _, t in tables)
+    summary = {"n_train": n_train, "n_supports": len(selected),
+               "supports": [list(map(str, s)) for s in selected],
+               "nz_cells": nz, "sparse_bytes": int(q * 2 + nz * 10),
                "final": {}}
     for k, tag in (("va", "val"), ("te", "test")):
         pred = torch.tensor(yv[k], device=dev) - g[k]
         summary["final"][tag] = score_metrics(pred.cpu().numpy(),
                                               data[f"y_{k}"])
-    print(f"[qhh] FINAL: val R2 {summary['final']['val']['r2']:.4f} test "
+    print(f"[qhh] FINAL: val {summary['final']['val']['r2']:.4f} test "
           f"{summary['final']['test']['r2']:.4f}; {len(selected)} supports, "
-          f"{nz} heavy cells ~ {summary['sparse_bytes'] / 1e6:.1f}MB sparse",
+          f"{nz} heavy cells ~ {summary['sparse_bytes'] / 1e6:.1f}MB",
           flush=True)
-    np.savez_compressed(f"{ROOT}/model_qhh_N{n_train}.npz",
-                        v_uni=v_uni.astype(np.float16), b0=b0,
-                        supports=np.array(
-                            [list(s) + [-1] * (3 - len(s))
-                             for s in selected], np.int16),
-                        tables=np.stack([t for _, t in tables]))
     with open(f"{ROOT}/summary_qhh_N{n_train}.json", "w") as fh:
         json.dump(summary, fh, indent=1)
     vol.commit()
     if run is not None:
-        run.summary.update({"test_r2": summary["final"]["test"]["r2"],
-                            "n_supports": len(selected)})
+        run.summary.update({"test_r2": summary["final"]["test"]["r2"]})
         run.finish()
-    print(json.dumps({k: v for k, v in summary.items()
-                      if k != "supports"}), flush=True)
+    print(json.dumps(summary), flush=True)
     return summary
 
 
