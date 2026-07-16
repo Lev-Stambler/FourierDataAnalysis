@@ -1138,12 +1138,18 @@ def slot_forward(feat_batch, theta, Z, eps=1e-3):
     mask = (theta > 0).t()                           # (w, S) hard gates
     hard = torch.where(mask.unsqueeze(0), u, torch.ones_like(u))
     phi_hard = hard.prod(dim=1)                      # (B, S) exact value
-    g = torch.sigmoid(theta).t()                     # (w, S) soft gates
-    logmag = torch.einsum("bws,ws->bs",
-                          torch.log(torch.clamp(u.detach().abs(), min=eps)),
-                          g)
-    soft = torch.sign(phi_hard).detach() * torch.exp(logmag)
-    return phi_hard + (soft - soft.detach())
+    # gate-surrogate path in fp32 ALWAYS: sigma'(8)*log|u| ~ 1e-4 underflows
+    # in bf16 autocast -> theta grads exactly 0 -> frozen supports (observed:
+    # mean_degree pinned to 4 decimals while val flatlined at 0.59)
+    with torch.amp.autocast(device_type=u.device.type, enabled=False):
+        uf = u.detach().float()
+        g = torch.sigmoid(theta.float()).t()         # (w, S) soft gates
+        logmag = torch.einsum(
+            "bws,ws->bs", torch.log(torch.clamp(uf.abs(), min=eps)), g)
+        soft = (torch.sign(phi_hard).detach().float()
+                * torch.exp(logmag))
+        out = phi_hard.float() + (soft - soft.detach())
+    return out
 
 
 def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
