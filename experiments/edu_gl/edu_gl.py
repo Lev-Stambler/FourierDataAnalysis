@@ -959,12 +959,11 @@ def fit_qjoint(offsets: str = "1,2,3,4", n_hash: int = 1 << 22,
 def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
               n_val: int = 25_000, n_test: int = 25_000, w: int = W_WIN,
               iters: int = 600, wds: str = "30,100,300"):
-    """The FULL joint solve: unigrams + ALL 63 offset-pooled pair tables
-    (264M coefficients) in ONE Jacobi-preconditioned CG ridge, fp64 dot
-    products, solved to convergence.  No selection anywhere -- the greedy
-    gate measured single tables on a residual; jointly the weak offsets
-    still carry mass.  v1 failures fixed: unpreconditioned fp32 CG never
-    converged (residual oscillating at 1e-3 rel)."""
+    """FULL joint solve over unigrams + ALL 63 offset-pooled pair tables
+    with EMPIRICAL-BAYES per-group ridge: each table's shrinkage scales
+    inversely with its AUTO-MEASURED solo val gain (no hand-fed constants).
+    Jacobi-preconditioned CG, fp64 dots.  Scalar-wd all-in ridge: 0.748;
+    selected-4: 0.772; evidence-weighted all-in: 0.782."""
     import torch
     vol.reload()
     data = np.load(_data_path(w, n_train, n_val, n_test))
@@ -974,7 +973,45 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
     dev = "cuda"
     run = _wandb_run(f"qfull-N{n_train}", {"n_hash": n_hash, "iters": iters})
     mixi = -7046029254386353131
+    ytr = normalize_scores(data["y_tr"])
+    yva = normalize_scores(data["y_va"])
+    y_t = torch.tensor(ytr - ytr.mean(), device=dev)
 
+    # ---- phase 1 (small memory): auto-measure per-offset solo gains
+    v0 = fit_token_table(tok["tr"], ytr, q, wd=10.0)
+    g_tr0 = torch.tensor(ytr, device=dev) \
+        - token_table_apply(tok["tr"], v0[0], v0[1], dev)
+    g_va0 = torch.tensor(yva, device=dev) \
+        - token_table_apply(tok["va"], v0[0], v0[1], dev)
+    tok_tr_t = torch.tensor(tok["tr"], device=dev)
+    tok_va_t = torch.tensor(tok["va"], device=dev)
+    gains = {}
+    vm0 = float((g_va0 ** 2).mean())
+    for d in range(1, w):
+        ktr = ((tok_tr_t[:, : w - d] * q + tok_tr_t[:, d:])
+               * mixi >> 40) & (n_hash - 1)
+        gs = torch.zeros(n_hash, device=dev).scatter_add_(
+            0, ktr.reshape(-1), g_tr0.repeat_interleave(w - d))
+        ns = torch.zeros(n_hash, device=dev).scatter_add_(
+            0, ktr.reshape(-1), torch.ones(ktr.numel(), device=dev))
+        vtab = gs / (ns + 10.0)
+        ptr = vtab[ktr].sum(dim=1)
+        alpha = float(ptr @ g_tr0) / (float(ptr @ ptr) + 1e-12)
+        kva = ((tok_va_t[:, : w - d] * q + tok_va_t[:, d:])
+               * mixi >> 40) & (n_hash - 1)
+        pred = vtab[kva].sum(dim=1)
+        gains[d] = max(vm0 - float(((g_va0 - alpha * pred) ** 2).mean()),
+                       1e-7)
+        del ktr, gs, ns, vtab, ptr, kva, pred
+        torch.cuda.empty_cache()
+    del tok_tr_t, tok_va_t, g_tr0, g_va0
+    torch.cuda.empty_cache()
+    gmax = max(gains.values())
+    print("[qfull] measured gains (top 8): "
+          + str(sorted(((round(v, 6), d) for d, v in gains.items()),
+                       reverse=True)[:8]), flush=True)
+
+    # ---- phase 2: full joint solve with evidence-weighted diagonal ridge
     def ids_of(t):
         cols = [t]
         base = q
@@ -987,17 +1024,15 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
     ids = {}
     for k in ("tr", "va", "te"):
         ids[k], n_feat = ids_of(tok[k])
-    ids_t = torch.tensor(ids["tr"], device=dev)      # int32: 16.6GB (int64
-    del ids["tr"]                                    # would be 33GB > A100)
+    ids_t = torch.tensor(ids["tr"], device=dev)      # int32: 16.6GB
+    del ids["tr"]
     D, F = ids_t.shape
-    ytr = normalize_scores(data["y_tr"])
-    y_t = torch.tensor(ytr - ytr.mean(), device=dev)
     chunk = 65536
 
     def scatter_rows(vec_per_row):
         out = torch.zeros(n_feat, device=dev)
         for lo in range(0, D, chunk):
-            sl = ids_t[lo:lo + chunk].long()         # per-chunk int64 view
+            sl = ids_t[lo:lo + chunk].long()
             out.scatter_add_(0, sl.reshape(-1),
                              vec_per_row[lo:lo + chunk, None]
                              .expand(-1, F).reshape(-1))
@@ -1011,80 +1046,45 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
 
     counts = scatter_rows(torch.ones(D, device=dev))
     b = scatter_rows(y_t)
-    # EMPIRICAL-BAYES per-group ridge, gains AUTO-MEASURED per table (no
-    # hand-fed constants): each group's wd scales inversely with the val
-    # gain of its solo shrunk-mean table on the unigram residual.  Scalar
-    # wd over-shrinks good tables to control dead ones (0.748 < 0.772);
-    # measured-evidence weighting broke the wall (0.782).
-    yva = normalize_scores(data["y_va"])
-    v0 = fit_token_table(tok["tr"], ytr, q, wd=10.0)
-    g_tr0 = torch.tensor(ytr, device=dev) \
-        - token_table_apply(tok["tr"], v0[0], v0[1], dev)
-    g_va0 = torch.tensor(yva, device=dev) \
-        - token_table_apply(tok["va"], v0[0], v0[1], dev)
-    gains = {}
-    vm0 = float((g_va0 ** 2).mean())
-    for d in range(1, w):
-        ktr = ((torch.tensor(tok["tr"][:, : w - d], device=dev)
-                * q + torch.tensor(tok["tr"][:, d:], device=dev))
-               * mixi >> 40) & (n_hash - 1)
-        gs = torch.zeros(n_hash, device=dev).scatter_add_(
-            0, ktr.reshape(-1), g_tr0.repeat_interleave(w - d))
-        ns = torch.zeros(n_hash, device=dev).scatter_add_(
-            0, ktr.reshape(-1), torch.ones(ktr.numel(), device=dev))
-        vtab = gs / (ns + 10.0)
-        kva = ((torch.tensor(tok["va"][:, : w - d], device=dev)
-                * q + torch.tensor(tok["va"][:, d:], device=dev))
-               * mixi >> 40) & (n_hash - 1)
-        pred = vtab[kva].sum(dim=1)
-        a_num = float((vtab[ktr].sum(dim=1) @ g_tr0))
-        a_den = float((vtab[ktr].sum(dim=1) ** 2).sum()) + 1e-12
-        alpha = a_num / a_den
-        gains[d] = max(vm0 - float(((g_va0 - alpha * pred) ** 2).mean()),
-                       1e-7)
-        del gs, ns, vtab, ktr, kva
-    gmax = max(gains.values())
-    print("[qfull] measured gains (top 8): "
-          + str(sorted(((round(v, 6), d) for d, v in gains.items()),
-                       reverse=True)[:8]), flush=True)
     reg = torch.empty(n_feat, device=dev)
     reg[:q] = 1.0
     base_i = q
     for d in range(1, w):
         reg[base_i: base_i + n_hash] = gmax / gains[d]
         base_i += n_hash
-    summary = {"n_feat": int(n_feat), "n_train": n_train, "full": {},
+    summary = {"n_feat": int(n_feat), "n_train": n_train,
+               "gains": {str(d): gains[d] for d in gains}, "full": {},
                "trunc": []}
     best = None
     for wd in (float(x) for x in wds.split(",")):
-        wdv = wd * reg                               # diagonal ridge
-        Minv = 1.0 / (counts + wdv)                  # Jacobi preconditioner
+        wdv = wd * reg
+        Minv = 1.0 / (counts + wdv)
         v = torch.zeros(n_feat, device=dev)
         r = b.clone()
         z = Minv * r
         p = z.clone()
-        rz = float((r.double() @ z.double()))
+        rz = float(r.double() @ z.double())
         rz0 = rz
         for it in range(iters):
             Ap = scatter_rows(Xv(p)) + wdv * p
-            alpha = rz / float((p.double() @ Ap.double()))
+            alpha = rz / float(p.double() @ Ap.double())
             v += alpha * p
             r -= alpha * Ap
             z = Minv * r
-            rz_new = float((r.double() @ z.double()))
-            if it % 50 == 0:
+            rz_new = float(r.double() @ z.double())
+            if it % 100 == 0:
                 print(f"[qfull] wd {wd:g} iter {it} rel {rz_new / rz0:.3e}",
                       flush=True)
             if rz_new < 1e-10 * rz0:
                 break
             p = z + (rz_new / rz) * p
             rz = rz_new
-        pv = torch.empty(0)
         m = {}
         for k, tag in (("va", "val"), ("te", "test")):
-            kk = torch.tensor(ids[k], device=dev)
+            kk = torch.tensor(ids[k].astype(np.int64), device=dev)
             pred = v[kk].sum(dim=1).cpu().numpy() + ytr.mean()
             m[tag] = score_metrics(pred, data[f"y_{k}"])
+            del kk
         print(f"[qfull] === wd {wd:g}: val {m['val']['r2']:.4f} test "
               f"{m['test']['r2']:.4f}", flush=True)
         if run is not None:
@@ -1092,6 +1092,8 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
                      "test_r2": m["test"]["r2"]})
         if best is None or m["val"]["mse"] < best[2]["val"]["mse"]:
             best = (wd, v.cpu(), m)
+        del v, r, z, p
+        torch.cuda.empty_cache()
     wd, v_cpu, m = best
     summary["wd"] = wd
     summary["full"] = {t: m[t] for t in ("val", "test")}
@@ -1101,13 +1103,14 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
         if keep >= n_feat:
             continue
         vt = torch.zeros_like(v)
-        sel = torch.tensor(order[:keep], device=dev)
+        sel = torch.tensor(order[:keep].copy(), device=dev)
         vt[sel] = v[sel]
         entry = {"cells": keep, "mb": round(keep * 6 / 1e6, 2)}
-        for k, tag in (("va", "val"), ("te", "te" "st")):
-            kk = torch.tensor(ids[k], device=dev)
+        for k, tag in (("va", "val"), ("te", "test")):
+            kk = torch.tensor(ids[k].astype(np.int64), device=dev)
             pred = vt[kk].sum(dim=1).cpu().numpy() + ytr.mean()
             entry[tag] = score_metrics(pred, data[f"y_{k}"])["r2"]
+            del kk
         summary["trunc"].append(entry)
         print(f"[qfull] top-{keep} (~{entry['mb']}MB): val "
               f"{entry['val']:.4f} test {entry['test']:.4f}", flush=True)
@@ -1119,7 +1122,6 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
         run.finish()
     print(json.dumps(summary), flush=True)
     return summary
-
 
 
 # --------------------------------------------------------------------- metrics
