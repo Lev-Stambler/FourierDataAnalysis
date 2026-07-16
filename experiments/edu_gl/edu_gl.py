@@ -612,6 +612,240 @@ def fit_ngram(orders: str = "1,2", n_hash: int = 1 << 22,
     return summary
 
 
+def _pair_key(tok, i, j, q, n_hash):
+    """Hashed cell id of the ORDERED token pair at positions (i, j)."""
+    h = (np.asarray(tok[:, i], np.uint64) * np.uint64(q)
+         + np.asarray(tok[:, j], np.uint64))
+    h = h * np.uint64(0x9E3779B97F4A7C15)
+    return ((h >> np.uint64(40)) % np.uint64(n_hash)).astype(np.int64)
+
+
+def _cell_table(keys, g, n_hash, lam=10.0, device=None):
+    """Closed-form ridge cell means: v[c] = sum_g[c] / (n[c] + lam)."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    k = torch.tensor(keys, device=device)
+    gs = torch.zeros(n_hash, device=device).scatter_add_(0, k, g)
+    ns = torch.zeros(n_hash, device=device).scatter_add_(
+        0, k, torch.ones_like(g))
+    return gs / (ns + lam)
+
+
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=49152, secrets=WANDB_SECRET)
+def fit_qpair(n_train: int = 2_000_000, n_val: int = 25_000,
+              n_test: int = 25_000, w: int = W_WIN, top_pairs: int = 64,
+              n_hash: int = 1 << 22, lam: float = 10.0):
+    """ARBITRARY-support q-ary degree-2 DISCOVERY, fully calculated: score
+    every position pair (i, j) by the val gain of its exact (ridge-shrunk)
+    conditional-mean table on the unigram residual, then greedily deflate
+    the top discovered pairs.  No adjacency prior -- if word order matters,
+    the search must FIND it.  The hand-designed bigram table (0.767) is the
+    baseline this must match with learned support."""
+    import torch
+    vol.reload()
+    data = np.load(_data_path(w, n_train, n_val, n_test))
+    tok = {k: np.ascontiguousarray(data[f"tok_{k}"])   # npz member access
+           for k in ("tr", "va", "te")}                # re-reads from disk
+    q = int(np.load(f"{ROOT}/emb.npz")["E"].shape[0])  # EVERY time -- hoist
+    dev = "cuda"
+    run = _wandb_run(f"qpair-N{n_train}", {"top_pairs": top_pairs,
+                                           "n_hash": n_hash, "lam": lam})
+    yv = {"tr": normalize_scores(data["y_tr"]),
+          "va": normalize_scores(data["y_va"]),
+          "te": normalize_scores(data["y_te"])}
+    v_uni, b0 = fit_token_table(tok["tr"], yv["tr"], q, wd=10.0)
+    g = {k: torch.tensor(yv[k], device=dev)
+         - token_table_apply(tok[k], v_uni, b0, dev)
+         for k in ("tr", "va", "te")}
+    base_r2 = {k: 1.0 - float((g[k] ** 2).mean()) / float(np.var(yv[k]))
+               for k in ("va", "te")}
+    print(f"[qpair] unigram base: val R2 {base_r2['va']:.4f} test "
+          f"{base_r2['te']:.4f}", flush=True)
+    scores = []
+    for i in range(w):
+        for j in range(i + 1, w):
+            kt = _pair_key(tok["tr"], i, j, q, n_hash)
+            v = _cell_table(kt, g["tr"], n_hash, lam, dev)
+            kv = torch.tensor(_pair_key(tok["va"], i, j, q, n_hash),
+                              device=dev)
+            gain = float((g["va"] ** 2).mean()) \
+                - float(((g["va"] - v[kv]) ** 2).mean())
+            scores.append((gain, i, j))
+    scores.sort(reverse=True)
+    print("[qpair] top-15 discovered pairs (gain, i, j): "
+          + str([(round(s, 5), i, j) for s, i, j in scores[:15]]), flush=True)
+    adj = sum(1 for _, i, j in scores[:top_pairs] if j == i + 1)
+    print(f"[qpair] adjacency among top-{top_pairs}: {adj}", flush=True)
+    tables = []
+    ladder = []
+    for rank, (s0, i, j) in enumerate(scores[:top_pairs]):
+        kt = _pair_key(tok["tr"], i, j, q, n_hash)
+        v = _cell_table(kt, g["tr"], n_hash, lam, dev)
+        g["tr"] -= v[torch.tensor(kt, device=dev)]
+        for k in ("va", "te"):
+            kk = torch.tensor(_pair_key(tok[k], i, j, q, n_hash), device=dev)
+            g[k] -= v[kk]
+        tables.append((i, j, v.cpu().numpy().astype(np.float16)))
+        if (rank + 1) in (8, 16, 32, 64, top_pairs):
+            entry = {"k": rank + 1}
+            for k, tag in (("va", "val"), ("te", "test")):
+                pred = torch.tensor(yv[k], device=dev) - g[k]
+                entry[tag] = score_metrics(pred.cpu().numpy(),
+                                           data[f"y_{k}"])
+            ladder.append(entry)
+            print(f"[qpair] === {rank + 1} discovered pairs: val R2 "
+                  f"{entry['val']['r2']:.4f} test {entry['test']['r2']:.4f}",
+                  flush=True)
+            if run is not None:
+                run.log({"pairs": rank + 1, "val_r2": entry["val"]["r2"],
+                         "test_r2": entry["test"]["r2"]})
+    summary = {"n_train": n_train, "top_pairs": top_pairs, "n_hash": n_hash,
+               "lam": lam, "unigram_base": base_r2,
+               "adjacent_in_top": adj,
+               "top20": [(round(s, 5), i, j) for s, i, j in scores[:20]],
+               "ladder": ladder}
+    np.savez_compressed(f"{ROOT}/model_qpair_N{n_train}.npz",
+                        v_uni=v_uni.astype(np.float16), b0=b0,
+                        pair_ij=np.array([(i, j) for i, j, _ in tables],
+                                         np.int16),
+                        tables=np.stack([t for _, _, t in tables]))
+    with open(f"{ROOT}/summary_qpair_N{n_train}.json", "w") as fh:
+        json.dump(summary, fh, indent=1)
+    vol.commit()
+    if run is not None:
+        run.summary.update({"best_test_r2":
+                            max(e["test"]["r2"] for e in ladder)})
+        run.finish()
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
+
+
+def _tuple_key(tok, pos, q, n_hash):
+    """Hashed cell id of the ordered token tuple at positions ``pos``."""
+    mix = np.uint64(0x9E3779B97F4A7C15)
+    h = np.asarray(tok[:, pos[0]], np.uint64)
+    for p in pos[1:]:
+        h = (h * mix) ^ np.asarray(tok[:, p], np.uint64)
+    h = h * mix
+    return ((h >> np.uint64(40)) % np.uint64(n_hash)).astype(np.int64)
+
+
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=49152, secrets=WANDB_SECRET)
+def fit_qhh(n_train: int = 2_000_000, n_val: int = 25_000,
+            n_test: int = 25_000, w: int = W_WIN, rounds: int = 8,
+            per_round: int = 32, n_hash: int = 1 << 22, lam: float = 10.0,
+            min_gain: float = 2e-5):
+    """Iterated HEAVY-HITTER discovery in the q-ary basis, fully calculated:
+    each round scores every position pair (and every triple anchored on an
+    already-selected support) by the val gain of its ridge-shrunk
+    conditional-mean table on the CURRENT residual, deflates the winners,
+    and repeats until the residual spectrum runs dry.  No hand-designed
+    structure anywhere; supports of arbitrary span are discovered."""
+    import torch
+    vol.reload()
+    data = np.load(_data_path(w, n_train, n_val, n_test))
+    tok = {k: np.ascontiguousarray(data[f"tok_{k}"])
+           for k in ("tr", "va", "te")}
+    q = int(np.load(f"{ROOT}/emb.npz")["E"].shape[0])
+    dev = "cuda"
+    run = _wandb_run(f"qhh-N{n_train}", {"rounds": rounds,
+                                         "per_round": per_round,
+                                         "n_hash": n_hash, "lam": lam})
+    yv = {k: normalize_scores(data[f"y_{k}"]) for k in ("tr", "va", "te")}
+    v_uni, b0 = fit_token_table(tok["tr"], yv["tr"], q, wd=10.0)
+    g = {k: torch.tensor(yv[k], device=dev)
+         - token_table_apply(tok[k], v_uni, b0, dev)
+         for k in ("tr", "va", "te")}
+
+    def r2(k):
+        return 1.0 - float((g[k] ** 2).mean()) / float(np.var(yv[k]))
+
+    print(f"[qhh] unigram base: val {r2('va'):.4f} test {r2('te'):.4f}",
+          flush=True)
+    selected = []                                    # supports (tuples)
+    tables = []
+
+    def keys(sup, split):                            # fresh each use: a cache
+        return torch.tensor(                         # of 2k+ 16MB tensors
+            _tuple_key(tok[split], sup, q, n_hash), device=dev)  # OOMs
+
+    for rnd in range(rounds):
+        cands = [(i, j) for i in range(w) for j in range(i + 1, w)
+                 if (i, j) not in selected]
+        for sup in selected:
+            if len(sup) == 2:
+                for k3 in range(w):
+                    if k3 not in sup:
+                        t = tuple(sorted(sup + (k3,)))
+                        if t not in selected:
+                            cands.append(t)
+        cands = list(dict.fromkeys(cands))
+        scored = []
+        vm = float((g["va"] ** 2).mean())
+        for sup in cands:
+            v = _cell_table(keys(sup, "tr").cpu().numpy(), g["tr"], n_hash,
+                            lam, dev)
+            gain = vm - float(((g["va"] - v[keys(sup, "va")]) ** 2).mean())
+            scored.append((gain, sup))
+        scored.sort(key=lambda x: -x[0])
+        picked = [s for s in scored[:per_round] if s[0] > min_gain]
+        if not picked:
+            print(f"[qhh] round {rnd}: spectrum dry (best gain "
+                  f"{scored[0][0]:.2e})", flush=True)
+            break
+        for gain, sup in picked:
+            v = _cell_table(keys(sup, "tr").cpu().numpy(), g["tr"], n_hash,
+                            lam, dev)
+            for k in ("tr", "va", "te"):
+                g[k] -= v[keys(sup, k)]
+            selected.append(sup)
+            tables.append((sup, v.cpu().numpy().astype(np.float16)))
+        deg_hist = {}
+        for s in selected:
+            deg_hist[len(s)] = deg_hist.get(len(s), 0) + 1
+        print(f"[qhh] === round {rnd}: +{len(picked)} supports "
+              f"(best gain {picked[0][0]:.2e}, degs {deg_hist}); "
+              f"val {r2('va'):.4f} test {r2('te'):.4f}", flush=True)
+        if run is not None:
+            run.log({"round": rnd, "n_supports": len(selected),
+                     "val_r2": r2("va"), "test_r2": r2("te")})
+    nz = sum(int((np.abs(t) > 1e-3).sum()) for _, t in tables)
+    summary = {"n_train": n_train, "rounds_run": rnd + 1,
+               "n_supports": len(selected),
+               "supports": [list(map(int, s)) for s in selected],
+               "nz_cells": nz,
+               "sparse_bytes": int(q * 2 + nz * 10),
+               "final": {}}
+    for k, tag in (("va", "val"), ("te", "test")):
+        pred = torch.tensor(yv[k], device=dev) - g[k]
+        summary["final"][tag] = score_metrics(pred.cpu().numpy(),
+                                              data[f"y_{k}"])
+    print(f"[qhh] FINAL: val R2 {summary['final']['val']['r2']:.4f} test "
+          f"{summary['final']['test']['r2']:.4f}; {len(selected)} supports, "
+          f"{nz} heavy cells ~ {summary['sparse_bytes'] / 1e6:.1f}MB sparse",
+          flush=True)
+    np.savez_compressed(f"{ROOT}/model_qhh_N{n_train}.npz",
+                        v_uni=v_uni.astype(np.float16), b0=b0,
+                        supports=np.array(
+                            [list(s) + [-1] * (3 - len(s))
+                             for s in selected], np.int16),
+                        tables=np.stack([t for _, t in tables]))
+    with open(f"{ROOT}/summary_qhh_N{n_train}.json", "w") as fh:
+        json.dump(summary, fh, indent=1)
+    vol.commit()
+    if run is not None:
+        run.summary.update({"test_r2": summary["final"]["test"]["r2"],
+                            "n_supports": len(selected)})
+        run.finish()
+    print(json.dumps({k: v for k, v in summary.items()
+                      if k != "supports"}), flush=True)
+    return summary
+
+
 # --------------------------------------------------------------------- metrics
 
 def normalize_scores(y_raw):
@@ -1431,7 +1665,7 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
          b: int = B_LSH, max_pairs: int = 400_000, n_train: int = 1_000_000,
          n_val: int = 25_000, n_test: int = 25_000, batch: int = 256,
          deg3_anchors: int = 0, max_triples: int = 200_000,
-         pos_buckets: int = 1):
+         pos_buckets: int = 1, orders: str = "1,2", n_hash: int = 1 << 22):
     if stage == "label":
         print(label.remote(n_train, n_val, n_test, w, batch))
     elif stage == "fit":
@@ -1443,7 +1677,11 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
         fit_token.remote(encoding, w, b, max_pairs, n_train, n_val, n_test,
                          512, pos_buckets)
     elif stage == "ngram":
-        fit_ngram.remote("1,2", 1 << 22, n_train, n_val, n_test, w)
+        fit_ngram.remote(orders, n_hash, n_train, n_val, n_test, w)
+    elif stage == "qpair":
+        fit_qpair.remote(n_train, n_val, n_test, w)
+    elif stage == "qhh":
+        fit_qhh.remote(n_train, n_val, n_test, w)
     elif stage == "adamw":
         fit_adamw.remote(encoding, w, n_train, n_val, n_test)
     elif stage == "ste":
