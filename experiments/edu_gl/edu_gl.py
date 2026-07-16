@@ -492,7 +492,8 @@ def _pair_logits(X, a_idx, b_idx, C_t, chunk=25_000):
 
 def adamw_core(bits_tr, y_tr_raw, evals, idx, W1_init, C_init, b_init,
                lr=1e-4, wd=1e-4, steps=30_000, batch=8192, eval_every=250,
-               patience=10, device=None, seed=0, log=None):
+               patience=10, warmup=500, clip=1.0, device=None, seed=0,
+               log=None):
     """AdamW refit of the coefficient VALUES on FIXED features (deg-1 bits +
     the given pair idx).  Returns (summary, model): summary reports train R2
     next to val/test -- a train >> val gap is the memorization signature the
@@ -512,6 +513,11 @@ def adamw_core(bits_tr, y_tr_raw, evals, idx, W1_init, C_init, b_init,
     opt = torch.optim.AdamW([
         {"params": [W1, C], "weight_decay": wd},
         {"params": [b], "weight_decay": 0.0}], lr=lr)
+    # standard hygiene, and the repo's own final fourier-learn recipe
+    # (canonical 4e05499): CONSTANT lr with LINEAR WARMUP + grad clip --
+    # Adam's early second-moment estimates otherwise blow up a warm start
+    sched = torch.optim.lr_scheduler.LambdaLR(
+        opt, lambda s: min(1.0, (s + 1) / max(1, warmup)))
 
     def forward(bslice):
         X = 1.0 - 2.0 * bslice.float()
@@ -537,7 +543,9 @@ def adamw_core(bits_tr, y_tr_raw, evals, idx, W1_init, C_init, b_init,
     for s in range(steps):
         sel = torch.randint(0, len(bits_t), (batch,), device=dev, generator=gen)
         loss = ((forward(bits_t[sel]) - ytr[sel]) ** 2).mean()
-        opt.zero_grad(); loss.backward(); opt.step()
+        opt.zero_grad(); loss.backward()
+        torch.nn.utils.clip_grad_norm_([W1, C, b], clip)
+        opt.step(); sched.step()
         if (s + 1) % eval_every == 0:
             vm = score_metrics(predict(eb["val"]), evals["val"][1]) \
                 if "val" in eb else {"mse": float(loss)}
@@ -632,7 +640,8 @@ def logspace_ste_chars(bits_f, theta, eps=1e-3):
 
 def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
              lr_theta=3e-2, lr_c=3e-4, wd=1e-4, steps=30_000, batch=8192,
-             eval_every=500, patience=12, device=None, seed=0, log=None):
+             eval_every=500, patience=12, warmup=500, clip=1.0, device=None,
+             seed=0, log=None):
     """Arm 2: jointly learn WHICH parities (STE masks) and their weights.
     Half the masks warm-init at warm_idx pair characters, half random 2-bit.
     Eval always uses the hardened masks (exact +-1 parities)."""
@@ -662,6 +671,8 @@ def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
         {"params": [theta], "lr": lr_theta, "weight_decay": 0.0},
         {"params": [c], "lr": lr_c, "weight_decay": wd},
         {"params": [b], "lr": lr_c, "weight_decay": 0.0}])
+    sched = torch.optim.lr_scheduler.LambdaLR(
+        opt, lambda s: min(1.0, (s + 1) / max(1, warmup)))
 
     def predict(bits_eval):
         with torch.no_grad():
@@ -683,7 +694,9 @@ def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
         sel = torch.randint(0, len(bits_t), (batch,), device=dev, generator=gen)
         Phi = logspace_ste_chars(bits_t[sel].float(), theta)
         loss = ((Phi @ c + b - ytr[sel]) ** 2).mean()
-        opt.zero_grad(); loss.backward(); opt.step()
+        opt.zero_grad(); loss.backward()
+        torch.nn.utils.clip_grad_norm_([theta, c, b], clip)
+        opt.step(); sched.step()
         if (s + 1) % eval_every == 0:
             vm = score_metrics(predict(eb["val"]), evals["val"][1])
             deg = ((torch.sigmoid(theta) > 0.5).sum(1).float())
