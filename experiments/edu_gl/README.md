@@ -85,10 +85,10 @@ noise (pooling must be a candidate), and npz member access re-reads from
 disk per access (hoist arrays).
 
 Four independent estimators converge on the same wall at 2M rows:
-greedy discovered 0.7641, joint CG over discovered supports 0.7628,
-hand-designed bigram 0.7670, trigram 0.7717. Compression frontier
-(joint model, heavy-cell truncation): 61 KB → 0.708, 9.6 MB → 0.748,
-38 MB → 0.763. The residual past ~0.77 is deep composition — invisible to
+greedy discovered 0.7641, joint CG over discovered supports **0.7717**
+(wd=100 — exactly matching the best hand-designed trigram, 0.7717),
+hand bigram 0.7670. Compression frontier (joint, heavy-cell truncation):
+61 KB → 0.708, 2.4 MB → 0.735, 9.6 MB → 0.765, 38 MB → 0.771. The residual past ~0.77 is deep composition — invisible to
 any pooled low-order table family at this sample size (pair floors, tree ψ,
 and STE all measured the same diffuseness independently). Reaching 0.90
 requires either ~10 data doublings (extrapolated) or a fitted compositional
