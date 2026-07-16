@@ -425,6 +425,107 @@ def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
     return summary
 
 
+PLANTED = [  # (coefficient, bit indices in the newest-first depth*B domain)
+    (0.30, (3,)),                    # deg-1, newest token block
+    (0.25, (70, 141)),               # deg-2 across blocks 1,2
+    (-0.20, (10, 75, 200)),          # deg-3 across blocks 0,1,2
+    (0.20, (5, 140, 210, 350)),      # deg-4 across blocks 0,2,3,5
+    (-0.15, (300, 401)),             # deg-2, older blocks 4,5
+]
+
+
+def _planted_f(wins, codes, depth, rng):
+    """Known sparse spectrum over the newest depth token blocks of REAL model
+    windows: y_raw = 2.5 + 2.5*(sum_c c*chi_S(bits)) + small noise, |f|<=1."""
+    B = codes.shape[1]
+    bits = codes[np.asarray(wins)[:, ::-1].astype(np.int64)] \
+        .reshape(len(wins), -1)[:, :depth * B]
+    f = np.zeros(len(wins), np.float32)
+    for coef, sel in PLANTED:
+        f += coef * (1.0 - 2.0 * np.bitwise_xor.reduce(bits[:, list(sel)], axis=1))
+    f += 0.03 * rng.standard_normal(len(wins)).astype(np.float32)
+    return 2.5 + 2.5 * f
+
+
+@E.app.function(image=image, gpu="A10G", volumes={"/cache": E.vol},
+                timeout=21600, memory=32768, secrets=E.WANDB_SECRET)
+def planted_cert(m_fibers: int = 1000, g: int = 12, r: int = 8,
+                 depth: int = DEPTH, tau: float = 0.1, max_width: int = 512,
+                 tr_spec: str = "25000:8:tr2", te_spec: str = "5000:2:te2"):
+    """The PROVABLY-WORKS certificate: relabel the cached fork/flat tables
+    (real Qwen windows, real fiber structure, real density) with a KNOWN
+    sparse spectrum, run the identical tree + deflation, and check the
+    theorem's promise end-to-end: every planted char recovered with
+    psi ~ coef^2, refit test R2 ~ 1.  Zero generation cost."""
+    import torch
+    E.vol.reload()
+    codes = np.load(f"{ROOT}/qcodes.npz")["lsh"]
+    B = codes.shape[1]
+    rng = np.random.default_rng(42)
+    levels = []
+    for j in range(depth):
+        d = np.load(_fork_path(m_fibers, g, j))
+        bits = codes[d["gtoks"][:, ::-1].astype(np.int64)] \
+            .reshape(len(d["gtoks"]), -1)[:, :(j + 1) * B]
+        y = _planted_f(d["gtoks"], codes, depth, rng)
+        levels.append((bits, E.normalize_scores(y), d["gid"]))
+    tree = gl_tree_scalar(levels, B, tau, max_width=max_width,
+                          progress=lambda j, D, kept: print(
+                              f"[cert] level {j + 1}/{D} kept {len(kept)}",
+                              flush=True))
+    masks, psi = tree["masks"], tree["psi"]
+    found = {}
+    for coef, sel in PLANTED:
+        expect = np.zeros(depth * B, np.uint8)
+        expect[list(sel)] = 1
+        hit = np.flatnonzero((masks == expect).all(1)) if len(masks) else []
+        found[str(sel)] = {"coef2": coef ** 2,
+                           "psi": float(psi[hit[0]]) if len(hit) else None,
+                           "rank": int(hit[0]) if len(hit) else None}
+    n_extra = int(len(masks) - sum(1 for v in found.values()
+                                   if v["psi"] is not None))
+    print(f"[cert] recovered {sum(v['psi'] is not None for v in found.values())}"
+          f"/{len(PLANTED)} planted chars; {n_extra} extra kept "
+          f"(gate {tau * tau / 4:.2e})", flush=True)
+    for k, v in found.items():
+        print(f"[cert]   {k}: coef^2 {v['coef2']:.4f} psi "
+              f"{v['psi'] if v['psi'] is None else round(v['psi'], 4)} "
+              f"rank {v['rank']}", flush=True)
+    # refit on relabeled tr2, eval on relabeled te2 -- calculated only
+    m_, r_, tag = tr_spec.split(":")
+    dtr = np.load(_flat_path(int(m_), int(r_), tag))
+    m_, r_, tag = te_spec.split(":")
+    dte = np.load(_flat_path(int(m_), int(r_), tag))
+    y_tr = _planted_f(dtr["wins"], codes, depth, rng)
+    y_te = _planted_f(dte["wins"], codes, depth, rng)
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+
+    def tb(wins):
+        return codes[wins[:, ::-1].astype(np.int64)] \
+            .reshape(len(wins), -1)[:, :depth * B]
+
+    bt = torch.tensor(tb(dtr["wins"]), device=dev)
+    bte = torch.tensor(tb(dte["wins"]), device=dev)
+    ytrn = E.normalize_scores(y_tr)
+    c0 = float(ytrn.mean())
+    g_t = torch.tensor(ytrn - c0, device=dev)
+    summary = {"tau": tau, "n_masks": int(len(masks)), "found": found}
+    if len(masks):
+        C, _ = E.sequential_deflate(bt, g_t, None, device=dev, block=512,
+                                    masks=masks)
+        pred = torch.full((len(bte),), c0, device=dev)
+        pred += E.mask_parity_features(bte, masks) @ torch.tensor(C, device=dev)
+        summary["test"] = E.score_metrics(pred.cpu().numpy(), y_te)
+        print(f"[cert] refit test R2 {summary['test']['r2']:.4f} "
+              f"(noise ceiling ~{1 - 0.03**2 / np.var(E.normalize_scores(y_te)):.4f})",
+              flush=True)
+    with open(f"{ROOT}/summary_planted_cert.json", "w") as fh:
+        json.dump(summary, fh, indent=1)
+    E.vol.commit()
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
 @E.app.local_entrypoint()
 def csamp_main(stage: str = "tree", encoding: str = "lsh",
                m_fibers: int = 1000, g: int = 12, r: int = 8,
@@ -442,5 +543,7 @@ def csamp_main(stage: str = "tree", encoding: str = "lsh",
         for enc in encs:
             gl_tree.remote(enc, m_fibers, g, r, m_test, depth, tau, max_width,
                            ks, tr_spec, te_spec)
+    elif stage == "planted":
+        print(planted_cert.remote(m_fibers, g, r, depth, tau, max_width))
     else:
         raise SystemExit(f"unknown stage {stage}")
