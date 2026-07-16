@@ -1161,7 +1161,8 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
                lr_theta=1e-1, lr_z=1e-3, wd=1e-4, steps=40_000, batch=2048,
                eval_every=500, patience=15, warmup=500, clip=1.0,
                lam_div=1e-3, div_sub=1024, warm_frac=0.25, slot_chunk=4096,
-               val_fast=8192, device=None, seed=0, log=None):
+               val_fast=8192, device=None, seed=0, log=None, save_cb=None,
+               resume=None):
     """100k learnable Fourier slots of ANY degree: gates (STE, saturated +-8
     init), factored token functionals u_s = tanh((E A) z_s), coefficients --
     one AdamW, warmup+clip (gates unclipped), anti-collapse cosine penalty,
@@ -1200,6 +1201,15 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
     Z = torch.randn(S, r, device=dev).requires_grad_(True)
     c = (0.01 * torch.randn(S, device=dev)).requires_grad_(True)  # c=0
     b = torch.tensor(float(ytr.mean()), device=dev).requires_grad_(True)
+    if resume is not None:                           # Modal preempts multi-
+        with torch.no_grad():                        # hour workers; resume
+            theta.copy_(torch.tensor(resume["theta"], device=dev))
+            A.copy_(torch.tensor(resume["A"], device=dev))
+            Z.copy_(torch.tensor(resume["Z"], device=dev))
+            c.copy_(torch.tensor(resume["c"], device=dev))
+            b.fill_(float(resume["b"]))
+        print(f"[slots] resumed from checkpoint (step {resume['step']})",
+              flush=True)
     opt = torch.optim.AdamW([
         # eps 1e-12 for the gates: their grads are ~3e-10 (batch-mean x
         # c x surrogate x sigma' factors) -- Adam's default eps=1e-8 floors
@@ -1278,6 +1288,13 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
                 best = (vm["mse"], {k: v.detach().clone() for k, v in
                                     (("theta", theta), ("A", A), ("Z", Z),
                                      ("c", c), ("b", b))}, 0)
+                if save_cb is not None:
+                    save_cb({"theta": theta.detach().cpu().numpy(),
+                             "A": A.detach().cpu().numpy(),
+                             "Z": Z.detach().cpu().numpy(),
+                             "c": c.detach().cpu().numpy(),
+                             "b": float(b), "step": s_ + 1,
+                             "val_mse": vm["mse"]})
             else:
                 best = (best[0], best[1], best[2] + 1)
                 if best[2] >= patience:
@@ -1318,10 +1335,18 @@ def fit_slots(S: int = 100_000, r: int = 64, n_train: int = 2_000_000,
                       "batch": batch})
     evals = {"val": (data["tok_va"], data["y_va"]),
              "test": (data["tok_te"], data["y_te"])}
+    ck_path = f"{ROOT}/ckpt_slots_S{S}_N{n_train}.npz"
+
+    def save_cb(state):
+        np.savez(ck_path + ".tmp.npz", **state)
+        os.replace(ck_path + ".tmp.npz", ck_path)
+        vol.commit()
+
+    resume = dict(np.load(ck_path)) if os.path.exists(ck_path) else None
     summary, model = slots_core(
         data["tok_tr"], data["y_tr"], evals, E, S=S, r=r,
         lr_theta=lr_theta, lr_z=lr_z, lam_div=lam_div, steps=steps,
-        batch=batch, warm_frac=warm_frac,
+        batch=batch, warm_frac=warm_frac, save_cb=save_cb, resume=resume,
         log=(run.log if run is not None else None))
     print(f"[slots] FINAL: val {summary['val']['r2']:.4f} test "
           f"{summary['test']['r2']:.4f}; deg hist {summary['deg_hist']} "
