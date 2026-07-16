@@ -1160,9 +1160,9 @@ def slot_forward(feat_batch, theta, Z, eps=1e-3):
 def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
                lr_theta=1e-1, lr_z=1e-3, wd=1e-4, steps=40_000, batch=2048,
                eval_every=500, patience=15, warmup=500, clip=1.0,
-               lam_div=1e-3, div_sub=1024, warm_frac=0.25, slot_chunk=4096,
-               val_fast=8192, device=None, seed=0, log=None, save_cb=None,
-               resume=None):
+               lam_div=1e-3, lam_deg=3e-4, div_sub=1024, warm_frac=0.25,
+               slot_chunk=4096, val_fast=8192, device=None, seed=0, log=None,
+               save_cb=None, resume=None):
     """100k learnable Fourier slots of ANY degree: gates (STE, saturated +-8
     init), factored token functionals u_s = tanh((E A) z_s), coefficients --
     one AdamW, warmup+clip (gates unclipped), anti-collapse cosine penalty,
@@ -1276,11 +1276,16 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
         loss = ((pred - y_t[sel]) ** 2).mean()
         if lam_div > 0:
             ks = torch.randint(0, S, (div_sub,), device=dev, generator=gen)
-            m = torch.cat([Z[ks], torch.sigmoid(theta[ks])], dim=1)
+            # diversity on CONTENT (z) only: including sigma(theta) paid
+            # slots to open DIFFERENT gates -> runaway degree inflation
+            # (mean degree +0.077/500 steps, max 52, val 0.63 -> 0.53)
+            m = Z[ks]
             mn = m / (m.norm(dim=1, keepdim=True) + 1e-8)
             Sim = mn @ mn.t()
             loss = loss + lam_div * (Sim - torch.eye(div_sub, device=dev)
                                      ).pow(2).mean()
+        if lam_deg > 0:                              # explicit parsimony:
+            loss = loss + lam_deg * torch.sigmoid(theta).mean()  # degree L1
         opt.zero_grad(); loss.backward()
         torch.nn.utils.clip_grad_norm_([A, Z, c, b], clip)
         opt.step(); sched.step()
