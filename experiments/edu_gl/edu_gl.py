@@ -491,8 +491,8 @@ def _pair_logits(X, a_idx, b_idx, C_t, chunk=25_000):
 
 
 def adamw_core(bits_tr, y_tr_raw, evals, idx, W1_init, C_init, b_init,
-               lr=1e-3, wd=1e-4, steps=30_000, batch=8192, eval_every=250,
-               patience=6, device=None, seed=0, log=None):
+               lr=1e-4, wd=1e-4, steps=30_000, batch=8192, eval_every=250,
+               patience=10, device=None, seed=0, log=None):
     """AdamW refit of the coefficient VALUES on FIXED features (deg-1 bits +
     the given pair idx).  Returns (summary, model): summary reports train R2
     next to val/test -- a train >> val gap is the memorization signature the
@@ -526,7 +526,14 @@ def adamw_core(bits_tr, y_tr_raw, evals, idx, W1_init, C_init, b_init,
     eb = {t: torch.tensor(np.asarray(bb, np.uint8), device=dev)
           for t, (bb, _) in evals.items()}
     gen = torch.Generator(device=dev).manual_seed(seed)
-    best = (float("inf"), None, 0)
+    # step-0 eval: the INIT is the first best -- round 1 never scored the
+    # warm start, so 250 Adam steps wrecked the calculated solution (per-
+    # coordinate step ~lr regardless of gradient) and early stop caught the
+    # partial recovery at 0.265 instead of the 0.423 init
+    vm0 = score_metrics(predict(eb["val"]), evals["val"][1])
+    emit({"step": 0, "val_mse": vm0["mse"], "val_r2": vm0["r2"]})
+    best = (vm0["mse"],
+            (W1.detach().clone(), C.detach().clone(), b.detach().clone()), 0)
     for s in range(steps):
         sel = torch.randint(0, len(bits_t), (batch,), device=dev, generator=gen)
         loss = ((forward(bits_t[sel]) - ytr[sel]) ** 2).mean()
@@ -563,7 +570,7 @@ def adamw_core(bits_tr, y_tr_raw, evals, idx, W1_init, C_init, b_init,
               timeout=43200, memory=49152, secrets=WANDB_SECRET)
 def fit_adamw(encoding: str = "lsh", w: int = W_WIN,
               n_train: int = 2_000_000, n_val: int = 25_000,
-              n_test: int = 25_000, k_pairs: int = 200_000, lr: float = 1e-3,
+              n_test: int = 25_000, k_pairs: int = 200_000, lr: float = 1e-4,
               wd: float = 1e-4, steps: int = 30_000, batch: int = 8192,
               init: str = "both"):
     """Arm 1: AdamW coefficients on the calculated model's own features."""
@@ -624,8 +631,8 @@ def logspace_ste_chars(bits_f, theta, eps=1e-3):
 
 
 def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
-             lr_theta=1e-2, lr_c=1e-3, wd=1e-4, steps=20_000, batch=8192,
-             eval_every=250, patience=6, device=None, seed=0, log=None):
+             lr_theta=3e-2, lr_c=3e-4, wd=1e-4, steps=30_000, batch=8192,
+             eval_every=500, patience=12, device=None, seed=0, log=None):
     """Arm 2: jointly learn WHICH parities (STE masks) and their weights.
     Half the masks warm-init at warm_idx pair characters, half random 2-bit.
     Eval always uses the hardened masks (exact +-1 parities)."""
@@ -669,7 +676,9 @@ def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
     eb = {t: torch.tensor(np.asarray(bb, np.uint8), device=dev)
           for t, (bb, _) in evals.items()}
     gen = torch.Generator(device=dev).manual_seed(seed)
-    best = (float("inf"), None, 0)
+    vm0 = score_metrics(predict(eb["val"]), evals["val"][1])
+    best = (vm0["mse"], (theta.detach().clone(), c.detach().clone(),
+                         b.detach().clone()), 0)
     for s in range(steps):
         sel = torch.randint(0, len(bits_t), (batch,), device=dev, generator=gen)
         Phi = logspace_ste_chars(bits_t[sel].float(), theta)
@@ -710,8 +719,8 @@ def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
               timeout=43200, memory=49152, secrets=WANDB_SECRET)
 def fit_ste(encoding: str = "lsh", w: int = W_WIN, n_train: int = 2_000_000,
             n_val: int = 25_000, n_test: int = 25_000, K: int = 16_384,
-            lr_theta: float = 1e-2, lr_c: float = 1e-3, wd: float = 1e-4,
-            steps: int = 20_000, batch: int = 8192):
+            lr_theta: float = 3e-2, lr_c: float = 3e-4, wd: float = 1e-4,
+            steps: int = 30_000, batch: int = 8192):
     """Arm 2 wrapper: STE masks at 2M rows, warm half from the calculated
     model's top pairs.  Also reports the deflated-coefficient variant of the
     LEARNED masks (calculated weights on fitted features)."""
