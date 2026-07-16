@@ -117,13 +117,14 @@ def gl_tree_scalar(levels, B, tau, max_width=512, device=None, progress=None):
                   f"(gate {thresh:.2e})", flush=True)
         heavy = np.flatnonzero(psi >= thresh)
         for i in heavy:
-            key = tuple(int(x) for x in children[i])
-            if psi[i] > kept.get(key, -1e30):
-                kept[key] = float(psi[i])
+            key = children[i].tobytes()              # packed keys: tuple keys
+            if psi[i] > kept.get(key, -1e30):        # are ~3.3KB each and OOM
+                kept[key] = float(psi[i])            # the host at ~7M entries
         per_level_kept.append(int(len(heavy)))
         top = sorted(kept.items(), key=lambda kv: -kv[1])[:max_width]
-        live = np.concatenate([np.zeros((1, total), np.uint8),
-                               np.array([k for k, _ in top], np.uint8)]) \
+        live = np.concatenate(
+            [np.zeros((1, total), np.uint8),
+             np.stack([np.frombuffer(k, np.uint8) for k, _ in top])]) \
             if top else np.zeros((1, total), np.uint8)
         if progress is not None:
             progress(j, depth, kept)
@@ -131,7 +132,7 @@ def gl_tree_scalar(levels, B, tau, max_width=512, device=None, progress=None):
         return dict(masks=np.zeros((0, total), np.uint8), psi=np.zeros(0),
                     per_level_kept=per_level_kept)
     order = sorted(kept.items(), key=lambda kv: -kv[1])
-    return dict(masks=np.array([k for k, _ in order], np.uint8),
+    return dict(masks=np.stack([np.frombuffer(k, np.uint8) for k, _ in order]),
                 psi=np.array([v for _, v in order]),
                 per_level_kept=per_level_kept)
 
@@ -447,8 +448,8 @@ def _planted_f(wins, codes, depth, rng):
     return 2.5 + 2.5 * f
 
 
-@E.app.function(image=image, gpu="A10G", volumes={"/cache": E.vol},
-                timeout=21600, memory=32768, secrets=E.WANDB_SECRET)
+@E.app.function(image=image, gpu="A100-40GB", volumes={"/cache": E.vol},
+                timeout=21600, memory=49152, secrets=E.WANDB_SECRET)
 def planted_cert(m_fibers: int = 1000, g: int = 12, r: int = 8,
                  depth: int = DEPTH, tau: float = 0.1, max_width: int = 512,
                  tr_spec: str = "25000:8:tr2", te_spec: str = "5000:2:te2"):
@@ -510,11 +511,16 @@ def planted_cert(m_fibers: int = 1000, g: int = 12, r: int = 8,
     c0 = float(ytrn.mean())
     g_t = torch.tensor(ytrn - c0, device=dev)
     summary = {"tau": tau, "n_masks": int(len(masks)), "found": found}
-    if len(masks):
+    kmax = min(len(masks), len(bt) // 4)             # rows must support the
+    if kmax:                                         # deflated char count
+        masks_k = masks[:kmax]
         C, _ = E.sequential_deflate(bt, g_t, None, device=dev, block=512,
-                                    masks=masks)
+                                    masks=masks_k)
+        C_t = torch.tensor(C, device=dev)
         pred = torch.full((len(bte),), c0, device=dev)
-        pred += E.mask_parity_features(bte, masks) @ torch.tensor(C, device=dev)
+        for lo in range(0, kmax, 4096):              # chunked: 1.1M masks x
+            pred += E.mask_parity_features(bte, masks_k[lo:lo + 4096])                 @ C_t[lo:lo + 4096]                  # 10k rows OOM'd unchunked
+        summary["kmax"] = int(kmax)
         summary["test"] = E.score_metrics(pred.cpu().numpy(), y_te)
         print(f"[cert] refit test R2 {summary['test']['r2']:.4f} "
               f"(noise ceiling ~{1 - 0.03**2 / np.var(E.normalize_scores(y_te)):.4f})",

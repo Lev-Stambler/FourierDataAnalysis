@@ -71,3 +71,46 @@ Pilot verdict: **no win over the exact stack at this target/scale.**
   spines within fibers (adding 72k of them dropped the base to −0.03).
 - The edu score is dominated by low-degree global (bag-of-token) structure;
   plain-data exact enumeration with millions of rows is the stronger tool.
+- Paper-faithful rerun (uncentered ψ sieve, deflate-all 50k on a 200k-row
+  model-law table): lsh chars add exactly +0.0000 over their deg-1 base —
+  the suffix-local conditional spectrum is intrinsically tiny here.
+
+## Fitted arms: AdamW + STE vs calculated (2026-07-16, 2M rows)
+
+Controlled challenge to the "coefficients CALCULATED, never Adam" rule.
+Standard hygiene throughout: AdamW, linear warmup 500, grad clip, constant
+lr, val early-stop with the init scored at step 0.
+
+| arm | train R² | test R² | note |
+|---|---|---|---|
+| calculated (deg-1 + 200k pairs) | ~0.45 | **0.428** | the bar |
+| AdamW-warm, same features | 0.553 | 0.428 = init | best point on the whole trajectory IS the calculated init |
+| AdamW-cold | 0.490 | 0.378 | memorization gap |
+| STE learned masks (16k, deg 1–10) | 0.334 | 0.310 | masks genuinely learn once gates start saturated (±8) |
+| STE masks + CALCULATED coefs | — | **0.336** | calculated weights beat fitted weights on the same learned features |
+
+STE lessons (5 rounds): θ-gradient ∝ c (warm-init the coefficients);
+the log-space surrogate DIES at n=4416 unless gates start saturated at ±8
+(exp(−Σ log|1−2m|) over ~2.2k set bits — width-realistic liveness test in
+test_edu_gl.py); exclude θ from global grad-clip; two-timescale churn caps
+fitted val at ~0.31.
+
+## Planted certificate: dataset-GL provably works (edu_gl_csamp.py --stage planted)
+
+Relabel the cached fork/flat tables (real Qwen windows, real fibers, real
+density) with a KNOWN 5-char spectrum (deg 1–4, coef² 0.0225–0.09) and run
+the identical tree + deflation. Result: every recovered char has ψ ≈ coef²
+(density-inflated ≤20%), and recall scales with frontier width exactly as
+the theorem's N-dependence demands:
+
+| max_width | recovered | refit test R² |
+|---|---|---|
+| 512 | 3/5 | 0.756 |
+| 4096 | 3/5 | 0.749 |
+| 32768 | 4/5 (deg-4 char at prefix rank 45k) | 0.837 |
+| τ=0.28 calibrated | 4/5 (393k chars still ≥ gate) | 0.837 |
+
+The unrecovered char (weakest, oldest blocks) needs width ≳ 2.6e5: under a
+skewed LM law a uniform-sparse plant spreads into a ~7M-char live spectrum
+(the density term), so dataset-GL is provably CORRECT but its width/sample
+budget is set by the law-basis spectrum, not the uniform-basis sparsity.
