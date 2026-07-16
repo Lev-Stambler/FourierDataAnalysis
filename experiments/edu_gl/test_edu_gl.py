@@ -259,6 +259,27 @@ def test_token_table_recovers_planted_values():
     assert len(sweep) == 2 and sweep[0][0] == 1e-3
 
 
+def test_ngram_cg_recovers_planted_bigram_values():
+    rng = np.random.default_rng(12)
+    q, w, D = 64, 8, 40_000
+    tok = rng.integers(0, q, (D, w))
+    ids, n_feat = edu_gl._ngram_ids(tok, q, orders=(1, 2), n_hash=4096)
+    assert ids.shape == (D, w + w - 1)
+    v_uni = (0.05 * rng.standard_normal(q)).astype(np.float32)
+    y = v_uni[tok].sum(1)
+    big = (tok[:, :-1] == 3) & (tok[:, 1:] == 7)     # bigram "3 7" worth +0.5
+    y = y + 0.5 * big.sum(1)
+    v = edu_gl.fit_ngram_cg(ids, y - y.mean(), n_feat, wd=1e-2, iters=150,
+                            device="cpu")
+    tok_te = rng.integers(0, q, (5_000, w))
+    ids_te, _ = edu_gl._ngram_ids(tok_te, q, orders=(1, 2), n_hash=4096)
+    y_te = v_uni[tok_te].sum(1) \
+        + 0.5 * ((tok_te[:, :-1] == 3) & (tok_te[:, 1:] == 7)).sum(1)
+    pred = edu_gl.ngram_apply(ids_te, v, device="cpu").cpu().numpy() + y.mean()
+    r2 = 1.0 - np.mean((pred - y_te) ** 2) / np.var(y_te)
+    assert r2 > 0.95, r2
+
+
 def test_score_metrics_sane():
     y = np.array([0.5, 2.0, 3.5, 4.5, 1.0])
     perfect = edu_gl.score_metrics(edu_gl.normalize_scores(y), y)

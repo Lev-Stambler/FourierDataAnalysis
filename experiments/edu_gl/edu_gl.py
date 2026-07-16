@@ -338,13 +338,25 @@ def fit_token_table(tok_tr, y, q, device=None, wd=1e2, row_chunk=8192):
         bvec += Xa.t() @ y_t[lo:lo + row_chunk]
         del X, Xa
     out = []
-    solve_dtype = torch.float64 if q <= 40_000 else torch.float32
-    for wd_i in (wd if isinstance(wd, (tuple, list)) else (wd,)):
-        reg = wd_i * torch.eye(q + 1, device=device)
-        reg[-1, -1] = 0.0
-        va = torch.linalg.solve((S + reg).to(solve_dtype),
-                                bvec.to(solve_dtype)).float()
-        out.append((float(wd_i), va[:-1].cpu().numpy(), float(va[-1])))
+    wds = sorted(wd) if isinstance(wd, (tuple, list)) else [wd]
+    if q > 40_000:
+        # 61k^2 solves need ~45GB with GPU copies: CPU LAPACK fp32 with
+        # IN-PLACE diagonal regularization (ascending wd, no matrix copies)
+        S_c = S.cpu().numpy(); del S
+        torch.cuda.empty_cache()
+        b_c = bvec.cpu().numpy()
+        prev = 0.0
+        for wd_i in wds:
+            S_c[np.arange(q), np.arange(q)] += (wd_i - prev)
+            prev = wd_i
+            va = np.linalg.solve(S_c, b_c).astype(np.float32)
+            out.append((float(wd_i), va[:-1], float(va[-1])))
+    else:
+        for wd_i in wds:
+            reg = wd_i * torch.eye(q + 1, device=device)
+            reg[-1, -1] = 0.0
+            va = torch.linalg.solve((S + reg).double(), bvec.double()).float()
+            out.append((float(wd_i), va[:-1].cpu().numpy(), float(va[-1])))
     return out if isinstance(wd, (tuple, list)) else (out[0][1], out[0][2])
 
 
@@ -468,6 +480,133 @@ def fit_token(encoding: str = "lsh", w: int = W_WIN, b: int = B_LSH,
                             "best_test_r2": max(
                                 [e["test"]["r2"] for e in ladder]
                                 + [summary["token_deg1"]["test"]["r2"]])})
+        run.finish()
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
+def _ngram_ids(tok, q, orders=(1, 2), n_hash=1 << 22, seed=0):
+    """Per-window sparse feature ids: unigrams (raw ids) + hashed ADJACENT
+    n-grams (order >= 2) -- degree-2+ in TOKEN space with a locality prior
+    (63 adjacent pairs per window, not 30k^2).  Returns ((D, F) int64 ids
+    into a value table, table_size)."""
+    tok = np.asarray(tok, np.uint64)
+    mix = np.uint64(0x9E3779B97F4A7C15) + np.uint64(seed)
+    cols = [tok.astype(np.int64)] if 1 in orders else []
+    base = q
+    w = tok.shape[1]
+    for r in sorted(o for o in orders if o >= 2):
+        h = tok[:, : w - r + 1].copy()
+        for j in range(1, r):
+            h = (h * mix) ^ tok[:, j: w - r + 1 + j]
+        h = (((h * mix) >> np.uint64(40)) % np.uint64(n_hash)).astype(np.int64)
+        cols.append(h + base)
+        base += n_hash
+    return np.concatenate(cols, axis=1), int(base)
+
+
+def fit_ngram_cg(ids_tr, y, n_feat, wd=10.0, iters=200, device=None,
+                 row_chunk=131072, tol=1e-8):
+    """CALCULATED n-gram value table at any width: ridge normal equations
+    solved by conjugate gradient -- each iteration is two sparse gather/
+    scatter passes, no dense Gram.  One linear solve, no SGD."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    ids = torch.tensor(np.asarray(ids_tr, np.int64), device=device)
+    y_t = torch.tensor(np.asarray(y, np.float32), device=device)
+    D, F = ids.shape
+
+    def AtA(v):                                      # (X^T X + wd I) v
+        out = wd * v
+        for lo in range(0, D, row_chunk):
+            sl = ids[lo:lo + row_chunk]
+            xv = v[sl].sum(dim=1)                    # X v on the chunk
+            out.scatter_add_(0, sl.reshape(-1),
+                             xv[:, None].expand(-1, F).reshape(-1))
+        return out
+
+    b = torch.zeros(n_feat, device=device)
+    for lo in range(0, D, row_chunk):
+        sl = ids[lo:lo + row_chunk]
+        b.scatter_add_(0, sl.reshape(-1),
+                       y_t[lo:lo + row_chunk, None].expand(-1, F).reshape(-1))
+    v = torch.zeros(n_feat, device=device)
+    r = b.clone()
+    p = r.clone()
+    rs = float(r @ r)
+    rs0 = rs
+    for it in range(iters):
+        Ap = AtA(p)
+        alpha = rs / float(p @ Ap)
+        v += alpha * p
+        r -= alpha * Ap
+        rs_new = float(r @ r)
+        if it % 20 == 0:
+            print(f"[cg] iter {it} rel-residual {rs_new / rs0:.3e}", flush=True)
+        if rs_new < tol * rs0 or rs_new != rs_new:
+            break
+        p = r + (rs_new / rs) * p
+        rs = rs_new
+    return v.cpu().numpy()
+
+
+def ngram_apply(ids, v, device=None):
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    v_t = torch.tensor(np.asarray(v, np.float32), device=device)
+    ids_t = torch.tensor(np.asarray(ids, np.int64), device=device)
+    return v_t[ids_t].sum(dim=1)
+
+
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=49152, secrets=WANDB_SECRET)
+def fit_ngram(orders: str = "1,2", n_hash: int = 1 << 22,
+              n_train: int = 2_000_000, n_val: int = 25_000,
+              n_test: int = 25_000, w: int = W_WIN, iters: int = 300):
+    """Unigram + hashed adjacent n-gram value tables, CG-solved ridge with
+    wd swept on val.  The word-ORDER rung of the calculated ladder."""
+    vol.reload()
+    data = np.load(_data_path(w, n_train, n_val, n_test))
+    q = int(np.load(f"{ROOT}/emb.npz")["E"].shape[0])
+    ords = tuple(int(x) for x in orders.split(","))
+    ids_tr, n_feat = _ngram_ids(data["tok_tr"], q, ords, n_hash)
+    ids_va, _ = _ngram_ids(data["tok_va"], q, ords, n_hash)
+    ids_te, _ = _ngram_ids(data["tok_te"], q, ords, n_hash)
+    ytr = normalize_scores(data["y_tr"])
+    run = _wandb_run(f"ngram-{orders.replace(',', '')}-N{n_train}",
+                     {"orders": orders, "n_hash": n_hash, "n_feat": n_feat,
+                      "n_train": n_train})
+    best = None
+    for wd in (3.0, 10.0, 30.0):
+        v = fit_ngram_cg(ids_tr, ytr - ytr.mean(), n_feat, wd=wd, iters=iters)
+        m = score_metrics(ngram_apply(ids_va, v).cpu().numpy() + ytr.mean(),
+                          data["y_va"])
+        print(f"[ngram] wd {wd:g}: val R2 {m['r2']:.4f}", flush=True)
+        if run is not None:
+            run.log({"wd": wd, "val_r2": m["r2"]})
+        if best is None or m["mse"] < best[2]["mse"]:
+            best = (wd, v, m)
+    wd, v, _ = best
+    summary = {"orders": orders, "n_hash": n_hash, "n_feat": n_feat,
+               "wd": wd, "n_train": n_train,
+               "table_bytes": int(n_feat * 2)}
+    for t, k, ids_e in (("val", "va", ids_va), ("test", "te", ids_te)):
+        summary[t] = score_metrics(
+            ngram_apply(ids_e, v).cpu().numpy() + ytr.mean(), data[f"y_{k}"])
+    print(f"[ngram] === orders {orders}: val R2 {summary['val']['r2']:.4f} "
+          f"test R2 {summary['test']['r2']:.4f} sp "
+          f"{summary['test']['spearman']:.3f} ({n_feat * 2 / 1e6:.1f}MB)",
+          flush=True)
+    np.savez_compressed(
+        f"{ROOT}/model_ngram_{orders.replace(',', '')}_N{n_train}.npz",
+        v=v.astype(np.float16), mean=ytr.mean(), n_hash=n_hash, orders=ords)
+    with open(f"{ROOT}/summary_ngram_{orders.replace(',', '')}_N{n_train}.json",
+              "w") as fh:
+        json.dump(summary, fh, indent=1)
+    vol.commit()
+    if run is not None:
+        run.summary.update({"test_r2": summary["test"]["r2"],
+                            "val_r2": summary["val"]["r2"]})
         run.finish()
     print(json.dumps(summary), flush=True)
     return summary
@@ -1303,6 +1442,8 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
     elif stage == "token":
         fit_token.remote(encoding, w, b, max_pairs, n_train, n_val, n_test,
                          512, pos_buckets)
+    elif stage == "ngram":
+        fit_ngram.remote("1,2", 1 << 22, n_train, n_val, n_test, w)
     elif stage == "adamw":
         fit_adamw.remote(encoding, w, n_train, n_val, n_test)
     elif stage == "ste":
