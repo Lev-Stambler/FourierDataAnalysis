@@ -66,15 +66,11 @@ def pair_psi_scalar(bits, masks, f, gid, device=None, char_chunk=4096):
     counts = np.bincount(gi)
     n_pairs = float((counts * (counts - 1)).sum())
     assert n_pairs > 0, "no fiber has two continuations -- nothing to pair"
-    # PER-FIBER centering: the prefix largely fixes each fiber's score level
-    # mu_z, and mu_z * E[chi_S|z] (fiber-mean x density) swamps psi for EVERY
-    # character (2026-07-15: all 35k children passed the gate; lsh ladder
-    # +0.0000 -- the recorded pure-GL density inversion).  Centering within
-    # the fiber leaves the within-fiber conditional coefficient, the part a
-    # window-only student can actually use.  O(1/g) shrinkage bias is fine.
-    mu = torch.zeros(ng, device=dev).index_add_(0, gid_t, f_t)
-    mu /= torch.as_tensor(counts.astype(np.float32), device=dev)
-    f_t = f_t - mu[gid_t]
+    # NO centering: the PAPER'S estimator, density term and all.  (Per-fiber
+    # centering was tried 2026-07-15 -- it changes the estimand and breaks
+    # the Parseval subtree identity.)  psi is a SIEVE, not a ranking: keep
+    # everything above the tau gate and let calculated deflation on a LARGE
+    # refit table decide -- never rank by raw psi (recorded pure-GL lesson).
     diag = float((f_t.double() ** 2).sum())
     masks = np.asarray(masks, np.uint8)
     out = []
@@ -266,6 +262,59 @@ def gen_csamp(m_fibers: int = 1000, g: int = 12, r: int = 8,
     return done
 
 
+@E.app.function(image=image, gpu="A10G", volumes={"/cache": E.vol},
+                timeout=43200, memory=32768, secrets=E.HF_SECRET)
+def gen_flat(n_pre: int = 25000, r: int = 8, tag: str = "tr2",
+             skip: int = 1500, batch: int = 32):
+    """LARGE independent model-law refit table: fresh prefixes (skip past the
+    fiber draws), r fills each -- deflating ALL sieved tree characters needs
+    rows >> #chars; the 8k fiber-fill table was the real v2 bottleneck."""
+    import torch
+    from transformers import (AutoModelForImageTextToText,
+                              AutoModelForSequenceClassification, AutoTokenizer)
+    E.vol.reload()
+    p = _flat_path(n_pre, r, tag)
+    if os.path.exists(p):
+        print(f"exists: {p}", flush=True)
+        return p
+    qtok = AutoTokenizer.from_pretrained(QWEN_ID)
+    model = AutoModelForImageTextToText.from_pretrained(
+        QWEN_ID, dtype=torch.bfloat16, device_map="cuda",
+        low_cpu_mem_usage=True).eval()
+    ctok = AutoTokenizer.from_pretrained(E.MODEL_ID)
+    clf = AutoModelForSequenceClassification.from_pretrained(
+        E.MODEL_ID, dtype=torch.bfloat16).cuda().eval()
+    pad_id = qtok.eos_token_id or qtok.pad_token_id
+    pre = _stream_prefixes(qtok, n_pre, skip=skip)
+    sdir = f"{ROOT}/flat_shards_{tag}_m{n_pre}_r{r}"
+    os.makedirs(sdir, exist_ok=True)
+    chunk = 2000
+    import time
+    t0 = time.time()
+    for lo in range(0, n_pre, chunk):
+        sp = f"{sdir}/s{lo}.npz"
+        if os.path.exists(sp):
+            continue
+        wins = _gen_tails(model, pre[lo:lo + chunk], W_Q, r, pad_id, 1.0, batch)
+        y = _score_texts(clf, ctok, qtok.batch_decode(
+            wins.astype(np.int64), skip_special_tokens=True))
+        np.savez(sp + ".tmp.npz", wins=wins, y=y,
+                 gid=np.repeat(np.arange(lo, lo + len(wins) // r), r))
+        os.replace(sp + ".tmp.npz", sp)
+        E.vol.commit()
+        print(f"[genflat:{tag}] {min(lo + chunk, n_pre)}/{n_pre} prefixes "
+              f"({time.time() - t0:.0f}s)", flush=True)
+    parts = [np.load(f"{sdir}/s{lo}.npz") for lo in range(0, n_pre, chunk)]
+    np.savez(p + ".tmp.npz",
+             wins=np.concatenate([q["wins"] for q in parts]),
+             y=np.concatenate([q["y"] for q in parts]),
+             gid=np.concatenate([q["gid"] for q in parts]))
+    os.replace(p + ".tmp.npz", p)
+    E.vol.commit()
+    print(f"saved {p}", flush=True)
+    return p
+
+
 # ------------------------------------------------------------------- tree + fit
 
 @E.app.function(image=image, gpu="A10G", volumes={"/cache": E.vol},
@@ -273,7 +322,8 @@ def gen_csamp(m_fibers: int = 1000, g: int = 12, r: int = 8,
 def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
             r: int = 8, m_test: int = 300, depth: int = DEPTH,
             tau: float = 0.05, max_width: int = 512,
-            ks: str = "100,500,1000,2000,4000"):
+            ks: str = "1000,4000,16000,50000,100000",
+            tr_spec: str = "", te_spec: str = ""):
     """Tree on the fork tables, then the calculated refit ladder: exact deg-1
     base on the flat train table, sequential deflation of the tree characters
     (psi order), score_metrics on the flat model-law test table.
@@ -282,17 +332,23 @@ def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
     E.vol.reload()
     codes = np.load(f"{ROOT}/qcodes.npz")[encoding]
     B = codes.shape[1]
-    dtr = np.load(_flat_path(m_fibers, r, "tr"))
+
+    def load_flat(spec, dm, dr, dtag):                # "m:r:tag" override
+        if spec:
+            m_, r_, tag = spec.split(":")
+            return np.load(_flat_path(int(m_), int(r_), tag))
+        return np.load(_flat_path(dm, dr, dtag))
+
+    dtr = load_flat(tr_spec, m_fibers, r, "tr")
     c0 = float(E.normalize_scores(dtr["y"]).mean())
     levels = []
     for j in range(depth):
         d = np.load(_fork_path(m_fibers, g, j))
         bits = codes[d["gtoks"][:, ::-1].astype(np.int64)] \
             .reshape(len(d["gtoks"]), -1)[:, :(j + 1) * B]
-        # CENTERED f: with |DC| ~ 0.8 the uncentered psi is dominated by the
-        # LM's density term (every child passed the gate; the recorded
-        # pure-GL failure mode) -- the deflation target is centered anyway
-        levels.append((bits, E.normalize_scores(d["y"]) - c0, d["gid"]))
+        # f normalized to [-1,1] ONLY (||f|| <= 1) -- no centering; the tree
+        # is the paper's sieve and deflation downstream decides usefulness
+        levels.append((bits, E.normalize_scores(d["y"]), d["gid"]))
     run = E._wandb_run(f"csamp-tree-{encoding}-d{depth}",
                        {"encoding": encoding, "m_fibers": m_fibers, "g": g,
                         "depth": depth, "tau": tau, "max_width": max_width})
@@ -309,7 +365,7 @@ def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
     np.savez_compressed(f"{ROOT}/tree_{encoding}_d{depth}.npz",
                         masks=masks, psi=psi, deg=deg)
     E.vol.commit()
-    dte = np.load(_flat_path(m_test, r, "te"))
+    dte = load_flat(te_spec, m_test, r, "te")
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     nb = depth * B                                   # refit on the tree's
 
@@ -334,8 +390,8 @@ def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
                "ladder": []}
     print(f"[tree:{encoding}] deg-1 base test R2 "
           f"{summary['deg1']['test']['r2']:.4f}", flush=True)
-    kmax = min(2000, len(masks))                     # 8k train rows cannot
-    if kmax:                                         # support more characters
+    kmax = min(len(masks), len(bt) // 4)             # deflate ALL sieved chars
+    if kmax:                                         # that the rows support
         masks_k = masks[:kmax]
         C, _ = E.sequential_deflate(bt, g_t, None, device=dev, block=512,
                                     masks=masks_k)
@@ -373,12 +429,18 @@ def gl_tree(encoding: str = "lsh", m_fibers: int = 1000, g: int = 12,
 def csamp_main(stage: str = "tree", encoding: str = "lsh",
                m_fibers: int = 1000, g: int = 12, r: int = 8,
                m_test: int = 300, depth: int = DEPTH, tau: float = 0.05,
-               max_width: int = 512, batch: int = 16):
+               max_width: int = 512, batch: int = 16,
+               n_pre: int = 25000, tag: str = "tr2", skip: int = 1500,
+               tr_spec: str = "", te_spec: str = "",
+               ks: str = "1000,4000,16000,50000,100000"):
     if stage == "gen":
         print(gen_csamp.remote(m_fibers, g, r, m_test, depth, batch))
+    elif stage == "genflat":
+        print(gen_flat.remote(n_pre, r, tag, skip, batch))
     elif stage == "tree":
         encs = ("lsh", "ctrl") if encoding == "all" else (encoding,)
         for enc in encs:
-            gl_tree.remote(enc, m_fibers, g, r, m_test, depth, tau, max_width)
+            gl_tree.remote(enc, m_fibers, g, r, m_test, depth, tau, max_width,
+                           ks, tr_spec, te_spec)
     else:
         raise SystemExit(f"unknown stage {stage}")

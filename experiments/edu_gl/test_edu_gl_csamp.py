@@ -36,7 +36,7 @@ def test_pair_psi_scalar_planted():
     masks[1, [2, 6]] = 1                            # a null char
     masks[2, 1] = 1                                 # deg-1 sub-parity: dead once
     psi = C.pair_psi_scalar(bits, masks, f, gid)    # bit 5 is resampled
-    assert 0.35 < psi[0] < 0.55, psi                # (1 - 1/g) mean-shrinkage
+    assert abs(psi[0] - 0.49) < 0.05, psi           # uncentered paper estimator
     assert abs(psi[1]) < 0.02
     assert abs(psi[2]) < 0.02
 
@@ -51,7 +51,7 @@ def test_tree_recovers_planted_char():
     expect[[1, 5]] = 1
     hit = np.flatnonzero((tree["masks"] == expect).all(1))
     assert len(hit) == 1, tree["masks"]
-    assert 0.35 < tree["psi"][hit[0]] < 0.55
+    assert abs(tree["psi"][hit[0]] - 0.49) < 0.05
     # the deg-1 sub-parity {1} is ALSO kept with its level-0 score (bit 5 was
     # conditioning there) -- the kept dict is a per-level snapshot, exactly as
     # in canonical pure_gl_tree; deflation later zeroes the stale char

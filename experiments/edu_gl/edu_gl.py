@@ -473,6 +473,301 @@ def fit_core(bits_tr, y_tr_raw, evals, max_pairs=400_000, block=512, device=None
                      "idx3": idx3, "C3": C3}
 
 
+# --------------------------------------------------------- fitted arms (AdamW)
+# Controlled challenge to the "coefficients CALCULATED, never Adam" rule under
+# new conditions (2M rows, scalar target, val early-stop).  Recipe follows the
+# repo's own fourier-learn history (canonical commit a0f1275): AdamW, CONSTANT
+# lr, weight decay on coefficients only, never the bias.
+
+def _pair_logits(X, a_idx, b_idx, C_t, chunk=25_000):
+    """(B,) sum_k C_k x_a x_b, pair features gathered on the fly (never
+    materializes B x K)."""
+    import torch
+    out = torch.zeros(len(X), device=X.device)
+    for lo in range(0, len(a_idx), chunk):
+        out += (X[:, a_idx[lo:lo + chunk]] * X[:, b_idx[lo:lo + chunk]]) \
+            @ C_t[lo:lo + chunk]
+    return out
+
+
+def adamw_core(bits_tr, y_tr_raw, evals, idx, W1_init, C_init, b_init,
+               lr=1e-3, wd=1e-4, steps=30_000, batch=8192, eval_every=250,
+               patience=6, device=None, seed=0, log=None):
+    """AdamW refit of the coefficient VALUES on FIXED features (deg-1 bits +
+    the given pair idx).  Returns (summary, model): summary reports train R2
+    next to val/test -- a train >> val gap is the memorization signature the
+    calculated-only rule was built on."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    emit = log or (lambda d: None)
+    torch.manual_seed(seed)
+    bits_t = torch.tensor(np.asarray(bits_tr, np.uint8), device=device)
+    dev = bits_t.device
+    ytr = torch.tensor(normalize_scores(y_tr_raw), device=dev)
+    a_idx = torch.tensor(np.asarray(idx[:, 0], np.int64), device=dev)
+    b_idx = torch.tensor(np.asarray(idx[:, 1], np.int64), device=dev)
+    W1 = torch.tensor(np.asarray(W1_init, np.float32), device=dev).requires_grad_(True)
+    C = torch.tensor(np.asarray(C_init, np.float32), device=dev).requires_grad_(True)
+    b = torch.tensor(float(b_init), device=dev).requires_grad_(True)
+    opt = torch.optim.AdamW([
+        {"params": [W1, C], "weight_decay": wd},
+        {"params": [b], "weight_decay": 0.0}], lr=lr)
+
+    def forward(bslice):
+        X = 1.0 - 2.0 * bslice.float()
+        return X @ W1 + b + _pair_logits(X, a_idx, b_idx, C)
+
+    def predict(bits_eval):
+        with torch.no_grad():
+            return np.concatenate(
+                [forward(bits_eval[lo:lo + 8192]).cpu().numpy()
+                 for lo in range(0, len(bits_eval), 8192)])
+
+    eb = {t: torch.tensor(np.asarray(bb, np.uint8), device=dev)
+          for t, (bb, _) in evals.items()}
+    gen = torch.Generator(device=dev).manual_seed(seed)
+    best = (float("inf"), None, 0)
+    for s in range(steps):
+        sel = torch.randint(0, len(bits_t), (batch,), device=dev, generator=gen)
+        loss = ((forward(bits_t[sel]) - ytr[sel]) ** 2).mean()
+        opt.zero_grad(); loss.backward(); opt.step()
+        if (s + 1) % eval_every == 0:
+            vm = score_metrics(predict(eb["val"]), evals["val"][1]) \
+                if "val" in eb else {"mse": float(loss)}
+            emit({"step": s + 1, "train_loss": float(loss),
+                  "val_mse": vm["mse"], "val_r2": vm.get("r2", 0.0)})
+            if vm["mse"] < best[0] - 1e-6:
+                best = (vm["mse"],
+                        (W1.detach().clone(), C.detach().clone(),
+                         b.detach().clone()), 0)
+            else:
+                best = (best[0], best[1], best[2] + 1)
+                if best[2] >= patience:
+                    print(f"[adamw] early stop at step {s + 1}", flush=True)
+                    break
+    if best[1] is not None:
+        with torch.no_grad():
+            W1.copy_(best[1][0]); C.copy_(best[1][1]); b.copy_(best[1][2])
+    tr_sub = torch.randperm(len(bits_t), generator=gen, device=dev)[:200_000]
+    summary = {"steps_run": s + 1, "K": int(len(a_idx)),
+               "train": score_metrics(predict(bits_t[tr_sub]),
+                                      np.asarray(y_tr_raw)[tr_sub.cpu().numpy()])}
+    for t in eb:
+        summary[t] = score_metrics(predict(eb[t]), evals[t][1])
+    model = {"W1": W1.detach().cpu().numpy(), "C": C.detach().cpu().numpy(),
+             "b": float(b)}
+    return summary, model
+
+
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=49152, secrets=WANDB_SECRET)
+def fit_adamw(encoding: str = "lsh", w: int = W_WIN,
+              n_train: int = 2_000_000, n_val: int = 25_000,
+              n_test: int = 25_000, k_pairs: int = 200_000, lr: float = 1e-3,
+              wd: float = 1e-4, steps: int = 30_000, batch: int = 8192,
+              init: str = "both"):
+    """Arm 1: AdamW coefficients on the calculated model's own features."""
+    vol.reload()
+    data = np.load(_data_path(w, n_train, n_val, n_test))
+    z = np.load(f"{ROOT}/model_{encoding}_w{w}_N{n_train}.npz")
+    codes = z["codes"]
+    idx = z["idx"][:k_pairs]
+    bits_tr = window_bits(data["tok_tr"], codes)
+    evals = {"val": (window_bits(data["tok_va"], codes), data["y_va"]),
+             "test": (window_bits(data["tok_te"], codes), data["y_te"])}
+    c0 = float(z["c0"])
+    out = {}
+    for tag in (("warm", "cold") if init == "both" else (init,)):
+        warm = tag == "warm"
+        run = _wandb_run(f"adamw-{tag}-{encoding}-w{w}-N{n_train}",
+                         {"encoding": encoding, "k_pairs": len(idx), "lr": lr,
+                          "wd": wd, "init": tag})
+        summary, model = adamw_core(
+            bits_tr, data["y_tr"], evals, idx,
+            W1_init=z["W1"] if warm else np.zeros_like(z["W1"]),
+            C_init=z["C"][:k_pairs] if warm else np.zeros(len(idx), np.float32),
+            b_init=(float(z["b1"]) + c0) if warm else 0.0,
+            lr=lr, wd=wd, steps=steps, batch=batch,
+            log=(run.log if run is not None else None))
+        print(f"[adamw:{tag}] train R2 {summary['train']['r2']:.4f} val "
+              f"{summary['val']['r2']:.4f} test {summary['test']['r2']:.4f}",
+              flush=True)
+        np.savez_compressed(f"{ROOT}/model_adamw_{tag}_{encoding}_w{w}_N{n_train}.npz",
+                            codes=codes, idx=idx, **model)
+        if run is not None:
+            run.summary.update({f"{t}_r2": summary[t]["r2"]
+                                for t in ("train", "val", "test")})
+            run.finish()
+        out[tag] = summary
+    with open(f"{ROOT}/summary_adamw_{encoding}_w{w}_N{n_train}.json", "w") as fh:
+        json.dump(out, fh, indent=1)
+    vol.commit()
+    print(json.dumps(out), flush=True)
+    return out
+
+
+# ------------------------------------------------------ fitted arms (STE masks)
+
+def logspace_ste_chars(bits_f, theta, eps=1e-3):
+    """Learned characters with STE: inclusion gates m = sigmoid(theta); the
+    forward value is the EXACT +-1 parity of the HARDENED mask (m > 0.5);
+    gradients flow through sign * exp(<b(x), log max(|1-2m|, eps)>) -- one
+    GEMM, linear in the bit vector.  crib: canonical _logspace_ste_chars
+    L1302-1330.  bits_f (B, n) float 0/1; theta (K, n).  Returns (B, K)."""
+    import torch
+    m = torch.sigmoid(theta)
+    logmag = bits_f @ torch.log(torch.clamp((1.0 - 2.0 * m).abs(), min=eps)).t()
+    hard = (m > 0.5).float()
+    sign = 1.0 - 2.0 * ((bits_f @ hard.t()) % 2.0)
+    soft = sign.detach() * torch.exp(logmag)
+    return soft + (sign - soft).detach()
+
+
+def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
+             lr_theta=1e-2, lr_c=1e-3, wd=1e-4, steps=20_000, batch=8192,
+             eval_every=250, patience=6, device=None, seed=0, log=None):
+    """Arm 2: jointly learn WHICH parities (STE masks) and their weights.
+    Half the masks warm-init at warm_idx pair characters, half random 2-bit.
+    Eval always uses the hardened masks (exact +-1 parities)."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    emit = log or (lambda d: None)
+    torch.manual_seed(seed)
+    rng = np.random.default_rng(seed)
+    bits_t = torch.tensor(np.asarray(bits_tr, np.uint8), device=device)
+    dev = bits_t.device
+    n = bits_t.shape[1]
+    ytr = torch.tensor(normalize_scores(y_tr_raw), device=dev)
+    th = np.full((K, n), -4.0, np.float32)
+    n_warm = 0
+    if warm_idx is not None:
+        n_warm = min(K // 2, len(warm_idx))
+        for k in range(n_warm):
+            th[k, warm_idx[k, 0]] = 4.0
+            th[k, warm_idx[k, 1]] = 4.0
+    for k in range(n_warm, K):                       # random 2-bit starts
+        th[k, rng.choice(n, 2, replace=False)] = 2.0
+    theta = torch.tensor(th, device=dev).requires_grad_(True)
+    c = torch.zeros(K, device=dev).requires_grad_(True)
+    b = torch.tensor(float(normalize_scores(y_tr_raw).mean()),
+                     device=dev).requires_grad_(True)
+    opt = torch.optim.AdamW([
+        {"params": [theta], "lr": lr_theta, "weight_decay": 0.0},
+        {"params": [c], "lr": lr_c, "weight_decay": wd},
+        {"params": [b], "lr": lr_c, "weight_decay": 0.0}])
+
+    def predict(bits_eval):
+        with torch.no_grad():
+            hard = (torch.sigmoid(theta) > 0.5).float()
+            out = []
+            for lo in range(0, len(bits_eval), 8192):
+                Xf = bits_eval[lo:lo + 8192].float()
+                sign = 1.0 - 2.0 * ((Xf @ hard.t()) % 2.0)
+                out.append((sign @ c + b).cpu().numpy())
+            return np.concatenate(out)
+
+    eb = {t: torch.tensor(np.asarray(bb, np.uint8), device=dev)
+          for t, (bb, _) in evals.items()}
+    gen = torch.Generator(device=dev).manual_seed(seed)
+    best = (float("inf"), None, 0)
+    for s in range(steps):
+        sel = torch.randint(0, len(bits_t), (batch,), device=dev, generator=gen)
+        Phi = logspace_ste_chars(bits_t[sel].float(), theta)
+        loss = ((Phi @ c + b - ytr[sel]) ** 2).mean()
+        opt.zero_grad(); loss.backward(); opt.step()
+        if (s + 1) % eval_every == 0:
+            vm = score_metrics(predict(eb["val"]), evals["val"][1])
+            deg = ((torch.sigmoid(theta) > 0.5).sum(1).float())
+            emit({"step": s + 1, "train_loss": float(loss),
+                  "val_mse": vm["mse"], "val_r2": vm["r2"],
+                  "mean_degree": float(deg.mean())})
+            if vm["mse"] < best[0] - 1e-6:
+                best = (vm["mse"], (theta.detach().clone(),
+                                    c.detach().clone(), b.detach().clone()), 0)
+            else:
+                best = (best[0], best[1], best[2] + 1)
+                if best[2] >= patience:
+                    print(f"[ste] early stop at step {s + 1}", flush=True)
+                    break
+    if best[1] is not None:
+        with torch.no_grad():
+            theta.copy_(best[1][0]); c.copy_(best[1][1]); b.copy_(best[1][2])
+    masks = (torch.sigmoid(theta) > 0.5).cpu().numpy().astype(np.uint8)
+    degs = masks.sum(1)
+    tr_sub = torch.randperm(len(bits_t), generator=gen, device=dev)[:200_000]
+    summary = {"steps_run": s + 1, "K": int(K), "n_warm": int(n_warm),
+               "deg_hist": np.bincount(degs, minlength=8)[:8].tolist(),
+               "mask_bytes": int((degs * 2 + 4).sum()),  # int16 idx + fp32 coef
+               "train": score_metrics(predict(bits_t[tr_sub]),
+                                      np.asarray(y_tr_raw)[tr_sub.cpu().numpy()])}
+    for t in eb:
+        summary[t] = score_metrics(predict(eb[t]), evals[t][1])
+    return summary, {"masks": masks, "c": c.detach().cpu().numpy(),
+                     "b": float(b)}
+
+
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=49152, secrets=WANDB_SECRET)
+def fit_ste(encoding: str = "lsh", w: int = W_WIN, n_train: int = 2_000_000,
+            n_val: int = 25_000, n_test: int = 25_000, K: int = 16_384,
+            lr_theta: float = 1e-2, lr_c: float = 1e-3, wd: float = 1e-4,
+            steps: int = 20_000, batch: int = 8192):
+    """Arm 2 wrapper: STE masks at 2M rows, warm half from the calculated
+    model's top pairs.  Also reports the deflated-coefficient variant of the
+    LEARNED masks (calculated weights on fitted features)."""
+    import torch
+    vol.reload()
+    data = np.load(_data_path(w, n_train, n_val, n_test))
+    z = np.load(f"{ROOT}/model_{encoding}_w{w}_N{n_train}.npz")
+    codes = z["codes"]
+    bits_tr = window_bits(data["tok_tr"], codes)
+    evals = {"val": (window_bits(data["tok_va"], codes), data["y_va"]),
+             "test": (window_bits(data["tok_te"], codes), data["y_te"])}
+    run = _wandb_run(f"ste-{encoding}-w{w}-N{n_train}-K{K}",
+                     {"encoding": encoding, "K": K, "lr_theta": lr_theta,
+                      "lr_c": lr_c, "wd": wd})
+    summary, model = ste_core(bits_tr, data["y_tr"], evals, K=K,
+                              warm_idx=z["idx"], lr_theta=lr_theta, lr_c=lr_c,
+                              wd=wd, steps=steps, batch=batch,
+                              log=(run.log if run is not None else None))
+    print(f"[ste] train R2 {summary['train']['r2']:.4f} val "
+          f"{summary['val']['r2']:.4f} test {summary['test']['r2']:.4f} "
+          f"deg hist {summary['deg_hist']}", flush=True)
+    # hybrid: CALCULATED coefficients on the LEARNED masks (dedup identical)
+    umasks = np.unique(model["masks"][model["masks"].sum(1) > 0], axis=0)
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    bt = torch.tensor(bits_tr, device=dev)
+    ytr = normalize_scores(data["y_tr"])
+    c0 = float(ytr.mean())
+    g_t = torch.tensor(ytr - c0, device=dev)
+    Cd, _ = sequential_deflate(bt, g_t, None, device=dev, block=512,
+                               masks=umasks)
+    Cd_t = torch.tensor(Cd, device=dev)
+    hyb = {}
+    for t, (bb, yy) in evals.items():
+        be = torch.tensor(np.asarray(bb, np.uint8), device=dev)
+        pred = torch.full((len(be),), c0, device=dev)
+        for lo in range(0, len(umasks), 4096):
+            pred += mask_parity_features(be, umasks[lo:lo + 4096]) \
+                @ Cd_t[lo:lo + 4096]
+        hyb[t] = score_metrics(pred.cpu().numpy(), yy)
+    summary["deflated_on_learned_masks"] = {
+        "n_masks": int(len(umasks)), **{t: hyb[t] for t in hyb}}
+    print(f"[ste] deflated-on-learned-masks test R2 {hyb['test']['r2']:.4f} "
+          f"({len(umasks)} masks)", flush=True)
+    np.savez_compressed(f"{ROOT}/model_ste_{encoding}_w{w}_N{n_train}.npz",
+                        codes=codes, **model)
+    with open(f"{ROOT}/summary_ste_{encoding}_w{w}_N{n_train}.json", "w") as fh:
+        json.dump(summary, fh, indent=1)
+    vol.commit()
+    if run is not None:
+        run.summary.update({f"{t}_r2": summary[t]["r2"]
+                            for t in ("train", "val", "test")})
+        run.finish()
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
 # ------------------------------------------------------------------------ data
 
 def stream_windows(tok, n, w=W_WIN, skip=0):
@@ -785,6 +1080,10 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
         for enc in encs:
             fit.remote(enc, w, b, max_pairs, n_train, n_val, n_test,
                        512, deg3_anchors, max_triples)
+    elif stage == "adamw":
+        fit_adamw.remote(encoding, w, n_train, n_val, n_test)
+    elif stage == "ste":
+        fit_ste.remote(encoding, w, n_train, n_val, n_test)
     elif stage == "ceilings":
         ceilings.remote(w, n_train, n_val, n_test)
     elif stage == "show":

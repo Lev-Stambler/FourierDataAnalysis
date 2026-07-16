@@ -171,6 +171,59 @@ def test_end_to_end_with_deg3():
     assert r2 > 0.5, r2
 
 
+def test_adamw_core_recovers_planted():
+    rng = np.random.default_rng(6)
+    D, n = 30_000, 24
+    bits = rng.integers(0, 2, (D, n), dtype=np.uint8)
+    idx = np.array([[2, 9, -1, -1], [5, 17, -1, -1]], np.int16)
+    y = (2.5 + 2.5 * (0.2 * _deg1(bits, 3) + 0.3 * _pair_parity(bits, 2, 9)
+                      - 0.25 * _pair_parity(bits, 5, 17)))
+    bte = rng.integers(0, 2, (5_000, n), dtype=np.uint8)
+    yte = (2.5 + 2.5 * (0.2 * _deg1(bte, 3) + 0.3 * _pair_parity(bte, 2, 9)
+                        - 0.25 * _pair_parity(bte, 5, 17)))
+    summary, model = edu_gl.adamw_core(
+        bits, y, {"val": (bte, yte), "test": (bte, yte)}, idx,
+        W1_init=np.zeros(n, np.float32), C_init=np.zeros(2, np.float32),
+        b_init=0.0, lr=3e-3, wd=0.0, steps=4000, batch=4096,
+        eval_every=500, device="cpu")
+    assert summary["test"]["r2"] > 0.95, summary["test"]
+    assert abs(model["C"][0] - 0.3) < 0.05
+    assert abs(model["C"][1] + 0.25) < 0.05
+
+
+def test_ste_chars_forward_is_exact_parity():
+    import torch
+    rng = np.random.default_rng(7)
+    bits = rng.integers(0, 2, (256, 12), dtype=np.uint8)
+    theta = np.full((2, 12), -4.0, np.float32)
+    theta[0, [1, 7]] = 4.0
+    theta[1, [0, 4, 9]] = 4.0
+    th = torch.tensor(theta, requires_grad=True)
+    out = edu_gl.logspace_ste_chars(torch.tensor(bits, dtype=torch.float32), th)
+    expect = np.stack([_pair_parity(bits, 1, 7),
+                       (1.0 - 2.0 * (bits[:, 0] ^ bits[:, 4] ^ bits[:, 9]))], 1)
+    np.testing.assert_allclose(out.detach().numpy(), expect, atol=1e-6)
+    out.sum().backward()                             # grads finite and nonzero
+    g = th.grad.numpy()
+    assert np.isfinite(g).all() and np.abs(g).sum() > 0
+
+
+def test_ste_core_learns_planted_pair():
+    rng = np.random.default_rng(8)
+    D, n = 20_000, 16
+    bits = rng.integers(0, 2, (D, n), dtype=np.uint8)
+    y = 2.5 + 2.5 * 0.6 * _pair_parity(bits, 3, 9)
+    bte = rng.integers(0, 2, (4_000, n), dtype=np.uint8)
+    yte = 2.5 + 2.5 * 0.6 * _pair_parity(bte, 3, 9)
+    summary, model = edu_gl.ste_core(
+        bits, y, {"val": (bte, yte), "test": (bte, yte)}, K=64,
+        warm_idx=None, lr_theta=3e-2, lr_c=3e-3, wd=0.0, steps=2500,
+        batch=4096, eval_every=500, device="cpu", seed=0)
+    assert summary["test"]["r2"] > 0.5, summary["test"]
+    expect = np.zeros(n, np.uint8); expect[[3, 9]] = 1
+    assert (model["masks"] == expect).all(1).any()
+
+
 def test_score_metrics_sane():
     y = np.array([0.5, 2.0, 3.5, 4.5, 1.0])
     perfect = edu_gl.score_metrics(edu_gl.normalize_scores(y), y)
