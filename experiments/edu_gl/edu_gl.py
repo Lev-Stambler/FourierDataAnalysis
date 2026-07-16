@@ -1011,17 +1011,47 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
 
     counts = scatter_rows(torch.ones(D, device=dev))
     b = scatter_rows(y_t)
-    # EMPIRICAL-BAYES per-group ridge: each offset table's wd scales with
-    # 1/signal (measured single-table val gains: offsets 1-4 carry ~2e-3..
-    # 1e-4, the rest ~1e-7).  A scalar wd must over-shrink the good tables
-    # to control 59 dead ones (all-in scalar ridge: 0.748 < selected 0.772).
-    gain_d = {1: 1.94e-3, 2: 4.29e-4, 3: 5.33e-4, 4: 1.35e-4}
+    # EMPIRICAL-BAYES per-group ridge, gains AUTO-MEASURED per table (no
+    # hand-fed constants): each group's wd scales inversely with the val
+    # gain of its solo shrunk-mean table on the unigram residual.  Scalar
+    # wd over-shrinks good tables to control dead ones (0.748 < 0.772);
+    # measured-evidence weighting broke the wall (0.782).
+    yva = normalize_scores(data["y_va"])
+    v0 = fit_token_table(tok["tr"], ytr, q, wd=10.0)
+    g_tr0 = torch.tensor(ytr, device=dev) \
+        - token_table_apply(tok["tr"], v0[0], v0[1], dev)
+    g_va0 = torch.tensor(yva, device=dev) \
+        - token_table_apply(tok["va"], v0[0], v0[1], dev)
+    gains = {}
+    vm0 = float((g_va0 ** 2).mean())
+    for d in range(1, w):
+        ktr = ((torch.tensor(tok["tr"][:, : w - d], device=dev)
+                * q + torch.tensor(tok["tr"][:, d:], device=dev))
+               * mixi >> 40) & (n_hash - 1)
+        gs = torch.zeros(n_hash, device=dev).scatter_add_(
+            0, ktr.reshape(-1), g_tr0.repeat_interleave(w - d))
+        ns = torch.zeros(n_hash, device=dev).scatter_add_(
+            0, ktr.reshape(-1), torch.ones(ktr.numel(), device=dev))
+        vtab = gs / (ns + 10.0)
+        kva = ((torch.tensor(tok["va"][:, : w - d], device=dev)
+                * q + torch.tensor(tok["va"][:, d:], device=dev))
+               * mixi >> 40) & (n_hash - 1)
+        pred = vtab[kva].sum(dim=1)
+        a_num = float((vtab[ktr].sum(dim=1) @ g_tr0))
+        a_den = float((vtab[ktr].sum(dim=1) ** 2).sum()) + 1e-12
+        alpha = a_num / a_den
+        gains[d] = max(vm0 - float(((g_va0 - alpha * pred) ** 2).mean()),
+                       1e-7)
+        del gs, ns, vtab, ktr, kva
+    gmax = max(gains.values())
+    print("[qfull] measured gains (top 8): "
+          + str(sorted(((round(v, 6), d) for d, v in gains.items()),
+                       reverse=True)[:8]), flush=True)
     reg = torch.empty(n_feat, device=dev)
-    reg[:q] = 1.0                                    # unigrams: light
+    reg[:q] = 1.0
     base_i = q
     for d in range(1, w):
-        reg[base_i: base_i + n_hash] = 1.94e-3 / max(gain_d.get(d, 2e-6),
-                                                     2e-6)
+        reg[base_i: base_i + n_hash] = gmax / gains[d]
         base_i += n_hash
     summary = {"n_feat": int(n_feat), "n_train": n_train, "full": {},
                "trunc": []}
