@@ -870,6 +870,88 @@ def fit_qhh(n_train: int = 2_000_000, n_val: int = 25_000,
     return summary
 
 
+
+
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=49152, secrets=WANDB_SECRET)
+def fit_qjoint(offsets: str = "1,2,3,4", n_hash: int = 1 << 22,
+               n_train: int = 2_000_000, n_val: int = 25_000,
+               n_test: int = 25_000, w: int = W_WIN, iters: int = 300):
+    """JOINT CG ridge over the DISCOVERED supports (unigrams + the offset
+    tables qhh selected), then a heavy-cell truncation sweep: sort all cells
+    by |v|, zero below top-K, chart the calculated R2-vs-size frontier."""
+    import torch
+    vol.reload()
+    data = np.load(_data_path(w, n_train, n_val, n_test))
+    tok = {k: np.ascontiguousarray(data[f"tok_{k}"]).astype(np.int64)
+           for k in ("tr", "va", "te")}
+    q = int(np.load(f"{ROOT}/emb.npz")["E"].shape[0])
+    offs = [int(x) for x in offsets.split(",")]
+    run = _wandb_run(f"qjoint-{offsets.replace(',', '')}-N{n_train}",
+                     {"offsets": offsets, "n_hash": n_hash})
+    mixi = -7046029254386353131
+
+    def ids_of(t):
+        cols = [t]                                   # unigrams: raw ids
+        base = q
+        for d in offs:
+            h = ((t[:, : w - d] * q + t[:, d:]) * mixi >> 40) & (n_hash - 1)
+            cols.append(h + base)
+            base += n_hash
+        return np.concatenate(cols, axis=1), base
+
+    ids = {}
+    for k in ("tr", "va", "te"):
+        ids[k], n_feat = ids_of(tok[k])
+    ytr = normalize_scores(data["y_tr"])
+    best = None
+    for wd in (3.0, 10.0, 30.0):
+        v = fit_ngram_cg(ids["tr"], ytr - ytr.mean(), n_feat, wd=wd,
+                         iters=iters)
+        m = score_metrics(ngram_apply(ids["va"], v).cpu().numpy()
+                          + ytr.mean(), data["y_va"])
+        print(f"[qjoint] wd {wd:g}: val R2 {m['r2']:.4f}", flush=True)
+        if best is None or m["mse"] < best[2]["mse"]:
+            best = (wd, v, m)
+    wd, v, _ = best
+    summary = {"offsets": offsets, "wd": wd, "n_feat": int(n_feat),
+               "n_train": n_train, "full": {}, "trunc": []}
+    for k, tag in (("va", "val"), ("te", "test")):
+        summary["full"][tag] = score_metrics(
+            ngram_apply(ids[k], v).cpu().numpy() + ytr.mean(),
+            data[f"y_{k}"])
+    print(f"[qjoint] === full: val {summary['full']['val']['r2']:.4f} test "
+          f"{summary['full']['test']['r2']:.4f}", flush=True)
+    order = np.argsort(-np.abs(v))
+    for keep in (100_000, 400_000, 1_600_000, 6_400_000):
+        if keep >= n_feat:
+            continue
+        vt = np.zeros_like(v)
+        vt[order[:keep]] = v[order[:keep]]
+        entry = {"cells": keep, "mb": round(keep * 6 / 1e6, 2)}
+        for k, tag in (("va", "val"), ("te", "test")):
+            entry[tag] = score_metrics(
+                ngram_apply(ids[k], vt).cpu().numpy() + ytr.mean(),
+                data[f"y_{k}"])["r2"]
+        summary["trunc"].append(entry)
+        print(f"[qjoint] top-{keep} cells (~{entry['mb']}MB): val "
+              f"{entry['val']:.4f} test {entry['test']:.4f}", flush=True)
+        if run is not None:
+            run.log({"cells": keep, "test_r2": entry["test"]})
+    np.savez_compressed(f"{ROOT}/model_qjoint_N{n_train}.npz",
+                        v=v.astype(np.float16), mean=ytr.mean(),
+                        offsets=np.array(offs), n_hash=n_hash)
+    with open(f"{ROOT}/summary_qjoint_N{n_train}.json", "w") as fh:
+        json.dump(summary, fh, indent=1)
+    vol.commit()
+    if run is not None:
+        run.summary.update({"test_r2": summary["full"]["test"]["r2"]})
+        run.finish()
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
+
 # --------------------------------------------------------------------- metrics
 
 def normalize_scores(y_raw):
@@ -1706,6 +1788,8 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
         fit_qpair.remote(n_train, n_val, n_test, w)
     elif stage == "qhh":
         fit_qhh.remote(n_train, n_val, n_test, w)
+    elif stage == "qjoint":
+        fit_qjoint.remote("1,2,3,4", 1 << 22, n_train, n_val, n_test, w)
     elif stage == "adamw":
         fit_adamw.remote(encoding, w, n_train, n_val, n_test)
     elif stage == "ste":
