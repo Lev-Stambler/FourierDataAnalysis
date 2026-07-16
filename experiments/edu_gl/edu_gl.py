@@ -314,6 +314,151 @@ def select_triples(M3, pair_idx, floor, max_triples):
     return idx3, vals[sel]
 
 
+def fit_token_table(tok_tr, y, q, device=None, wd=1e2, row_chunk=8192):
+    """CLOSED-FORM q-ary degree-1 fit: a per-token scalar value summed over
+    the window (bag-of-tokens ridge on count features).  This is the FULL
+    30522-dim degree-1 basis in TOKEN space -- the bit-deg-1 fit is its
+    69-dim shadow and the ridge-on-pooled-embeddings ceiling its 768-dim
+    shadow.  One Gram accumulation + one solve; still a calculated student
+    (the table is 61KB at fp16).  Returns (v (q,) float32, b float)."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    tok = torch.tensor(np.asarray(tok_tr, np.int64), device=device)
+    y_t = torch.tensor(np.asarray(y, np.float32), device=device)
+    D, w = tok.shape
+    S = torch.zeros((q + 1, q + 1), dtype=torch.float32, device=device)
+    bvec = torch.zeros(q + 1, dtype=torch.float32, device=device)
+    for lo in range(0, D, row_chunk):
+        t = tok[lo:lo + row_chunk]
+        ones = torch.ones((len(t), 1), device=device)
+        X = torch.zeros((len(t), q), device=device)
+        X.scatter_add_(1, t, ones.expand(-1, w))     # token counts per window
+        Xa = torch.cat([X, ones], dim=1)
+        S += Xa.t() @ Xa
+        bvec += Xa.t() @ y_t[lo:lo + row_chunk]
+        del X, Xa
+    out = []
+    for wd_i in (wd if isinstance(wd, (tuple, list)) else (wd,)):
+        reg = wd_i * torch.eye(q + 1, device=device)
+        reg[-1, -1] = 0.0
+        va = torch.linalg.solve((S + reg).double(), bvec.double()).float()
+        out.append((float(wd_i), va[:-1].cpu().numpy(), float(va[-1])))
+    return out if isinstance(wd, (tuple, list)) else (out[0][1], out[0][2])
+
+
+def token_table_apply(tok, v, b, device=None):
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    v_t = torch.tensor(np.asarray(v, np.float32), device=device)
+    t = torch.tensor(np.asarray(tok, np.int64), device=device)
+    return v_t[t].sum(dim=1) + b
+
+
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=49152, secrets=WANDB_SECRET)
+def fit_token(encoding: str = "lsh", w: int = W_WIN, b: int = B_LSH,
+              max_pairs: int = 400_000, n_train: int = 2_000_000,
+              n_val: int = 25_000, n_test: int = 25_000, block: int = 512):
+    """Token-table base (full q-ary deg-1, wd swept on val over closed-form
+    solves) + bit-deg-2 pairs deflated on ITS residual.  The match-the-MLP
+    push: the ridge ceiling (0.629) is itself a token-deg-1 function."""
+    import torch
+    vol.reload()
+    data = np.load(_data_path(w, n_train, n_val, n_test))
+    q = int(np.load(f"{ROOT}/emb.npz")["E"].shape[0])
+    dev = "cuda"
+    ytr = normalize_scores(data["y_tr"])
+    run = _wandb_run(f"token-{encoding}-w{w}-N{n_train}",
+                     {"encoding": encoding, "w": w, "n_train": n_train,
+                      "max_pairs": max_pairs})
+    cands = fit_token_table(data["tok_tr"], ytr, q,
+                            wd=(1.0, 10.0, 100.0, 1000.0))
+    best = None
+    for wd_i, v, b0 in cands:
+        pv = token_table_apply(data["tok_va"], v, b0, dev).cpu().numpy()
+        m = score_metrics(pv, data["y_va"])
+        print(f"[token] wd {wd_i:g}: val R2 {m['r2']:.4f}", flush=True)
+        if best is None or m["mse"] < best[3]["mse"]:
+            best = (wd_i, v, b0, m)
+    wd_i, v, b0, _ = best
+    base = {t: token_table_apply(data[f"tok_{k}"], v, b0, dev)
+            for t, k in (("val", "va"), ("test", "te"))}
+    summary = {"wd": wd_i, "q": q, "n_train": n_train, "encoding": encoding,
+               "token_deg1": {t: score_metrics(base[t].cpu().numpy(),
+                                               data[f"y_{k}"])
+                              for t, k in (("val", "va"), ("test", "te"))}}
+    print(f"[token] === token-deg1: val R2 "
+          f"{summary['token_deg1']['val']['r2']:.4f} test "
+          f"{summary['token_deg1']['test']['r2']:.4f}", flush=True)
+    if run is not None:
+        run.log({"pairs": 0,
+                 **{f"{t}_r2": summary["token_deg1"][t]["r2"]
+                    for t in ("val", "test")}})
+    # bit-deg-2 pairs on the token residual
+    codes = build_codes(encoding, b)
+    bits_t = torch.tensor(window_bits(data["tok_tr"], codes), device=dev)
+    D, n = bits_t.shape
+    g = torch.tensor(ytr, device=dev) \
+        - token_table_apply(data["tok_tr"], v, b0, dev)
+    res1 = float((g ** 2).mean())
+    print(f"[token] residual mass {res1:.4f}", flush=True)
+    psi2, _ = deg2_psi_scalar(bits_t, g, device=dev)
+    floor = res1 / D
+    iu = np.triu_indices(n, k=1)
+    vals = psi2[iu]
+    order = np.argsort(-vals)
+    K = int(min((vals > 2.0 * floor).sum(), max_pairs))
+    idx = np.full((K, 4), -1, np.int16)
+    idx[:, 0] = iu[0][order[:K]]
+    idx[:, 1] = iu[1][order[:K]]
+    print(f"[token] floor {floor:.3e}; fitting K={K} pairs", flush=True)
+    ladder = []
+    C = np.zeros(0, np.float32)
+    if K:
+        C, g = sequential_deflate(bits_t, g, idx, device=dev, block=block)
+        eb = {t: torch.tensor(window_bits(data[f"tok_{k}"], codes), device=dev)
+              for t, k in (("val", "va"), ("test", "te"))}
+        adds = {t: torch.zeros(len(eb[t]), device=dev) for t in eb}
+        C_t = torch.tensor(C, device=dev)
+        lo = 0
+        for k in sorted({x for x in (1_000, 10_000, 50_000, 200_000)
+                         if x < K} | {K}):
+            for blo in range(lo, k, 4096):
+                hi = min(blo + 4096, k)
+                for t in eb:
+                    adds[t] += xor_parity_features(eb[t], idx[blo:hi]) \
+                        @ C_t[blo:hi]
+            lo = k
+            entry = {"k": int(k)}
+            for t, dk in (("val", "va"), ("test", "te")):
+                entry[t] = score_metrics((base[t] + adds[t]).cpu().numpy(),
+                                         data[f"y_{dk}"])
+            ladder.append(entry)
+            print(f"[token] === +{k} pairs: val R2 {entry['val']['r2']:.4f} "
+                  f"test R2 {entry['test']['r2']:.4f}", flush=True)
+            if run is not None:
+                run.log({"pairs": k, **{f"{t}_r2": entry[t]["r2"]
+                                        for t in ("val", "test")}})
+    summary["K"] = K
+    summary["ladder"] = ladder
+    suf = "" if b == B_LSH else f"_b{b}"
+    np.savez_compressed(f"{ROOT}/model_token_{encoding}_w{w}_N{n_train}{suf}.npz",
+                        v=v.astype(np.float16), b0=b0, codes=codes, idx=idx, C=C)
+    with open(f"{ROOT}/summary_token_{encoding}_w{w}_N{n_train}{suf}.json",
+              "w") as fh:
+        json.dump(summary, fh, indent=1)
+    vol.commit()
+    if run is not None:
+        run.summary.update({"token_deg1_test_r2":
+                            summary["token_deg1"]["test"]["r2"],
+                            "best_test_r2": max(
+                                [e["test"]["r2"] for e in ladder]
+                                + [summary["token_deg1"]["test"]["r2"]])})
+        run.finish()
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
 # --------------------------------------------------------------------- metrics
 
 def normalize_scores(y_raw):
@@ -1019,9 +1164,11 @@ def fit(encoding: str = "lsh", w: int = W_WIN, b: int = B_LSH,
         entry["compression_x"] = teacher_bytes / entry["student_bytes"]
     summary.update({"encoding": encoding, "w": w, "B_total": int(B_total),
                     "n_train": n_train, "teacher_bytes": teacher_bytes})
-    np.savez_compressed(f"{ROOT}/model_{encoding}_w{w}_N{n_train}.npz",
+    suf = "" if b == B_LSH else f"_b{b}"           # never clobber B=64 files
+    np.savez_compressed(f"{ROOT}/model_{encoding}_w{w}_N{n_train}{suf}.npz",
                         codes=codes, **model)
-    with open(f"{ROOT}/summary_fit_{encoding}_w{w}_N{n_train}.json", "w") as fh:
+    with open(f"{ROOT}/summary_fit_{encoding}_w{w}_N{n_train}{suf}.json",
+              "w") as fh:
         json.dump(summary, fh, indent=1)
     vol.commit()
     if run is not None:
@@ -1138,6 +1285,8 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
         for enc in encs:
             fit.remote(enc, w, b, max_pairs, n_train, n_val, n_test,
                        512, deg3_anchors, max_triples)
+    elif stage == "token":
+        fit_token.remote(encoding, w, b, max_pairs, n_train, n_val, n_test)
     elif stage == "adamw":
         fit_adamw.remote(encoding, w, n_train, n_val, n_test)
     elif stage == "ste":

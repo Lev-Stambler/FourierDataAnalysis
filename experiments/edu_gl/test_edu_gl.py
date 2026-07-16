@@ -243,6 +243,22 @@ def test_ste_core_learns_planted_pair():
     assert (model["masks"] == expect).all(1).any()
 
 
+def test_token_table_recovers_planted_values():
+    rng = np.random.default_rng(11)
+    q, w, D = 64, 6, 30_000
+    v_true = (0.1 * rng.standard_normal(q)).astype(np.float32)
+    tok = rng.integers(0, q, (D, w))
+    y = v_true[tok].sum(1) + 0.3
+    v, b = edu_gl.fit_token_table(tok, y, q, device="cpu", wd=1e-3)
+    tok_te = rng.integers(0, q, (5_000, w))
+    pred = edu_gl.token_table_apply(tok_te, v, b, device="cpu").cpu().numpy()
+    y_te = v_true[tok_te].sum(1) + 0.3
+    ss = 1.0 - np.mean((pred - y_te) ** 2) / np.var(y_te)
+    assert ss > 0.999, ss
+    sweep = edu_gl.fit_token_table(tok, y, q, device="cpu", wd=(1e-3, 1e3))
+    assert len(sweep) == 2 and sweep[0][0] == 1e-3
+
+
 def test_score_metrics_sane():
     y = np.array([0.5, 2.0, 3.5, 4.5, 1.0])
     perfect = edu_gl.score_metrics(edu_gl.normalize_scores(y), y)
