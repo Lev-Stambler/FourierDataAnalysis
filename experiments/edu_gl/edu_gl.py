@@ -1149,7 +1149,7 @@ def slot_forward(feat_batch, theta, Z, eps=1e-3):
 def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
                lr_theta=3e-2, lr_z=1e-3, wd=1e-4, steps=40_000, batch=2048,
                eval_every=500, patience=15, warmup=500, clip=1.0,
-               lam_div=1e-3, div_sub=1024, warm_frac=0.25, slot_chunk=8192,
+               lam_div=1e-3, div_sub=1024, warm_frac=0.25, slot_chunk=4096,
                val_fast=8192, device=None, seed=0, log=None):
     """100k learnable Fourier slots of ANY degree: gates (STE, saturated +-8
     init), factored token functionals u_s = tanh((E A) z_s), coefficients --
@@ -1161,6 +1161,9 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     dev = torch.device(device)
+    amp = dev.type == "cuda"
+    if amp:                                          # fp32 CUDA cores ran the
+        torch.backends.cuda.matmul.allow_tf32 = True  # first attempt 15x slow
     tok_t = torch.tensor(np.asarray(tok_tr, np.int64), device=dev)
     D, w = tok_t.shape
     ytr = normalize_scores(y_tr_raw)
@@ -1192,13 +1195,19 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
     def predict(tok_eval, nrows=None):
         with torch.no_grad():
             te = tok_eval[:nrows] if nrows else tok_eval
-            feat_all = (E_t @ A)[te]                 # (B, w, r); the tanh
-            # nonlinearity lives inside slot_forward (u = tanh(feat.z))
-            out = torch.full((len(te),), float(b), device=dev)
-            for lo in range(0, S, slot_chunk):
-                phi = slot_forward(feat_all, theta[lo:lo + slot_chunk],
-                                   Z[lo:lo + slot_chunk])
-                out += phi @ c[lo:lo + slot_chunk]
+            EA = E_t @ A
+            out = torch.empty(len(te), device=dev)
+            for rlo in range(0, len(te), 2048):      # row x slot chunking:
+                feat = EA[te[rlo:rlo + 2048]]        # full-rows x full-slots
+                acc = torch.full((len(feat),), float(b), device=dev)
+                with torch.autocast("cuda", dtype=torch.bfloat16,
+                                    enabled=amp):
+                    for lo in range(0, S, slot_chunk):
+                        acc = acc + (
+                            slot_forward(feat, theta[lo:lo + slot_chunk],
+                                         Z[lo:lo + slot_chunk]).float()
+                            @ c[lo:lo + slot_chunk])
+                out[rlo:rlo + 2048] = acc
             return out.cpu().numpy()
 
     eb = {t: torch.tensor(np.asarray(tk, np.int64), device=dev)
@@ -1211,12 +1220,16 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
     emit({"step": 0, "val_r2": vm0["r2"]})
     for s_ in range(steps):
         sel = torch.randint(0, D, (batch,), device=dev, generator=gen)
-        feat = (E_t @ A)[tok_t[sel]]                 # (B, w, r)
-        pred = torch.full((batch,), 0.0, device=dev) + b
-        for lo in range(0, S, slot_chunk):
-            pred = pred + slot_forward(feat, theta[lo:lo + slot_chunk],
-                                       Z[lo:lo + slot_chunk]) \
-                @ c[lo:lo + slot_chunk]
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+            feat = (E_t @ A)[tok_t[sel]]             # (B, w, r)
+            pred = torch.full((batch,), 0.0, device=dev) + b.float()
+            for lo in range(0, S, slot_chunk):
+                # CHECKPOINT each chunk: autograd otherwise retains every
+                # chunk's u tensor (13 x 13GB) until backward -> OOM
+                phi = torch.utils.checkpoint.checkpoint(
+                    slot_forward, feat, theta[lo:lo + slot_chunk],
+                    Z[lo:lo + slot_chunk], use_reentrant=False)
+                pred = pred + phi.float() @ c[lo:lo + slot_chunk]
         loss = ((pred - y_t[sel]) ** 2).mean()
         if lam_div > 0:
             ks = torch.randint(0, S, (div_sub,), device=dev, generator=gen)
