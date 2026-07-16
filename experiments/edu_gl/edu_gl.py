@@ -1011,11 +1011,24 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
 
     counts = scatter_rows(torch.ones(D, device=dev))
     b = scatter_rows(y_t)
+    # EMPIRICAL-BAYES per-group ridge: each offset table's wd scales with
+    # 1/signal (measured single-table val gains: offsets 1-4 carry ~2e-3..
+    # 1e-4, the rest ~1e-7).  A scalar wd must over-shrink the good tables
+    # to control 59 dead ones (all-in scalar ridge: 0.748 < selected 0.772).
+    gain_d = {1: 1.94e-3, 2: 4.29e-4, 3: 5.33e-4, 4: 1.35e-4}
+    reg = torch.empty(n_feat, device=dev)
+    reg[:q] = 1.0                                    # unigrams: light
+    base_i = q
+    for d in range(1, w):
+        reg[base_i: base_i + n_hash] = 1.94e-3 / max(gain_d.get(d, 2e-6),
+                                                     2e-6)
+        base_i += n_hash
     summary = {"n_feat": int(n_feat), "n_train": n_train, "full": {},
                "trunc": []}
     best = None
     for wd in (float(x) for x in wds.split(",")):
-        Minv = 1.0 / (counts + wd)                   # Jacobi preconditioner
+        wdv = wd * reg                               # diagonal ridge
+        Minv = 1.0 / (counts + wdv)                  # Jacobi preconditioner
         v = torch.zeros(n_feat, device=dev)
         r = b.clone()
         z = Minv * r
@@ -1023,7 +1036,7 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
         rz = float((r.double() @ z.double()))
         rz0 = rz
         for it in range(iters):
-            Ap = scatter_rows(Xv(p)) + wd * p
+            Ap = scatter_rows(Xv(p)) + wdv * p
             alpha = rz / float((p.double() @ Ap.double()))
             v += alpha * p
             r -= alpha * Ap
