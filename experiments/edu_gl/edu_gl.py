@@ -641,8 +641,8 @@ def logspace_ste_chars(bits_f, theta, eps=1e-3):
 def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None, warm_C=None,
              lr_theta=1e-1, lr_c=3e-4, wd=1e-4, steps=30_000, batch=16_384,
              eval_every=500, patience=12, warmup=500, clip=1.0,
-             off_init=-2.0, lam_div=1e-3, div_sub=1024, device=None, seed=0,
-             log=None):
+             off_init=-8.0, on_init=8.0, lam_div=1e-3, div_sub=1024,
+             device=None, seed=0, log=None):
     """Arm 2: jointly learn WHICH parities (STE masks) and their weights.
     Half the masks warm-init at warm_idx pair characters, half random 2-bit.
     Eval always uses the hardened masks (exact +-1 parities)."""
@@ -655,19 +655,23 @@ def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None, warm_C=None,
     dev = bits_t.device
     n = bits_t.shape[1]
     ytr = torch.tensor(normalize_scores(y_tr_raw), device=dev)
-    # off-gates must NOT start saturated: at -4 sigmoid' ~ 0.017 and no gate
-    # ever opens (observed: deg hist frozen at the init) -- -2 keeps them live
+    # gates must start STRONGLY saturated: the surrogate magnitude is
+    # exp(sum over ~2.2k set bits of log|1-2m|), so off-gates at -2 give
+    # exp(-600) = 0 and the data gradient into theta VANISHES (observed:
+    # div_pen trajectory identical across rounds -- theta moved by the
+    # diversity term alone).  At +-8 the per-bit factor is ~1-7e-4 and the
+    # magnitude stays ~0.2; Adam's per-coordinate normalization handles the
+    # small but consistent gradients
     th = np.full((K, n), off_init, np.float32)
     n_warm = 0
     if warm_idx is not None:
         n_warm = min(K // 2, len(warm_idx))
         for k in range(n_warm):
-            th[k, warm_idx[k, 0]] = 4.0
-            th[k, warm_idx[k, 1]] = 4.0
+            th[k, warm_idx[k, 0]] = on_init
+            th[k, warm_idx[k, 1]] = on_init
     for k in range(n_warm, K):                       # random starts of MIXED
         d = int(rng.integers(1, 5))                  # degree 1-4: arbitrary-
-        th[k, rng.choice(n, d, replace=False)] = 2.0  # degree functions are
-                                                      # reachable from init
+        th[k, rng.choice(n, d, replace=False)] = on_init  # degree reachable
     theta = torch.tensor(th, device=dev).requires_grad_(True)
     # warm coefficients too: theta's gradient is PROPORTIONAL to c, so c=0
     # starves the gates of signal (observed: masks frozen for 1500 steps)

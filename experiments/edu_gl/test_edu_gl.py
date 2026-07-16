@@ -208,6 +208,25 @@ def test_ste_chars_forward_is_exact_parity():
     assert np.isfinite(g).all() and np.abs(g).sum() > 0
 
 
+def test_ste_grad_alive_at_realistic_width():
+    """The surrogate magnitude is exp(sum over SET BITS of log|1-2m|): at
+    n=4416 (the real width) a -2 off-init gives exp(-600)=0 and theta gets NO
+    data gradient (bug: three dead STE rounds).  At +-8 it must be alive."""
+    import torch
+    rng = np.random.default_rng(9)
+    n = 4416
+    bits = torch.tensor(rng.integers(0, 2, (64, n)).astype(np.float32))
+    for off, want_alive in ((-8.0, True), (-2.0, False)):
+        th = np.full((4, n), off, np.float32)
+        for k in range(4):
+            th[k, rng.choice(n, 2, replace=False)] = -off
+        theta = torch.tensor(th, requires_grad=True)
+        out = edu_gl.logspace_ste_chars(bits, theta)
+        (out.sum()).backward()
+        alive = float(theta.grad.abs().sum()) > 1e-8
+        assert alive == want_alive, (off, float(theta.grad.abs().sum()))
+
+
 def test_ste_core_learns_planted_pair():
     rng = np.random.default_rng(8)
     D, n = 20_000, 16
