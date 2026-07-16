@@ -289,3 +289,50 @@ def test_score_metrics_sane():
     assert perfect["f1_ge3"] == pytest.approx(1.0)
     const = edu_gl.score_metrics(np.zeros(5), y)
     assert const["r2"] <= 0.0 + 1e-6
+
+
+def test_slot_forward_exact_and_grads_alive():
+    import torch
+    rng = np.random.default_rng(13)
+    B, w, r, S = 32, 64, 8, 6
+    feat = torch.tensor(rng.standard_normal((B, w, r)).astype(np.float32))
+    th = np.full((S, w), -8.0, np.float32)
+    supports = []
+    for s in range(S):
+        sup = rng.choice(w, s % 4 + 1, replace=False)
+        th[s, sup] = 8.0
+        supports.append(sup)
+    theta = torch.tensor(th, requires_grad=True)
+    Z = torch.tensor(rng.standard_normal((S, r)).astype(np.float32),
+                     requires_grad=True)
+    out = edu_gl.slot_forward(feat, theta, Z)
+    u = torch.tanh(torch.einsum("bwr,sr->bws", feat, Z))
+    for s in range(S):                               # exact hard product
+        expect = torch.ones(B)
+        for p in supports[s]:
+            expect = expect * u[:, p, s]
+        np.testing.assert_allclose(out[:, s].detach().numpy(),
+                                   expect.detach().numpy(), atol=1e-5)
+    out.sum().backward()
+    assert torch.isfinite(theta.grad).all() and theta.grad.abs().sum() > 0
+    assert torch.isfinite(Z.grad).all() and Z.grad.abs().sum() > 0
+
+
+def test_slots_core_learns_planted_product():
+    rng = np.random.default_rng(14)
+    q, w, D = 64, 8, 20_000
+    E = rng.standard_normal((q, 16)).astype(np.float32)
+    cls = np.where(np.arange(q) < 32, 1.0, -1.0).astype(np.float32)
+    E[:, 0] = cls * 2.0                              # class linearly readable
+    tok = rng.integers(0, q, (D, w))
+    v = cls[tok]
+    y = 2.5 + 2.5 * 0.6 * (v[:, 2] * v[:, 5] * v[:, 7])
+    tok_te = rng.integers(0, q, (4_000, w))
+    v_te = cls[tok_te]
+    y_te = 2.5 + 2.5 * 0.6 * (v_te[:, 2] * v_te[:, 5] * v_te[:, 7])
+    summary, model = edu_gl.slots_core(
+        tok, y, {"val": (tok_te, y_te), "test": (tok_te, y_te)}, E,
+        S=192, r=16, lr_theta=5e-2, lr_z=5e-3, lam_div=1e-3, steps=2500,
+        batch=1024, eval_every=250, patience=8, warmup=100, warm_frac=0.0,
+        slot_chunk=192, val_fast=4000, device="cpu", seed=0)
+    assert summary["test"]["r2"] > 0.4, summary["test"]

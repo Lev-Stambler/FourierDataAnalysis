@@ -1124,6 +1124,186 @@ def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
     return summary
 
 
+
+
+def slot_forward(feat_batch, theta, Z, eps=1e-3):
+    """Fourier SLOT forward: Phi_s(x) = prod over OPEN gates p of
+    u_s(x_p), u = tanh(feat . z_s).  Value = EXACT hard product (already
+    differentiable in Z/A); only the discrete gates need STE -- gradient to
+    theta flows through the log-magnitude surrogate computed on u.detach()
+    so the surrogate never double-feeds Z.  feat_batch (B, w, r);
+    theta (S, w); Z (S, r).  Returns (B, S)."""
+    import torch
+    u = torch.tanh(torch.einsum("bwr,sr->bws", feat_batch, Z))
+    mask = (theta > 0).t()                           # (w, S) hard gates
+    hard = torch.where(mask.unsqueeze(0), u, torch.ones_like(u))
+    phi_hard = hard.prod(dim=1)                      # (B, S) exact value
+    g = torch.sigmoid(theta).t()                     # (w, S) soft gates
+    logmag = torch.einsum("bws,ws->bs",
+                          torch.log(torch.clamp(u.detach().abs(), min=eps)),
+                          g)
+    soft = torch.sign(phi_hard).detach() * torch.exp(logmag)
+    return phi_hard + (soft - soft.detach())
+
+
+def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
+               lr_theta=3e-2, lr_z=1e-3, wd=1e-4, steps=40_000, batch=2048,
+               eval_every=500, patience=15, warmup=500, clip=1.0,
+               lam_div=1e-3, div_sub=1024, warm_frac=0.25, slot_chunk=8192,
+               val_fast=8192, device=None, seed=0, log=None):
+    """100k learnable Fourier slots of ANY degree: gates (STE, saturated +-8
+    init), factored token functionals u_s = tanh((E A) z_s), coefficients --
+    one AdamW, warmup+clip (gates unclipped), anti-collapse cosine penalty,
+    step-0 eval, val early stop.  All of tonight's STE lessons baked in."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    emit = log or (lambda d: None)
+    torch.manual_seed(seed)
+    rng = np.random.default_rng(seed)
+    dev = torch.device(device)
+    tok_t = torch.tensor(np.asarray(tok_tr, np.int64), device=dev)
+    D, w = tok_t.shape
+    ytr = normalize_scores(y_tr_raw)
+    y_t = torch.tensor(ytr, device=dev)
+    E_t = torch.tensor(np.asarray(E, np.float32), device=dev)
+    th = np.full((S, w), -8.0, np.float32)
+    n_warm = int(S * warm_frac)
+    for s in range(n_warm):                          # structural warm: local
+        i = int(rng.integers(0, w - 4))              # pairs (the discovered
+        d = int(rng.integers(1, 5))                  # offsets 1-4)
+        th[s, i] = 8.0
+        th[s, min(i + d, w - 1)] = 8.0
+    for s in range(n_warm, S):
+        deg = int(rng.integers(1, 5))
+        th[s, rng.choice(w, deg, replace=False)] = 8.0
+    theta = torch.tensor(th, device=dev).requires_grad_(True)
+    A = (torch.randn(E_t.shape[1], r, device=dev) / E_t.shape[1] ** 0.5
+         ).requires_grad_(True)
+    Z = torch.randn(S, r, device=dev).requires_grad_(True)
+    c = (0.01 * torch.randn(S, device=dev)).requires_grad_(True)  # c=0
+    b = torch.tensor(float(ytr.mean()), device=dev).requires_grad_(True)
+    opt = torch.optim.AdamW([
+        {"params": [theta], "lr": lr_theta, "weight_decay": 0.0},
+        {"params": [A, Z, c], "lr": lr_z, "weight_decay": wd},
+        {"params": [b], "lr": lr_z, "weight_decay": 0.0}])
+    sched = torch.optim.lr_scheduler.LambdaLR(
+        opt, lambda s_: min(1.0, (s_ + 1) / max(1, warmup)))
+
+    def predict(tok_eval, nrows=None):
+        with torch.no_grad():
+            te = tok_eval[:nrows] if nrows else tok_eval
+            feat_all = (E_t @ A)[te]                 # (B, w, r); the tanh
+            # nonlinearity lives inside slot_forward (u = tanh(feat.z))
+            out = torch.full((len(te),), float(b), device=dev)
+            for lo in range(0, S, slot_chunk):
+                phi = slot_forward(feat_all, theta[lo:lo + slot_chunk],
+                                   Z[lo:lo + slot_chunk])
+                out += phi @ c[lo:lo + slot_chunk]
+            return out.cpu().numpy()
+
+    eb = {t: torch.tensor(np.asarray(tk, np.int64), device=dev)
+          for t, (tk, _) in evals.items()}
+    gen = torch.Generator(device=device).manual_seed(seed)
+    vm0 = score_metrics(predict(eb["val"], val_fast), evals["val"][1][:val_fast])
+    best = (vm0["mse"], {k: v.detach().clone() for k, v in
+                         (("theta", theta), ("A", A), ("Z", Z), ("c", c),
+                          ("b", b))}, 0)
+    emit({"step": 0, "val_r2": vm0["r2"]})
+    for s_ in range(steps):
+        sel = torch.randint(0, D, (batch,), device=dev, generator=gen)
+        feat = (E_t @ A)[tok_t[sel]]                 # (B, w, r)
+        pred = torch.full((batch,), 0.0, device=dev) + b
+        for lo in range(0, S, slot_chunk):
+            pred = pred + slot_forward(feat, theta[lo:lo + slot_chunk],
+                                       Z[lo:lo + slot_chunk]) \
+                @ c[lo:lo + slot_chunk]
+        loss = ((pred - y_t[sel]) ** 2).mean()
+        if lam_div > 0:
+            ks = torch.randint(0, S, (div_sub,), device=dev, generator=gen)
+            m = torch.cat([Z[ks], torch.sigmoid(theta[ks])], dim=1)
+            mn = m / (m.norm(dim=1, keepdim=True) + 1e-8)
+            Sim = mn @ mn.t()
+            loss = loss + lam_div * (Sim - torch.eye(div_sub, device=dev)
+                                     ).pow(2).mean()
+        opt.zero_grad(); loss.backward()
+        torch.nn.utils.clip_grad_norm_([A, Z, c, b], clip)
+        opt.step(); sched.step()
+        if (s_ + 1) % eval_every == 0:
+            vm = score_metrics(predict(eb["val"], val_fast),
+                               evals["val"][1][:val_fast])
+            with torch.no_grad():
+                deg = (theta > 0).sum(1).float()
+            emit({"step": s_ + 1, "train_loss": float(loss),
+                  "val_r2": vm["r2"], "val_mse": vm["mse"],
+                  "lr_theta": opt.param_groups[0]["lr"],
+                  "mean_degree": float(deg.mean()),
+                  "max_degree": int(deg.max())})
+            if vm["mse"] < best[0] - 1e-6:
+                best = (vm["mse"], {k: v.detach().clone() for k, v in
+                                    (("theta", theta), ("A", A), ("Z", Z),
+                                     ("c", c), ("b", b))}, 0)
+            else:
+                best = (best[0], best[1], best[2] + 1)
+                if best[2] >= patience:
+                    print(f"[slots] early stop at step {s_ + 1}", flush=True)
+                    break
+    with torch.no_grad():
+        theta.copy_(best[1]["theta"]); A.copy_(best[1]["A"])
+        Z.copy_(best[1]["Z"]); c.copy_(best[1]["c"]); b.copy_(best[1]["b"])
+    degs = (theta > 0).sum(1).cpu().numpy()
+    summary = {"S": S, "r": r, "steps_run": s_ + 1,
+               "deg_hist": np.bincount(degs, minlength=10)[:10].tolist(),
+               "max_degree": int(degs.max()),
+               "sparse_bytes": int(degs.sum() * 2 + S * (r * 2 + 4)
+                                   + E_t.shape[1] * r * 2)}
+    for t in eb:
+        summary[t] = score_metrics(predict(eb[t]), evals[t][1])
+    model = {"theta": theta.detach().cpu().numpy().astype(np.float16),
+             "A": A.detach().cpu().numpy(),
+             "Z": Z.detach().cpu().numpy().astype(np.float16),
+             "c": c.detach().cpu().numpy(), "b": float(b)}
+    return summary, model
+
+
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=98304, secrets=WANDB_SECRET)
+def fit_slots(S: int = 100_000, r: int = 64, n_train: int = 2_000_000,
+              n_val: int = 25_000, n_test: int = 25_000, w: int = W_WIN,
+              lr_theta: float = 3e-2, lr_z: float = 1e-3,
+              lam_div: float = 1e-3, steps: int = 40_000,
+              batch: int = 2048, warm_frac: float = 0.25):
+    """The Fourier slot machine on the real data."""
+    vol.reload()
+    data = np.load(_data_path(w, n_train, n_val, n_test))
+    E = np.load(f"{ROOT}/emb.npz")["E"].astype(np.float32)
+    run = _wandb_run(f"slots-S{S}-N{n_train}",
+                     {"S": S, "r": r, "lr_theta": lr_theta, "lr_z": lr_z,
+                      "lam_div": lam_div, "warm_frac": warm_frac,
+                      "batch": batch})
+    evals = {"val": (data["tok_va"], data["y_va"]),
+             "test": (data["tok_te"], data["y_te"])}
+    summary, model = slots_core(
+        data["tok_tr"], data["y_tr"], evals, E, S=S, r=r,
+        lr_theta=lr_theta, lr_z=lr_z, lam_div=lam_div, steps=steps,
+        batch=batch, warm_frac=warm_frac,
+        log=(run.log if run is not None else None))
+    print(f"[slots] FINAL: val {summary['val']['r2']:.4f} test "
+          f"{summary['test']['r2']:.4f}; deg hist {summary['deg_hist']} "
+          f"max {summary['max_degree']}; sparse "
+          f"{summary['sparse_bytes'] / 1e6:.1f}MB", flush=True)
+    np.savez_compressed(f"{ROOT}/model_slots_S{S}_N{n_train}.npz", **model)
+    with open(f"{ROOT}/summary_slots_S{S}_N{n_train}.json", "w") as fh:
+        json.dump(summary, fh, indent=1)
+    vol.commit()
+    if run is not None:
+        run.summary.update({"test_r2": summary["test"]["r2"],
+                            "val_r2": summary["val"]["r2"]})
+        run.finish()
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
+
 # --------------------------------------------------------------------- metrics
 
 def normalize_scores(y_raw):
@@ -1964,6 +2144,8 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
         fit_qjoint.remote("1,2,3,4", 1 << 22, n_train, n_val, n_test, w)
     elif stage == "qfull":
         fit_qfull.remote(1 << 22, n_train, n_val, n_test, w)
+    elif stage == "slots":
+        fit_slots.remote(100_000, 64, n_train, n_val, n_test, w)
     elif stage == "adamw":
         fit_adamw.remote(encoding, w, n_train, n_val, n_test)
     elif stage == "ste":
