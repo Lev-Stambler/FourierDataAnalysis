@@ -84,11 +84,15 @@ per-position pair cells see each token-pair ~once and deflate shrunken
 noise (pooling must be a candidate), and npz member access re-reads from
 disk per access (hoist arrays).
 
-Four independent estimators converge on the same wall at 2M rows:
-greedy discovered 0.7641, joint CG over discovered supports **0.7717**
-(wd=100 — exactly matching the best hand-designed trigram, 0.7717),
-hand bigram 0.7670. Compression frontier (joint, heavy-cell truncation):
-61 KB → 0.708, 2.4 MB → 0.735, 9.6 MB → 0.765, 38 MB → 0.771. The residual past ~0.77 is deep composition — invisible to
+The estimator ladder at 2M rows: greedy discovered 0.7641; joint CG over
+discovered supports 0.7717 (= best hand-designed trigram); all-63-offset
+joint solve with SCALAR ridge 0.7483 (dead tables force over-shrinkage —
+selection is necessary, not cosmetic); all-63-offset with EMPIRICAL-BAYES
+per-group ridge (wd_d ∝ 1/sequential-gain) **0.7821 — the final best**.
+Solo-measured gains under-credit overlapping offsets (0.7774): measure
+gains SEQUENTIALLY (deflate-then-remeasure) for the reg profile.
+Compression frontier (evidence-weighted solve): 61 KB → 0.708,
+2.4 MB → 0.758, 9.6 MB → 0.7775, 38 MB → 0.7809 (46× at 9.6 MB). The residual past ~0.77 is deep composition — invisible to
 any pooled low-order table family at this sample size (pair floors, tree ψ,
 and STE all measured the same diffuseness independently). Reaching 0.90
 requires either ~10 data doublings (extrapolated) or a fitted compositional
