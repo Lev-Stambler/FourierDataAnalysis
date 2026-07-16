@@ -1152,8 +1152,8 @@ def slot_forward(feat_batch, theta, Z, eps=1e-3):
     return out
 
 
-def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
-               lr_theta=3e-2, lr_z=1e-3, wd=1e-4, steps=40_000, batch=2048,
+def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
+               lr_theta=1e-1, lr_z=1e-3, wd=1e-4, steps=40_000, batch=2048,
                eval_every=500, patience=15, warmup=500, clip=1.0,
                lam_div=1e-3, div_sub=1024, warm_frac=0.25, slot_chunk=4096,
                val_fast=8192, device=None, seed=0, log=None):
@@ -1175,16 +1175,20 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
     ytr = normalize_scores(y_tr_raw)
     y_t = torch.tensor(ytr, device=dev)
     E_t = torch.tensor(np.asarray(E, np.float32), device=dev)
-    th = np.full((S, w), -8.0, np.float32)
+    # +-4 in TOKEN space (64 positions): surrogate stays alive (sum of 64
+    # sigma-weighted log|u| terms, unlike 2.2k bits which needed +-8) and
+    # gates get 50x the gradient of +-8 -- at +-8 exactly ONE gate flipped
+    # in 100k slots over 1000 steps
+    th = np.full((S, w), -init_sat, np.float32)
     n_warm = int(S * warm_frac)
     for s in range(n_warm):                          # structural warm: local
         i = int(rng.integers(0, w - 4))              # pairs (the discovered
         d = int(rng.integers(1, 5))                  # offsets 1-4)
-        th[s, i] = 8.0
-        th[s, min(i + d, w - 1)] = 8.0
+        th[s, i] = init_sat
+        th[s, min(i + d, w - 1)] = init_sat
     for s in range(n_warm, S):
         deg = int(rng.integers(1, 5))
-        th[s, rng.choice(w, deg, replace=False)] = 8.0
+        th[s, rng.choice(w, deg, replace=False)] = init_sat
     theta = torch.tensor(th, device=dev).requires_grad_(True)
     A = (torch.randn(E_t.shape[1], r, device=dev) / E_t.shape[1] ** 0.5
          ).requires_grad_(True)
@@ -1252,9 +1256,12 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
                                evals["val"][1][:val_fast])
             with torch.no_grad():
                 deg = (theta > 0).sum(1).float()
+                tg = float(theta.grad.abs().mean()) \
+                    if theta.grad is not None else 0.0
             emit({"step": s_ + 1, "train_loss": float(loss),
                   "val_r2": vm["r2"], "val_mse": vm["mse"],
                   "lr_theta": opt.param_groups[0]["lr"],
+                  "theta_grad_mean": tg,
                   "mean_degree": float(deg.mean()),
                   "max_degree": int(deg.max())})
             if vm["mse"] < best[0] - 1e-6:
