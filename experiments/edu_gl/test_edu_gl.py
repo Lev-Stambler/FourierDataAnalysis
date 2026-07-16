@@ -306,7 +306,8 @@ def test_slot_forward_exact_and_grads_alive():
     Z = torch.tensor(rng.standard_normal((S, r)).astype(np.float32),
                      requires_grad=True)
     out = edu_gl.slot_forward(feat, theta, Z)
-    u = torch.tanh(torch.einsum("bwr,sr->bws", feat, Z))
+    u = torch.tanh(torch.einsum("bwr,sr->bws", feat, Z)
+                   / feat.shape[-1] ** 0.5)
     for s in range(S):                               # exact hard product
         expect = torch.ones(B)
         for p in supports[s]:
