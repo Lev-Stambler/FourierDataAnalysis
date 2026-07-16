@@ -1201,7 +1201,12 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
     c = (0.01 * torch.randn(S, device=dev)).requires_grad_(True)  # c=0
     b = torch.tensor(float(ytr.mean()), device=dev).requires_grad_(True)
     opt = torch.optim.AdamW([
-        {"params": [theta], "lr": lr_theta, "weight_decay": 0.0},
+        # eps 1e-12 for the gates: their grads are ~3e-10 (batch-mean x
+        # c x surrogate x sigma' factors) -- Adam's default eps=1e-8 floors
+        # the rescale and gates move at lr/30 with noise (observed frozen
+        # mean_degree at full float precision)
+        {"params": [theta], "lr": lr_theta, "weight_decay": 0.0,
+         "eps": 1e-12},
         {"params": [A, Z, c], "lr": lr_z, "weight_decay": wd},
         {"params": [b], "lr": lr_z, "weight_decay": 0.0}])
     sched = torch.optim.lr_scheduler.LambdaLR(
