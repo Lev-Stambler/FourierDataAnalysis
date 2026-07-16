@@ -1134,7 +1134,12 @@ def slot_forward(feat_batch, theta, Z, eps=1e-3):
     so the surrogate never double-feeds Z.  feat_batch (B, w, r);
     theta (S, w); Z (S, r).  Returns (B, S)."""
     import torch
-    u = torch.tanh(torch.einsum("bwr,sr->bws", feat_batch, Z))
+    # 1/sqrt(r) scaling: unscaled pre-activations have std ~ sqrt(r) = 8,
+    # |tanh| saturates to 1 - 1e-28, log|u| = 0 in fp32 -> theta gradient
+    # IDENTICALLY zero (observed theta_grad_mean = 0.0).  Scaled, |u| ~ 0.6:
+    # expressive AND carries gate signal
+    u = torch.tanh(torch.einsum("bwr,sr->bws", feat_batch, Z)
+                   / feat_batch.shape[-1] ** 0.5)
     mask = (theta > 0).t()                           # (w, S) hard gates
     hard = torch.where(mask.unsqueeze(0), u, torch.ones_like(u))
     phi_hard = hard.prod(dim=1)                      # (B, S) exact value
