@@ -905,7 +905,7 @@ def fit_qjoint(offsets: str = "1,2,3,4", n_hash: int = 1 << 22,
         ids[k], n_feat = ids_of(tok[k])
     ytr = normalize_scores(data["y_tr"])
     best = None
-    for wd in (3.0, 10.0, 30.0):
+    for wd in (30.0, 100.0, 300.0):
         v = fit_ngram_cg(ids["tr"], ytr - ytr.mean(), n_feat, wd=wd,
                          iters=iters)
         m = score_metrics(ngram_apply(ids["va"], v).cpu().numpy()

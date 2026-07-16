@@ -70,9 +70,30 @@ wd val-swept — changes everything:
 
 94% of the MLP's R² from a calculated 61 KB student. Pairs on the token
 residual add +0.002 then decline at both B=64 and B=128 — degree-1 in token
-space is essentially the whole low-order story; the remaining 0.05 to the
-MLP is position effects + nonlinear pooling (2-bucket positional tables
-being tested).
+space is essentially the whole low-order story.
+
+## Discovered heavy-hitter structure (qhh/qjoint, 2026-07-16)
+
+No hand-designed features: each round scores 2,141 generic candidates
+(offset-pooled pair tables, raw position pairs, anchored offset-triples) by
+val gain of their calculated conditional-mean tables on the current
+residual. The search DISCOVERED translation invariance — offset-1
+(adjacency) won round 0 by 19×, then skip-offsets 2, 3, 4, then declared
+the spectrum dry (best remaining gain 1e-7). Two implementation lessons:
+per-position pair cells see each token-pair ~once and deflate shrunken
+noise (pooling must be a candidate), and npz member access re-reads from
+disk per access (hoist arrays).
+
+Four independent estimators converge on the same wall at 2M rows:
+greedy discovered 0.7641, joint CG over discovered supports 0.7628,
+hand-designed bigram 0.7670, trigram 0.7717. Compression frontier
+(joint model, heavy-cell truncation): 61 KB → 0.708, 9.6 MB → 0.748,
+38 MB → 0.763. The residual past ~0.77 is deep composition — invisible to
+any pooled low-order table family at this sample size (pair floors, tree ψ,
+and STE all measured the same diffuseness independently). Reaching 0.90
+requires either ~10 data doublings (extrapolated) or a fitted compositional
+student (a ~10M-param distilled transformer ≈ 20 MB would still be ~22×
+compression).
 
 ## v2: CSAMP dataset-GL pilot (edu_gl_csamp.py, 2026-07-15)
 
