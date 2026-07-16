@@ -952,6 +952,133 @@ def fit_qjoint(offsets: str = "1,2,3,4", n_hash: int = 1 << 22,
 
 
 
+
+
+@app.function(image=image, gpu="A100-40GB", volumes={"/cache": vol},
+              timeout=43200, memory=98304, secrets=WANDB_SECRET)
+def fit_qfull(n_hash: int = 1 << 22, n_train: int = 2_000_000,
+              n_val: int = 25_000, n_test: int = 25_000, w: int = W_WIN,
+              iters: int = 600, wds: str = "30,100,300"):
+    """The FULL joint solve: unigrams + ALL 63 offset-pooled pair tables
+    (264M coefficients) in ONE Jacobi-preconditioned CG ridge, fp64 dot
+    products, solved to convergence.  No selection anywhere -- the greedy
+    gate measured single tables on a residual; jointly the weak offsets
+    still carry mass.  v1 failures fixed: unpreconditioned fp32 CG never
+    converged (residual oscillating at 1e-3 rel)."""
+    import torch
+    vol.reload()
+    data = np.load(_data_path(w, n_train, n_val, n_test))
+    tok = {k: np.ascontiguousarray(data[f"tok_{k}"]).astype(np.int64)
+           for k in ("tr", "va", "te")}
+    q = int(np.load(f"{ROOT}/emb.npz")["E"].shape[0])
+    dev = "cuda"
+    run = _wandb_run(f"qfull-N{n_train}", {"n_hash": n_hash, "iters": iters})
+    mixi = -7046029254386353131
+
+    def ids_of(t):
+        cols = [t]
+        base = q
+        for d in range(1, w):
+            h = ((t[:, : w - d] * q + t[:, d:]) * mixi >> 40) & (n_hash - 1)
+            cols.append(h + base)
+            base += n_hash
+        return np.concatenate(cols, axis=1).astype(np.int32), base
+
+    ids = {}
+    for k in ("tr", "va", "te"):
+        ids[k], n_feat = ids_of(tok[k])
+    ids_t = torch.tensor(ids["tr"], device=dev)      # int32: 16.6GB (int64
+    del ids["tr"]                                    # would be 33GB > A100)
+    D, F = ids_t.shape
+    ytr = normalize_scores(data["y_tr"])
+    y_t = torch.tensor(ytr - ytr.mean(), device=dev)
+    chunk = 65536
+
+    def scatter_rows(vec_per_row):
+        out = torch.zeros(n_feat, device=dev)
+        for lo in range(0, D, chunk):
+            sl = ids_t[lo:lo + chunk].long()         # per-chunk int64 view
+            out.scatter_add_(0, sl.reshape(-1),
+                             vec_per_row[lo:lo + chunk, None]
+                             .expand(-1, F).reshape(-1))
+        return out
+
+    def Xv(v):
+        out = torch.empty(D, device=dev)
+        for lo in range(0, D, chunk):
+            out[lo:lo + chunk] = v[ids_t[lo:lo + chunk].long()].sum(dim=1)
+        return out
+
+    counts = scatter_rows(torch.ones(D, device=dev))
+    b = scatter_rows(y_t)
+    summary = {"n_feat": int(n_feat), "n_train": n_train, "full": {},
+               "trunc": []}
+    best = None
+    for wd in (float(x) for x in wds.split(",")):
+        Minv = 1.0 / (counts + wd)                   # Jacobi preconditioner
+        v = torch.zeros(n_feat, device=dev)
+        r = b.clone()
+        z = Minv * r
+        p = z.clone()
+        rz = float((r.double() @ z.double()))
+        rz0 = rz
+        for it in range(iters):
+            Ap = scatter_rows(Xv(p)) + wd * p
+            alpha = rz / float((p.double() @ Ap.double()))
+            v += alpha * p
+            r -= alpha * Ap
+            z = Minv * r
+            rz_new = float((r.double() @ z.double()))
+            if it % 50 == 0:
+                print(f"[qfull] wd {wd:g} iter {it} rel {rz_new / rz0:.3e}",
+                      flush=True)
+            if rz_new < 1e-10 * rz0:
+                break
+            p = z + (rz_new / rz) * p
+            rz = rz_new
+        pv = torch.empty(0)
+        m = {}
+        for k, tag in (("va", "val"), ("te", "test")):
+            kk = torch.tensor(ids[k], device=dev)
+            pred = v[kk].sum(dim=1).cpu().numpy() + ytr.mean()
+            m[tag] = score_metrics(pred, data[f"y_{k}"])
+        print(f"[qfull] === wd {wd:g}: val {m['val']['r2']:.4f} test "
+              f"{m['test']['r2']:.4f}", flush=True)
+        if run is not None:
+            run.log({"wd": wd, "val_r2": m["val"]["r2"],
+                     "test_r2": m["test"]["r2"]})
+        if best is None or m["val"]["mse"] < best[2]["val"]["mse"]:
+            best = (wd, v.cpu(), m)
+    wd, v_cpu, m = best
+    summary["wd"] = wd
+    summary["full"] = {t: m[t] for t in ("val", "test")}
+    v = v_cpu.to(dev)
+    order = torch.argsort(-v.abs()).cpu().numpy()
+    for keep in (400_000, 1_600_000, 6_400_000, 25_600_000):
+        if keep >= n_feat:
+            continue
+        vt = torch.zeros_like(v)
+        sel = torch.tensor(order[:keep], device=dev)
+        vt[sel] = v[sel]
+        entry = {"cells": keep, "mb": round(keep * 6 / 1e6, 2)}
+        for k, tag in (("va", "val"), ("te", "te" "st")):
+            kk = torch.tensor(ids[k], device=dev)
+            pred = vt[kk].sum(dim=1).cpu().numpy() + ytr.mean()
+            entry[tag] = score_metrics(pred, data[f"y_{k}"])["r2"]
+        summary["trunc"].append(entry)
+        print(f"[qfull] top-{keep} (~{entry['mb']}MB): val "
+              f"{entry['val']:.4f} test {entry['test']:.4f}", flush=True)
+    with open(f"{ROOT}/summary_qfull_N{n_train}.json", "w") as fh:
+        json.dump(summary, fh, indent=1)
+    vol.commit()
+    if run is not None:
+        run.summary.update({"test_r2": summary["full"]["test"]["r2"]})
+        run.finish()
+    print(json.dumps(summary), flush=True)
+    return summary
+
+
+
 # --------------------------------------------------------------------- metrics
 
 def normalize_scores(y_raw):
@@ -1790,6 +1917,8 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
         fit_qhh.remote(n_train, n_val, n_test, w)
     elif stage == "qjoint":
         fit_qjoint.remote("1,2,3,4", 1 << 22, n_train, n_val, n_test, w)
+    elif stage == "qfull":
+        fit_qfull.remote(1 << 22, n_train, n_val, n_test, w)
     elif stage == "adamw":
         fit_adamw.remote(encoding, w, n_train, n_val, n_test)
     elif stage == "ste":
