@@ -638,10 +638,11 @@ def logspace_ste_chars(bits_f, theta, eps=1e-3):
     return soft + (sign - soft).detach()
 
 
-def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
-             lr_theta=3e-2, lr_c=3e-4, wd=1e-4, steps=30_000, batch=8192,
-             eval_every=500, patience=12, warmup=500, clip=1.0, device=None,
-             seed=0, log=None):
+def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None, warm_C=None,
+             lr_theta=1e-1, lr_c=3e-4, wd=1e-4, steps=30_000, batch=16_384,
+             eval_every=500, patience=12, warmup=500, clip=1.0,
+             off_init=-2.0, lam_div=1e-3, div_sub=1024, device=None, seed=0,
+             log=None):
     """Arm 2: jointly learn WHICH parities (STE masks) and their weights.
     Half the masks warm-init at warm_idx pair characters, half random 2-bit.
     Eval always uses the hardened masks (exact +-1 parities)."""
@@ -654,17 +655,26 @@ def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
     dev = bits_t.device
     n = bits_t.shape[1]
     ytr = torch.tensor(normalize_scores(y_tr_raw), device=dev)
-    th = np.full((K, n), -4.0, np.float32)
+    # off-gates must NOT start saturated: at -4 sigmoid' ~ 0.017 and no gate
+    # ever opens (observed: deg hist frozen at the init) -- -2 keeps them live
+    th = np.full((K, n), off_init, np.float32)
     n_warm = 0
     if warm_idx is not None:
         n_warm = min(K // 2, len(warm_idx))
         for k in range(n_warm):
             th[k, warm_idx[k, 0]] = 4.0
             th[k, warm_idx[k, 1]] = 4.0
-    for k in range(n_warm, K):                       # random 2-bit starts
-        th[k, rng.choice(n, 2, replace=False)] = 2.0
+    for k in range(n_warm, K):                       # random starts of MIXED
+        d = int(rng.integers(1, 5))                  # degree 1-4: arbitrary-
+        th[k, rng.choice(n, d, replace=False)] = 2.0  # degree functions are
+                                                      # reachable from init
     theta = torch.tensor(th, device=dev).requires_grad_(True)
-    c = torch.zeros(K, device=dev).requires_grad_(True)
+    # warm coefficients too: theta's gradient is PROPORTIONAL to c, so c=0
+    # starves the gates of signal (observed: masks frozen for 1500 steps)
+    c_init = np.zeros(K, np.float32)
+    if warm_C is not None and n_warm:
+        c_init[:n_warm] = np.asarray(warm_C[:n_warm], np.float32)
+    c = torch.tensor(c_init, device=dev).requires_grad_(True)
     b = torch.tensor(float(normalize_scores(y_tr_raw).mean()),
                      device=dev).requires_grad_(True)
     opt = torch.optim.AdamW([
@@ -694,15 +704,34 @@ def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
         sel = torch.randint(0, len(bits_t), (batch,), device=dev, generator=gen)
         Phi = logspace_ste_chars(bits_t[sel].float(), theta)
         loss = ((Phi @ c + b - ytr[sel]) ** 2).mean()
+        # diversity regularizer on a mask subsample: penalize gate-vector
+        # cosine overlap so masks don't collapse onto duplicates
+        div_pen = torch.tensor(0.0, device=dev)
+        if lam_div > 0:
+            ksub = torch.randint(0, K, (div_sub,), device=dev, generator=gen)
+            m = torch.sigmoid(theta[ksub])
+            mn = m / (m.norm(dim=1, keepdim=True) + 1e-8)
+            S = mn @ mn.t()
+            div_pen = (S - torch.eye(div_sub, device=dev)).pow(2).mean()
+            loss = loss + lam_div * div_pen
         opt.zero_grad(); loss.backward()
-        torch.nn.utils.clip_grad_norm_([theta, c, b], clip)
+        # clip c/b only: a global norm over the 72M theta coords crushes
+        # every per-gate step to nothing
+        torch.nn.utils.clip_grad_norm_([c, b], clip)
         opt.step(); sched.step()
         if (s + 1) % eval_every == 0:
             vm = score_metrics(predict(eb["val"]), evals["val"][1])
-            deg = ((torch.sigmoid(theta) > 0.5).sum(1).float())
+            hard = (torch.sigmoid(theta) > 0.5)
+            deg = hard.sum(1).float()
+            n_uniq = len(np.unique(hard.cpu().numpy(), axis=0))
             emit({"step": s + 1, "train_loss": float(loss),
                   "val_mse": vm["mse"], "val_r2": vm["r2"],
-                  "mean_degree": float(deg.mean())})
+                  "lr_theta": opt.param_groups[0]["lr"],
+                  "lr_c": opt.param_groups[1]["lr"],
+                  "div_pen": float(div_pen),
+                  "n_unique_masks": n_uniq,
+                  "mean_degree": float(deg.mean()),
+                  "max_degree": int(deg.max())})
             if vm["mse"] < best[0] - 1e-6:
                 best = (vm["mse"], (theta.detach().clone(),
                                     c.detach().clone(), b.detach().clone()), 0)
@@ -718,7 +747,9 @@ def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
     degs = masks.sum(1)
     tr_sub = torch.randperm(len(bits_t), generator=gen, device=dev)[:200_000]
     summary = {"steps_run": s + 1, "K": int(K), "n_warm": int(n_warm),
-               "deg_hist": np.bincount(degs, minlength=8)[:8].tolist(),
+               "n_unique_masks": int(len(np.unique(masks, axis=0))),
+               "max_degree": int(degs.max()) if len(degs) else 0,
+               "deg_hist": np.bincount(degs, minlength=8).tolist(),
                "mask_bytes": int((degs * 2 + 4).sum()),  # int16 idx + fp32 coef
                "train": score_metrics(predict(bits_t[tr_sub]),
                                       np.asarray(y_tr_raw)[tr_sub.cpu().numpy()])}
@@ -732,8 +763,8 @@ def ste_core(bits_tr, y_tr_raw, evals, K=16_384, warm_idx=None,
               timeout=43200, memory=49152, secrets=WANDB_SECRET)
 def fit_ste(encoding: str = "lsh", w: int = W_WIN, n_train: int = 2_000_000,
             n_val: int = 25_000, n_test: int = 25_000, K: int = 16_384,
-            lr_theta: float = 3e-2, lr_c: float = 3e-4, wd: float = 1e-4,
-            steps: int = 30_000, batch: int = 8192):
+            lr_theta: float = 1e-1, lr_c: float = 3e-4, wd: float = 1e-4,
+            steps: int = 30_000, batch: int = 16_384, lam_div: float = 1e-3):
     """Arm 2 wrapper: STE masks at 2M rows, warm half from the calculated
     model's top pairs.  Also reports the deflated-coefficient variant of the
     LEARNED masks (calculated weights on fitted features)."""
@@ -749,8 +780,9 @@ def fit_ste(encoding: str = "lsh", w: int = W_WIN, n_train: int = 2_000_000,
                      {"encoding": encoding, "K": K, "lr_theta": lr_theta,
                       "lr_c": lr_c, "wd": wd})
     summary, model = ste_core(bits_tr, data["y_tr"], evals, K=K,
-                              warm_idx=z["idx"], lr_theta=lr_theta, lr_c=lr_c,
-                              wd=wd, steps=steps, batch=batch,
+                              warm_idx=z["idx"], warm_C=z["C"],
+                              lr_theta=lr_theta, lr_c=lr_c,
+                              wd=wd, steps=steps, batch=batch, lam_div=lam_div,
                               log=(run.log if run is not None else None))
     print(f"[ste] train R2 {summary['train']['r2']:.4f} val "
           f"{summary['val']['r2']:.4f} test {summary['test']['r2']:.4f} "
