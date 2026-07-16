@@ -338,10 +338,12 @@ def fit_token_table(tok_tr, y, q, device=None, wd=1e2, row_chunk=8192):
         bvec += Xa.t() @ y_t[lo:lo + row_chunk]
         del X, Xa
     out = []
+    solve_dtype = torch.float64 if q <= 40_000 else torch.float32
     for wd_i in (wd if isinstance(wd, (tuple, list)) else (wd,)):
         reg = wd_i * torch.eye(q + 1, device=device)
         reg[-1, -1] = 0.0
-        va = torch.linalg.solve((S + reg).double(), bvec.double()).float()
+        va = torch.linalg.solve((S + reg).to(solve_dtype),
+                                bvec.to(solve_dtype)).float()
         out.append((float(wd_i), va[:-1].cpu().numpy(), float(va[-1])))
     return out if isinstance(wd, (tuple, list)) else (out[0][1], out[0][2])
 
@@ -358,14 +360,26 @@ def token_table_apply(tok, v, b, device=None):
               timeout=43200, memory=49152, secrets=WANDB_SECRET)
 def fit_token(encoding: str = "lsh", w: int = W_WIN, b: int = B_LSH,
               max_pairs: int = 400_000, n_train: int = 2_000_000,
-              n_val: int = 25_000, n_test: int = 25_000, block: int = 512):
+              n_val: int = 25_000, n_test: int = 25_000, block: int = 512,
+              pos_buckets: int = 1):
     """Token-table base (full q-ary deg-1, wd swept on val over closed-form
     solves) + bit-deg-2 pairs deflated on ITS residual.  The match-the-MLP
     push: the ridge ceiling (0.629) is itself a token-deg-1 function."""
     import torch
     vol.reload()
     data = np.load(_data_path(w, n_train, n_val, n_test))
-    q = int(np.load(f"{ROOT}/emb.npz")["E"].shape[0])
+    q0 = int(np.load(f"{ROOT}/emb.npz")["E"].shape[0])
+    q = q0 * pos_buckets
+    if pos_buckets > 1:
+        max_pairs = 0        # augmented ids can't index the bit codes; the
+    bucket = (np.arange(w) * pos_buckets // w).astype(np.int64) * q0  # pair
+    # stage added ~+0.002 on the token residual anyway
+
+    def aug(tok):                                    # position-bucketed ids:
+        return tok.astype(np.int64) + bucket[None, :]  # per-bucket value table
+
+    data = {k: (aug(data[k]) if k.startswith("tok_") else data[k])
+            for k in data.files}
     dev = "cuda"
     ytr = normalize_scores(data["y_tr"])
     run = _wandb_run(f"token-{encoding}-w{w}-N{n_train}",
@@ -1277,7 +1291,8 @@ def show():
 def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
          b: int = B_LSH, max_pairs: int = 400_000, n_train: int = 1_000_000,
          n_val: int = 25_000, n_test: int = 25_000, batch: int = 256,
-         deg3_anchors: int = 0, max_triples: int = 200_000):
+         deg3_anchors: int = 0, max_triples: int = 200_000,
+         pos_buckets: int = 1):
     if stage == "label":
         print(label.remote(n_train, n_val, n_test, w, batch))
     elif stage == "fit":
@@ -1286,7 +1301,8 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
             fit.remote(enc, w, b, max_pairs, n_train, n_val, n_test,
                        512, deg3_anchors, max_triples)
     elif stage == "token":
-        fit_token.remote(encoding, w, b, max_pairs, n_train, n_val, n_test)
+        fit_token.remote(encoding, w, b, max_pairs, n_train, n_val, n_test,
+                         512, pos_buckets)
     elif stage == "adamw":
         fit_adamw.remote(encoding, w, n_train, n_val, n_test)
     elif stage == "ste":

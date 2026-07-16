@@ -53,6 +53,27 @@ Test R² vs the classifier score (val-selected rung = 50k pairs):
   halved floor unlocks more real pairs). ~+0.02 per doubling — real but
   diminishing; the 0.43 → 0.76 gap is beyond the deg-≤2-over-bits class.
 
+## The basis was the bottleneck: token-table deg-1 (2026-07-16)
+
+The ridge ceiling (0.629) is itself a TOKEN-degree-1 function; bit-deg-1
+(0.267) was its 69-dim shadow. Computing degree-1 in the right alphabet —
+one closed-form ridge over the full 30,522-entry per-token value table,
+wd val-swept — changes everything:
+
+| model | test R² | Spearman | size |
+|---|---|---|---|
+| bit-deg-1 (B=64) | 0.267 | 0.518 | 17 KB |
+| B=128 bits + 200k pairs | 0.525 | — | 2.4 MB |
+| **token table (q-ary deg-1)** | **0.708** | 0.839 | **61 KB (7,178×)** |
+| token + 1k pairs (best) | 0.7105 | 0.840 | 70 KB |
+| MLP ceiling (fitted) | 0.756 | 0.858 | ~800 KB + emb |
+
+94% of the MLP's R² from a calculated 61 KB student. Pairs on the token
+residual add +0.002 then decline at both B=64 and B=128 — degree-1 in token
+space is essentially the whole low-order story; the remaining 0.05 to the
+MLP is position effects + nonlinear pooling (2-bucket positional tables
+being tested).
+
 ## v2: CSAMP dataset-GL pilot (edu_gl_csamp.py, 2026-07-15)
 
 Qwen3.5-0.8B fiber forks (1000 fibers × 12 forks × 6 levels, pure sampling,
