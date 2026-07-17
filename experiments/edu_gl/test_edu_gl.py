@@ -319,6 +319,94 @@ def test_slot_forward_exact_and_grads_alive():
     assert torch.isfinite(Z.grad).all() and Z.grad.abs().sum() > 0
 
 
+def test_slot_forward_phase_exact_and_grads():
+    import torch
+    rng = np.random.default_rng(15)
+    B, w, r, S = 32, 64, 8, 5
+    feat = torch.tensor(rng.standard_normal((B, w, r)).astype(np.float32))
+    theta = torch.tensor(rng.standard_normal((S, w)).astype(np.float32),
+                         requires_grad=True)
+    Z = torch.tensor(rng.standard_normal((S, r)).astype(np.float32),
+                     requires_grad=True)
+    psi = torch.tensor(rng.uniform(0, 6.28, S).astype(np.float32),
+                       requires_grad=True)
+    out = edu_gl.slot_forward_phase(feat, theta, Z, psi)
+    phase = torch.einsum("bwr,sr->bws", feat, Z) / r ** 0.5
+    expect = torch.cos(torch.einsum("bws,ws->bs", phase,
+                                    torch.sigmoid(theta).t()) + psi)
+    np.testing.assert_allclose(out.detach().numpy(),
+                               expect.detach().numpy(), atol=1e-5)
+    out.sum().backward()
+    for p in (theta, Z, psi):
+        assert torch.isfinite(p.grad).all() and p.grad.abs().sum() > 0
+
+
+def test_phase_slots_learn_planted_cos_characters():
+    """Degree-3 AND degree-6 planted cosine characters -- the amplitude-
+    freedom test the tanh-product architecture could not pass."""
+    rng = np.random.default_rng(16)
+    q, w, D = 64, 8, 20_000
+    E = rng.standard_normal((q, 16)).astype(np.float32)
+    phi = 2.0 * E[:, 0]                              # token phase map,
+    tok = rng.integers(0, q, (D, w))                 # linear in E
+
+    def y_of(t):
+        deg3 = 0.5 * np.cos(phi[t[:, 2]] + phi[t[:, 5]] + phi[t[:, 7]])
+        deg6 = 0.4 * np.cos(phi[t[:, 0]] + phi[t[:, 1]] + phi[t[:, 3]]
+                            + phi[t[:, 4]] + phi[t[:, 6]] + phi[t[:, 7]]
+                            + 0.7)
+        return 2.5 + 2.5 * (deg3 + deg6)
+
+    y = y_of(tok)
+    tok_te = rng.integers(0, q, (4_000, w))
+    y_te = y_of(tok_te)
+    summary, model = edu_gl.slots_core(
+        tok, y, {"val": (tok_te, y_te), "test": (tok_te, y_te)}, E,
+        S=256, r=16, lr_theta=5e-2, lr_z=5e-3, lam_div=1e-3, lam_deg=1e-4,
+        steps=3000, batch=1024, eval_every=250, patience=10, warmup=100,
+        warm_frac=0.0, slot_chunk=256, val_fast=4000, device="cpu", seed=0)
+    assert summary["test"]["r2"] > 0.6, summary["test"]
+
+
+def test_score_metrics_sane():
+    y = np.array([0.5, 2.0, 3.5, 4.5, 1.0])
+    perfect = edu_gl.score_metrics(edu_gl.normalize_scores(y), y)
+    assert perfect["r2"] == pytest.approx(1.0)
+    assert perfect["mse"] == pytest.approx(0.0)
+    assert perfect["spearman"] == pytest.approx(1.0)
+    assert perfect["f1_ge3"] == pytest.approx(1.0)
+    const = edu_gl.score_metrics(np.zeros(5), y)
+    assert const["r2"] <= 0.0 + 1e-6
+
+
+def test_slot_forward_exact_and_grads_alive():
+    import torch
+    rng = np.random.default_rng(13)
+    B, w, r, S = 32, 64, 8, 6
+    feat = torch.tensor(rng.standard_normal((B, w, r)).astype(np.float32))
+    th = np.full((S, w), -8.0, np.float32)
+    supports = []
+    for s in range(S):
+        sup = rng.choice(w, s % 4 + 1, replace=False)
+        th[s, sup] = 8.0
+        supports.append(sup)
+    theta = torch.tensor(th, requires_grad=True)
+    Z = torch.tensor(rng.standard_normal((S, r)).astype(np.float32),
+                     requires_grad=True)
+    out = edu_gl.slot_forward(feat, theta, Z)
+    u = torch.tanh(torch.einsum("bwr,sr->bws", feat, Z)
+                   / feat.shape[-1] ** 0.5)
+    for s in range(S):                               # exact hard product
+        expect = torch.ones(B)
+        for p in supports[s]:
+            expect = expect * u[:, p, s]
+        np.testing.assert_allclose(out[:, s].detach().numpy(),
+                                   expect.detach().numpy(), atol=1e-5)
+    out.sum().backward()
+    assert torch.isfinite(theta.grad).all() and theta.grad.abs().sum() > 0
+    assert torch.isfinite(Z.grad).all() and Z.grad.abs().sum() > 0
+
+
 def test_slots_core_learns_planted_product():
     rng = np.random.default_rng(14)
     q, w, D = 64, 8, 20_000

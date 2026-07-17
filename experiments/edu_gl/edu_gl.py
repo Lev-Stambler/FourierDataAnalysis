@@ -1157,16 +1157,33 @@ def slot_forward(feat_batch, theta, Z, eps=1e-3):
     return out
 
 
-def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
-               lr_theta=1e-1, lr_z=1e-3, wd=1e-4, steps=40_000, batch=2048,
+def slot_forward_phase(feat_batch, theta, Z, psi):
+    """PHASE slots -- the true character form computed in LOG SPACE: a
+    character is prod_p e^{i phi_p}; its log is i*sum(phi), so the slot is
+    cos( sum_p sigma(theta_p) * <feat_p, z_s>/sqrt(r) + psi_s ).  Unit
+    modulus at ANY degree: no magnitude decay, no STE (gates are smooth
+    phase multipliers), gradients O(0.1-1).  feat (B, w, r); theta (S, w);
+    Z (S, r); psi (S,).  Returns (B, S)."""
+    import torch
+    phase = torch.einsum("bwr,sr->bws", feat_batch,
+                         Z) / feat_batch.shape[-1] ** 0.5
+    with torch.amp.autocast(device_type=phase.device.type, enabled=False):
+        g = torch.sigmoid(theta.float()).t()         # (w, S) soft gates
+        total = torch.einsum("bws,ws->bs", phase.float(), g) + psi.float()
+        return torch.cos(total)
+
+
+def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
+               lr_theta=3e-2, lr_z=1e-3, wd=1e-4, steps=40_000, batch=2048,
                eval_every=500, patience=15, warmup=500, clip=1.0,
                lam_div=1e-3, lam_deg=3e-4, div_sub=1024, warm_frac=0.25,
-               slot_chunk=4096, val_fast=8192, device=None, seed=0, log=None,
-               save_cb=None, resume=None):
-    """100k learnable Fourier slots of ANY degree: gates (STE, saturated +-8
-    init), factored token functionals u_s = tanh((E A) z_s), coefficients --
-    one AdamW, warmup+clip (gates unclipped), anti-collapse cosine penalty,
-    step-0 eval, val early stop.  All of tonight's STE lessons baked in."""
+               slot_chunk=4096, val_fast=8192, base_tr=None, base_ev=None,
+               device=None, seed=0, log=None, save_cb=None, resume=None):
+    """PHASE slot machine (log-space characters): S slots, each learning its
+    phase table z_s (character content), soft support sigma(theta_s), offset
+    psi_s, and coefficient c_s -- one AdamW, no STE, no anneal (the churn it
+    treated cannot occur).  Optionally trains on the RESIDUAL of a base
+    model (base_tr / base_ev in f-units); metrics are on base + slots."""
     import torch
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     emit = log or (lambda d: None)
@@ -1174,142 +1191,137 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
     rng = np.random.default_rng(seed)
     dev = torch.device(device)
     amp = dev.type == "cuda"
-    if amp:                                          # fp32 CUDA cores ran the
-        torch.backends.cuda.matmul.allow_tf32 = True  # first attempt 15x slow
+    if amp:
+        torch.backends.cuda.matmul.allow_tf32 = True
     tok_t = torch.tensor(np.asarray(tok_tr, np.int64), device=dev)
     D, w = tok_t.shape
     ytr = normalize_scores(y_tr_raw)
+    if base_tr is not None:
+        ytr = ytr - np.asarray(base_tr, np.float32)  # train on the residual
     y_t = torch.tensor(ytr, device=dev)
     E_t = torch.tensor(np.asarray(E, np.float32), device=dev)
-    # +-4 in TOKEN space (64 positions): surrogate stays alive (sum of 64
-    # sigma-weighted log|u| terms, unlike 2.2k bits which needed +-8) and
-    # gates get 50x the gradient of +-8 -- at +-8 exactly ONE gate flipped
-    # in 100k slots over 1000 steps
-    th = np.full((S, w), -init_sat, np.float32)
+    th = np.full((S, w), -3.0, np.float32)           # soft gates: sigma 0.05
     n_warm = int(S * warm_frac)
     for s in range(n_warm):                          # structural warm: local
-        i = int(rng.integers(0, w - 4))              # pairs (the discovered
-        d = int(rng.integers(1, 5))                  # offsets 1-4)
-        th[s, i] = init_sat
-        th[s, min(i + d, w - 1)] = init_sat
+        i = int(rng.integers(0, w - 4))
+        d = int(rng.integers(1, 5))
+        th[s, i] = 2.0                               # sigma 0.88
+        th[s, min(i + d, w - 1)] = 2.0
     for s in range(n_warm, S):
         deg = int(rng.integers(1, 5))
-        th[s, rng.choice(w, deg, replace=False)] = init_sat
+        th[s, rng.choice(w, deg, replace=False)] = 2.0
     theta = torch.tensor(th, device=dev).requires_grad_(True)
     A = (torch.randn(E_t.shape[1], r, device=dev) / E_t.shape[1] ** 0.5
          ).requires_grad_(True)
     Z = torch.randn(S, r, device=dev).requires_grad_(True)
-    c = (0.01 * torch.randn(S, device=dev)).requires_grad_(True)  # c=0
+    psi = (2 * np.pi * torch.rand(S, device=dev)).requires_grad_(True)
+    c = (0.01 * torch.randn(S, device=dev)).requires_grad_(True)
     b = torch.tensor(float(ytr.mean()), device=dev).requires_grad_(True)
-    if resume is not None:                           # Modal preempts multi-
-        with torch.no_grad():                        # hour workers; resume
+    if resume is not None:
+        with torch.no_grad():
             theta.copy_(torch.tensor(resume["theta"], device=dev))
             A.copy_(torch.tensor(resume["A"], device=dev))
             Z.copy_(torch.tensor(resume["Z"], device=dev))
+            psi.copy_(torch.tensor(resume["psi"], device=dev))
             c.copy_(torch.tensor(resume["c"], device=dev))
             b.fill_(float(resume["b"]))
         print(f"[slots] resumed from checkpoint (step {resume['step']})",
               flush=True)
     opt = torch.optim.AdamW([
-        # eps 1e-12 for the gates: their grads are ~3e-10 (batch-mean x
-        # c x surrogate x sigma' factors) -- Adam's default eps=1e-8 floors
-        # the rescale and gates move at lr/30 with noise (observed frozen
-        # mean_degree at full float precision)
-        {"params": [theta], "lr": lr_theta, "weight_decay": 0.0,
-         "eps": 1e-12},
+        {"params": [theta], "lr": lr_theta, "weight_decay": 0.0},
         {"params": [A, Z, c], "lr": lr_z, "weight_decay": wd},
-        {"params": [b], "lr": lr_z, "weight_decay": 0.0}])
-    # TWO-TIMESCALE: gates explore hot early then anneal to ~0 (cosine over
-    # anneal_steps) so supports freeze and (z, c) consolidate -- unannealed
-    # gate churn crashed val 0.58 -> -0.07 (the STE round-5 dynamic)
-    anneal_steps = max(1, int(steps * 0.4))
-
-    def lam_theta(s_):
-        wu = min(1.0, (s_ + 1) / max(1, warmup))
-        cos = 0.5 * (1 + np.cos(np.pi * min(1.0, s_ / anneal_steps)))
-        return wu * max(0.02, cos)
-
-    def lam_rest(s_):
-        return min(1.0, (s_ + 1) / max(1, warmup))
-
+        {"params": [psi, b], "lr": lr_z, "weight_decay": 0.0}])
     sched = torch.optim.lr_scheduler.LambdaLR(
-        opt, [lam_theta, lam_rest, lam_rest])
+        opt, lambda s_: min(1.0, (s_ + 1) / max(1, warmup)))
 
-    def predict(tok_eval, nrows=None):
+    def predict(tok_eval, nrows=None):               # slot-machine part only
         with torch.no_grad():
             te = tok_eval[:nrows] if nrows else tok_eval
             EA = E_t @ A
             out = torch.empty(len(te), device=dev)
-            for rlo in range(0, len(te), 2048):      # row x slot chunking:
-                feat = EA[te[rlo:rlo + 2048]]        # full-rows x full-slots
+            for rlo in range(0, len(te), 2048):
+                feat = EA[te[rlo:rlo + 2048]]
                 acc = torch.full((len(feat),), float(b), device=dev)
                 with torch.autocast("cuda", dtype=torch.bfloat16,
                                     enabled=amp):
                     for lo in range(0, S, slot_chunk):
-                        acc = acc + (
-                            slot_forward(feat, theta[lo:lo + slot_chunk],
-                                         Z[lo:lo + slot_chunk]).float()
+                        acc = acc + (slot_forward_phase(
+                            feat, theta[lo:lo + slot_chunk],
+                            Z[lo:lo + slot_chunk],
+                            psi[lo:lo + slot_chunk]).float()
                             @ c[lo:lo + slot_chunk])
                 out[rlo:rlo + 2048] = acc
             return out.cpu().numpy()
 
     eb = {t: torch.tensor(np.asarray(tk, np.int64), device=dev)
           for t, (tk, _) in evals.items()}
+    bev = {t: (np.zeros(len(evals[t][1]), np.float32) if base_ev is None
+               else np.asarray(base_ev[t], np.float32)) for t in evals}
     gen = torch.Generator(device=device).manual_seed(seed)
-    vm0 = score_metrics(predict(eb["val"], val_fast), evals["val"][1][:val_fast])
+
+    def val_metrics():
+        sp = predict(eb["val"], val_fast)
+        comb = score_metrics(sp + bev["val"][:val_fast],
+                             evals["val"][1][:val_fast])
+        resid = normalize_scores(evals["val"][1][:val_fast]) \
+            - bev["val"][:val_fast]
+        res_r2 = 1.0 - float(np.mean((sp - resid) ** 2)) \
+            / (float(np.var(resid)) + 1e-12)
+        return comb, res_r2
+
+    vm0, rr0 = val_metrics()
     best = (vm0["mse"], {k: v.detach().clone() for k, v in
-                         (("theta", theta), ("A", A), ("Z", Z), ("c", c),
-                          ("b", b))}, 0)
-    emit({"step": 0, "val_r2": vm0["r2"]})
+                         (("theta", theta), ("A", A), ("Z", Z), ("psi", psi),
+                          ("c", c), ("b", b))}, 0)
+    emit({"step": 0, "val_r2": vm0["r2"], "res_r2": rr0})
+    print(f"[slots] step 0: combined val R2 {vm0['r2']:.4f} "
+          f"(residual R2 {rr0:.4f})", flush=True)
     for s_ in range(steps):
         sel = torch.randint(0, D, (batch,), device=dev, generator=gen)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-            feat = (E_t @ A)[tok_t[sel]]             # (B, w, r)
+            feat = (E_t @ A)[tok_t[sel]]
             pred = torch.full((batch,), 0.0, device=dev) + b.float()
             for lo in range(0, S, slot_chunk):
-                # CHECKPOINT each chunk: autograd otherwise retains every
-                # chunk's u tensor (13 x 13GB) until backward -> OOM
                 phi = torch.utils.checkpoint.checkpoint(
-                    slot_forward, feat, theta[lo:lo + slot_chunk],
-                    Z[lo:lo + slot_chunk], use_reentrant=False)
+                    slot_forward_phase, feat, theta[lo:lo + slot_chunk],
+                    Z[lo:lo + slot_chunk], psi[lo:lo + slot_chunk],
+                    use_reentrant=False)
                 pred = pred + phi.float() @ c[lo:lo + slot_chunk]
         loss = ((pred - y_t[sel]) ** 2).mean()
         if lam_div > 0:
             ks = torch.randint(0, S, (div_sub,), device=dev, generator=gen)
-            # diversity on CONTENT (z) only: including sigma(theta) paid
-            # slots to open DIFFERENT gates -> runaway degree inflation
-            # (mean degree +0.077/500 steps, max 52, val 0.63 -> 0.53)
             m = Z[ks]
             mn = m / (m.norm(dim=1, keepdim=True) + 1e-8)
             Sim = mn @ mn.t()
             loss = loss + lam_div * (Sim - torch.eye(div_sub, device=dev)
                                      ).pow(2).mean()
-        if lam_deg > 0:                              # explicit parsimony:
-            loss = loss + lam_deg * torch.sigmoid(theta).mean()  # degree L1
+        if lam_deg > 0:
+            loss = loss + lam_deg * torch.sigmoid(theta).mean()
         opt.zero_grad(); loss.backward()
-        torch.nn.utils.clip_grad_norm_([A, Z, c, b], clip)
+        torch.nn.utils.clip_grad_norm_([theta, A, Z, psi, c, b], clip)
         opt.step(); sched.step()
         if (s_ + 1) % eval_every == 0:
-            vm = score_metrics(predict(eb["val"], val_fast),
-                               evals["val"][1][:val_fast])
+            vm, rr = val_metrics()
             with torch.no_grad():
-                deg = (theta > 0).sum(1).float()
+                gsum = torch.sigmoid(theta).sum(1)
                 tg = float(theta.grad.abs().mean()) \
                     if theta.grad is not None else 0.0
             emit({"step": s_ + 1, "train_loss": float(loss),
-                  "val_r2": vm["r2"], "val_mse": vm["mse"],
+                  "val_r2": vm["r2"], "val_mse": vm["mse"], "res_r2": rr,
                   "lr_theta": opt.param_groups[0]["lr"],
                   "theta_grad_mean": tg,
-                  "mean_degree": float(deg.mean()),
-                  "max_degree": int(deg.max())})
+                  "eff_degree": float(gsum.mean()),
+                  "max_eff_degree": float(gsum.max()),
+                  "c_abs_mean": float(c.abs().mean())})
             if vm["mse"] < best[0] - 1e-6:
                 best = (vm["mse"], {k: v.detach().clone() for k, v in
                                     (("theta", theta), ("A", A), ("Z", Z),
-                                     ("c", c), ("b", b))}, 0)
+                                     ("psi", psi), ("c", c), ("b", b))}, 0)
                 if save_cb is not None:
                     save_cb({"theta": theta.detach().cpu().numpy(),
                              "A": A.detach().cpu().numpy(),
                              "Z": Z.detach().cpu().numpy(),
+                             "psi": psi.detach().cpu().numpy(),
                              "c": c.detach().cpu().numpy(),
                              "b": float(b), "step": s_ + 1,
                              "val_mse": vm["mse"]})
@@ -1320,18 +1332,21 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64, init_sat=4.0,
                     break
     with torch.no_grad():
         theta.copy_(best[1]["theta"]); A.copy_(best[1]["A"])
-        Z.copy_(best[1]["Z"]); c.copy_(best[1]["c"]); b.copy_(best[1]["b"])
-    degs = (theta > 0).sum(1).cpu().numpy()
+        Z.copy_(best[1]["Z"]); psi.copy_(best[1]["psi"])
+        c.copy_(best[1]["c"]); b.copy_(best[1]["b"])
+    degs = (torch.sigmoid(theta) > 0.5).sum(1).cpu().numpy()
     summary = {"S": S, "r": r, "steps_run": s_ + 1,
                "deg_hist": np.bincount(degs, minlength=10)[:10].tolist(),
                "max_degree": int(degs.max()),
-               "sparse_bytes": int(degs.sum() * 2 + S * (r * 2 + 4)
+               "sparse_bytes": int(degs.sum() * 2 + S * (r * 2 + 4 + 2)
                                    + E_t.shape[1] * r * 2)}
     for t in eb:
-        summary[t] = score_metrics(predict(eb[t]), evals[t][1])
+        sp = predict(eb[t])
+        summary[t] = score_metrics(sp + bev[t], evals[t][1])
     model = {"theta": theta.detach().cpu().numpy().astype(np.float16),
              "A": A.detach().cpu().numpy(),
              "Z": Z.detach().cpu().numpy().astype(np.float16),
+             "psi": psi.detach().cpu().numpy(),
              "c": c.detach().cpu().numpy(), "b": float(b)}
     return summary, model
 
@@ -1344,16 +1359,42 @@ def fit_slots(S: int = 100_000, r: int = 64, n_train: int = 2_000_000,
               lam_div: float = 1e-3, steps: int = 40_000,
               batch: int = 2048, warm_frac: float = 0.25):
     """The Fourier slot machine on the real data."""
+    import torch
     vol.reload()
     data = np.load(_data_path(w, n_train, n_val, n_test))
     E = np.load(f"{ROOT}/emb.npz")["E"].astype(np.float32)
-    run = _wandb_run(f"slots-S{S}-N{n_train}",
+    run = _wandb_run(f"slots-phase-S{S}-N{n_train}",
                      {"S": S, "r": r, "lr_theta": lr_theta, "lr_z": lr_z,
                       "lam_div": lam_div, "warm_frac": warm_frac,
-                      "batch": batch})
+                      "batch": batch, "arch": "phase", "base": "qjoint"})
     evals = {"val": (data["tok_va"], data["y_va"]),
              "test": (data["tok_te"], data["y_te"])}
-    ck_path = f"{ROOT}/ckpt_slots_S{S}_N{n_train}.npz"
+    # RESIDUAL BASE: the saved discovered-support joint model (test 0.7717)
+    bm = np.load(f"{ROOT}/model_qjoint_N{n_train}.npz")
+    v_base = torch.tensor(bm["v"].astype(np.float32), device="cuda")
+    offs = [int(x) for x in bm["offsets"]]
+    nh = int(bm["n_hash"])
+    q0 = E.shape[0]
+    mixi = -7046029254386353131
+
+    def base_apply(tokens):
+        t = np.asarray(tokens, np.int64)
+        out = np.empty(len(t), np.float32)
+        for lo in range(0, len(t), 262144):
+            tc = torch.tensor(t[lo:lo + 262144], device="cuda")
+            acc = v_base[tc].sum(dim=1)
+            for d in offs:
+                h = ((tc[:, : w - d] * q0 + tc[:, d:]) * mixi >> 40) & (nh - 1)
+                acc = acc + v_base[q0 + offs.index(d) * nh + h].sum(dim=1)
+            out[lo:lo + 262144] = acc.cpu().numpy()
+        return out + float(bm["mean"])
+
+    base_tr = base_apply(data["tok_tr"])
+    base_ev = {"val": base_apply(data["tok_va"]),
+               "test": base_apply(data["tok_te"])}
+    del v_base
+    torch.cuda.empty_cache()
+    ck_path = f"{ROOT}/ckpt_slots_phase_S{S}_N{n_train}.npz"
 
     def save_cb(state):
         np.savez(ck_path + ".tmp.npz", **state)
@@ -1365,13 +1406,15 @@ def fit_slots(S: int = 100_000, r: int = 64, n_train: int = 2_000_000,
         data["tok_tr"], data["y_tr"], evals, E, S=S, r=r,
         lr_theta=lr_theta, lr_z=lr_z, lam_div=lam_div, steps=steps,
         batch=batch, warm_frac=warm_frac, save_cb=save_cb, resume=resume,
+        base_tr=base_tr, base_ev=base_ev,
         log=(run.log if run is not None else None))
     print(f"[slots] FINAL: val {summary['val']['r2']:.4f} test "
           f"{summary['test']['r2']:.4f}; deg hist {summary['deg_hist']} "
           f"max {summary['max_degree']}; sparse "
           f"{summary['sparse_bytes'] / 1e6:.1f}MB", flush=True)
-    np.savez_compressed(f"{ROOT}/model_slots_S{S}_N{n_train}.npz", **model)
-    with open(f"{ROOT}/summary_slots_S{S}_N{n_train}.json", "w") as fh:
+    np.savez_compressed(f"{ROOT}/model_slots_phase_S{S}_N{n_train}.npz",
+                        **model)
+    with open(f"{ROOT}/summary_slots_phase_S{S}_N{n_train}.json", "w") as fh:
         json.dump(summary, fh, indent=1)
     vol.commit()
     if run is not None:
