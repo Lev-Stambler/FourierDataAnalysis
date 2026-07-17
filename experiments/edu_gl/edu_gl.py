@@ -1174,11 +1174,11 @@ def slot_forward_phase(feat_batch, theta, Z, psi):
 
 
 def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
-               lr_theta=3e-2, lr_z=3e-3, lr_c=1e-2, wd=1e-4, steps=40_000,
+               lr_theta=3e-2, lr_z=3e-3, lr_c=3e-3, wd=1e-4, steps=40_000,
                batch=8192,
                eval_every=500, patience=15, warmup=500, clip=1.0,
-               lam_div=1e-3, lam_deg=3e-4, div_sub=1024, warm_frac=0.25,
-               slot_chunk=16384, val_fast=8192, base_tr=None, base_ev=None,
+               lam_div=1e-3, lam_deg=1e-3, div_sub=1024, warm_frac=0.25,
+               slot_chunk=4096, val_fast=8192, base_tr=None, base_ev=None,
                c_init=0.0, loss_kind="mse", device=None, seed=0, log=None,
                save_cb=None, resume=None):
     """PHASE slot machine (log-space characters): S slots, each learning its
