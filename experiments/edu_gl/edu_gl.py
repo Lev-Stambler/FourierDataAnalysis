@@ -1215,7 +1215,11 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
          ).requires_grad_(True)
     Z = torch.randn(S, r, device=dev).requires_grad_(True)
     psi = (2 * np.pi * torch.rand(S, device=dev)).requires_grad_(True)
-    c = (0.01 * torch.randn(S, device=dev)).requires_grad_(True)
+    # c = 0: phase slots emit O(1), so 100k x 0.01-coef features sum to
+    # ~2.2 std of init noise on a 0.11-std residual (step-0 val -1.27).
+    # With smooth gates c gets immediate gradient; the STE-era warm-c
+    # requirement no longer applies.
+    c = torch.zeros(S, device=dev).requires_grad_(True)
     b = torch.tensor(float(ytr.mean()), device=dev).requires_grad_(True)
     if resume is not None:
         with torch.no_grad():
