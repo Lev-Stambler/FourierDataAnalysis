@@ -1174,12 +1174,13 @@ def slot_forward_phase(feat_batch, theta, Z, psi):
 
 
 def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
-               lr_theta=3e-2, lr_z=1e-3, wd=1e-4, steps=40_000, batch=2048,
+               lr_theta=3e-2, lr_z=3e-3, lr_c=1e-2, wd=1e-4, steps=40_000,
+               batch=8192,
                eval_every=500, patience=15, warmup=500, clip=1.0,
                lam_div=1e-3, lam_deg=3e-4, div_sub=1024, warm_frac=0.25,
-               slot_chunk=4096, val_fast=8192, base_tr=None, base_ev=None,
-               c_init=0.0, device=None, seed=0, log=None, save_cb=None,
-               resume=None):
+               slot_chunk=16384, val_fast=8192, base_tr=None, base_ev=None,
+               c_init=0.0, loss_kind="mse", device=None, seed=0, log=None,
+               save_cb=None, resume=None):
     """PHASE slot machine (log-space characters): S slots, each learning its
     phase table z_s (character content), soft support sigma(theta_s), offset
     psi_s, and coefficient c_s -- one AdamW, no STE, no anneal (the churn it
@@ -1194,11 +1195,16 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
     amp = dev.type == "cuda"
     if amp:
         torch.backends.cuda.matmul.allow_tf32 = True
+    global slot_forward_phase
+    fwd = torch.compile(slot_forward_phase, dynamic=False) if amp \
+        else slot_forward_phase
     tok_t = torch.tensor(np.asarray(tok_tr, np.int64), device=dev)
     D, w = tok_t.shape
     ytr = normalize_scores(y_tr_raw)
     if base_tr is not None:
         ytr = ytr - np.asarray(base_tr, np.float32)  # train on the residual
+    if loss_kind == "bce":                           # teacher score/5 as a
+        ytr = (ytr + 1.0) / 2.0                      # target PROBABILITY
     y_t = torch.tensor(ytr, device=dev)
     E_t = torch.tensor(np.asarray(E, np.float32), device=dev)
     th = np.full((S, w), -3.0, np.float32)           # soft gates: sigma 0.05
@@ -1221,7 +1227,10 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
     # test problems (S~256) pass c_init~0.01 to bootstrap gate learning.
     c = (c_init * torch.randn(S, device=dev)).requires_grad_(True) \
         if c_init else torch.zeros(S, device=dev).requires_grad_(True)
-    b = torch.tensor(float(ytr.mean()), device=dev).requires_grad_(True)
+    b0 = float(ytr.mean())
+    if loss_kind == "bce":                           # init at logit(mean p)
+        b0 = float(np.log(max(b0, 1e-4) / max(1 - b0, 1e-4)))
+    b = torch.tensor(b0, device=dev).requires_grad_(True)
     if resume is not None:
         with torch.no_grad():
             theta.copy_(torch.tensor(resume["theta"], device=dev))
@@ -1234,7 +1243,8 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
               flush=True)
     opt = torch.optim.AdamW([
         {"params": [theta], "lr": lr_theta, "weight_decay": 0.0},
-        {"params": [A, Z, c], "lr": lr_z, "weight_decay": wd},
+        {"params": [A, Z], "lr": lr_z, "weight_decay": wd},
+        {"params": [c], "lr": lr_c, "weight_decay": wd},
         {"params": [psi, b], "lr": lr_z, "weight_decay": 0.0}])
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda s_: min(1.0, (s_ + 1) / max(1, warmup)))
@@ -1250,12 +1260,14 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
                 with torch.autocast("cuda", dtype=torch.bfloat16,
                                     enabled=amp):
                     for lo in range(0, S, slot_chunk):
-                        acc = acc + (slot_forward_phase(
+                        acc = acc + (fwd(
                             feat, theta[lo:lo + slot_chunk],
                             Z[lo:lo + slot_chunk],
                             psi[lo:lo + slot_chunk]).float()
                             @ c[lo:lo + slot_chunk])
                 out[rlo:rlo + 2048] = acc
+            if loss_kind == "bce":                   # logits -> f-units for
+                out = 2.0 * torch.sigmoid(out) - 1.0  # score_metrics
             return out.cpu().numpy()
 
     eb = {t: torch.tensor(np.asarray(tk, np.int64), device=dev)
@@ -1288,11 +1300,15 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
             pred = torch.full((batch,), 0.0, device=dev) + b.float()
             for lo in range(0, S, slot_chunk):
                 phi = torch.utils.checkpoint.checkpoint(
-                    slot_forward_phase, feat, theta[lo:lo + slot_chunk],
+                    fwd, feat, theta[lo:lo + slot_chunk],
                     Z[lo:lo + slot_chunk], psi[lo:lo + slot_chunk],
                     use_reentrant=False)
                 pred = pred + phi.float() @ c[lo:lo + slot_chunk]
-        loss = ((pred - y_t[sel]) ** 2).mean()
+        if loss_kind == "bce":
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                pred, y_t[sel])
+        else:
+            loss = ((pred - y_t[sel]) ** 2).mean()
         if lam_div > 0:
             ks = torch.randint(0, S, (div_sub,), device=dev, generator=gen)
             m = Z[ks]
@@ -1303,7 +1319,11 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
         if lam_deg > 0:
             loss = loss + lam_deg * torch.sigmoid(theta).mean()
         opt.zero_grad(); loss.backward()
-        torch.nn.utils.clip_grad_norm_([theta, A, Z, psi, c, b], clip)
+        # PER-GROUP clipping: a single global norm over 13M params (theta+Z
+        # dominated) crushed every step to a fraction of lr -- train loss
+        # sat pinned at target variance for 4k steps
+        for grp in ([theta], [A, Z], [c], [psi, b]):
+            torch.nn.utils.clip_grad_norm_(grp, clip)
         opt.step(); sched.step()
         if (s_ + 1) % eval_every == 0:
             vm, rr = val_metrics()
@@ -1356,15 +1376,15 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
     return summary, model
 
 
-@app.function(image=image, gpu=["A100-40GB", "H100", "L40S", "A10G"],
+@app.function(image=image, gpu=["H100", "A100-40GB", "L40S", "A10G"],
               volumes={"/cache": vol}, timeout=43200, memory=98304,
               secrets=WANDB_SECRET)
 def fit_slots(S: int = 100_000, r: int = 64, n_train: int = 2_000_000,
               n_val: int = 25_000, n_test: int = 25_000, w: int = W_WIN,
-              lr_theta: float = 3e-2, lr_z: float = 1e-3,
+              lr_theta: float = 3e-2, lr_z: float = 3e-3,
               lam_div: float = 1e-3, steps: int = 40_000,
-              batch: int = 2048, warm_frac: float = 0.25,
-              use_base: int = 0):
+              batch: int = 8192, warm_frac: float = 0.25,
+              use_base: int = 0, loss_kind: str = "mse"):
     """The Fourier slot machine on the real data."""
     import torch
     vol.reload()
@@ -1418,7 +1438,7 @@ def fit_slots(S: int = 100_000, r: int = 64, n_train: int = 2_000_000,
         data["tok_tr"], data["y_tr"], evals, E, S=S, r=r,
         lr_theta=lr_theta, lr_z=lr_z, lam_div=lam_div, steps=steps,
         batch=batch, warm_frac=warm_frac, save_cb=save_cb, resume=resume,
-        base_tr=base_tr, base_ev=base_ev,
+        base_tr=base_tr, base_ev=base_ev, loss_kind=loss_kind,
         log=(run.log if run is not None else None))
     print(f"[slots] FINAL: val {summary['val']['r2']:.4f} test "
           f"{summary['test']['r2']:.4f}; deg hist {summary['deg_hist']} "
@@ -2257,7 +2277,8 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
          b: int = B_LSH, max_pairs: int = 400_000, n_train: int = 1_000_000,
          n_val: int = 25_000, n_test: int = 25_000, batch: int = 256,
          deg3_anchors: int = 0, max_triples: int = 200_000,
-         pos_buckets: int = 1, orders: str = "1,2", n_hash: int = 1 << 22):
+         pos_buckets: int = 1, orders: str = "1,2", n_hash: int = 1 << 22,
+         loss: str = "mse"):
     if stage == "label":
         print(label.remote(n_train, n_val, n_test, w, batch))
     elif stage == "fit":
@@ -2279,7 +2300,8 @@ def main(stage: str = "fit", encoding: str = "lsh", w: int = W_WIN,
     elif stage == "qfull":
         fit_qfull.remote(1 << 22, n_train, n_val, n_test, w)
     elif stage == "slots":
-        fit_slots.remote(100_000, 64, n_train, n_val, n_test, w)
+        fit_slots.remote(100_000, 64, n_train, n_val, n_test, w,
+                         3e-2, 3e-3, 1e-3, 40_000, 8192, 0.25, 0, loss)
     elif stage == "adamw":
         fit_adamw.remote(encoding, w, n_train, n_val, n_test)
     elif stage == "ste":
