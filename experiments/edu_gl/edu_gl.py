@@ -1351,7 +1351,7 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
     return summary, model
 
 
-@app.function(image=image, gpu=["A100-40GB", "H100", "L40S"],
+@app.function(image=image, gpu=["A100-40GB", "H100", "L40S", "A10G"],
               volumes={"/cache": vol}, timeout=43200, memory=98304,
               secrets=WANDB_SECRET)
 def fit_slots(S: int = 100_000, r: int = 64, n_train: int = 2_000_000,
