@@ -1362,7 +1362,8 @@ def fit_slots(S: int = 100_000, r: int = 64, n_train: int = 2_000_000,
               n_val: int = 25_000, n_test: int = 25_000, w: int = W_WIN,
               lr_theta: float = 3e-2, lr_z: float = 1e-3,
               lam_div: float = 1e-3, steps: int = 40_000,
-              batch: int = 2048, warm_frac: float = 0.25):
+              batch: int = 2048, warm_frac: float = 0.25,
+              use_base: int = 0):
     """The Fourier slot machine on the real data."""
     import torch
     vol.reload()
@@ -1374,31 +1375,36 @@ def fit_slots(S: int = 100_000, r: int = 64, n_train: int = 2_000_000,
                       "batch": batch, "arch": "phase", "base": "qjoint"})
     evals = {"val": (data["tok_va"], data["y_va"]),
              "test": (data["tok_te"], data["y_te"])}
-    # RESIDUAL BASE: the saved discovered-support joint model (test 0.7717)
-    bm = np.load(f"{ROOT}/model_qjoint_N{n_train}.npz")
-    v_base = torch.tensor(bm["v"].astype(np.float32), device="cuda")
-    offs = [int(x) for x in bm["offsets"]]
-    nh = int(bm["n_hash"])
-    q0 = E.shape[0]
-    mixi = -7046029254386353131
+    # THE SIMPLE PIPELINE (Lev): samples -> teacher score -> loss ->
+    # backprop through coeffs + characters.  No calculated base unless
+    # --use-base 1 (residual boosting, kept for later).
+    base_tr, base_ev = None, None
+    if use_base:
+        bm = np.load(f"{ROOT}/model_qjoint_N{n_train}.npz")
+        v_base = torch.tensor(bm["v"].astype(np.float32), device="cuda")
+        offs = [int(x) for x in bm["offsets"]]
+        nh = int(bm["n_hash"])
+        q0 = E.shape[0]
+        mixi = -7046029254386353131
 
-    def base_apply(tokens):
-        t = np.asarray(tokens, np.int64)
-        out = np.empty(len(t), np.float32)
-        for lo in range(0, len(t), 262144):
-            tc = torch.tensor(t[lo:lo + 262144], device="cuda")
-            acc = v_base[tc].sum(dim=1)
-            for d in offs:
-                h = ((tc[:, : w - d] * q0 + tc[:, d:]) * mixi >> 40) & (nh - 1)
-                acc = acc + v_base[q0 + offs.index(d) * nh + h].sum(dim=1)
-            out[lo:lo + 262144] = acc.cpu().numpy()
-        return out + float(bm["mean"])
+        def base_apply(tokens):
+            t = np.asarray(tokens, np.int64)
+            out = np.empty(len(t), np.float32)
+            for lo in range(0, len(t), 262144):
+                tc = torch.tensor(t[lo:lo + 262144], device="cuda")
+                acc = v_base[tc].sum(dim=1)
+                for d in offs:
+                    h = ((tc[:, : w - d] * q0 + tc[:, d:]) * mixi >> 40) \
+                        & (nh - 1)
+                    acc = acc + v_base[q0 + offs.index(d) * nh + h].sum(dim=1)
+                out[lo:lo + 262144] = acc.cpu().numpy()
+            return out + float(bm["mean"])
 
-    base_tr = base_apply(data["tok_tr"])
-    base_ev = {"val": base_apply(data["tok_va"]),
-               "test": base_apply(data["tok_te"])}
-    del v_base
-    torch.cuda.empty_cache()
+        base_tr = base_apply(data["tok_tr"])
+        base_ev = {"val": base_apply(data["tok_va"]),
+                   "test": base_apply(data["tok_te"])}
+        del v_base
+        torch.cuda.empty_cache()
     ck_path = f"{ROOT}/ckpt_slots_phase_S{S}_N{n_train}.npz"
 
     def save_cb(state):

@@ -363,7 +363,7 @@ def test_phase_slots_learn_planted_cos_characters():
     summary, model = edu_gl.slots_core(
         tok, y, {"val": (tok_te, y_te), "test": (tok_te, y_te)}, E,
         S=256, r=16, lr_theta=5e-2, lr_z=5e-3, lam_div=1e-3, lam_deg=1e-4,
-        steps=3000, batch=1024, eval_every=250, patience=10, warmup=100,
+        steps=4500, batch=1024, eval_every=250, patience=12, warmup=100,
         warm_frac=0.0, slot_chunk=256, val_fast=4000, device="cpu", seed=0)
     assert summary["test"]["r2"] > 0.6, summary["test"]
 
