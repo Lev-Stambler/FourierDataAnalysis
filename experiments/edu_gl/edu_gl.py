@@ -1178,7 +1178,8 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
                eval_every=500, patience=15, warmup=500, clip=1.0,
                lam_div=1e-3, lam_deg=3e-4, div_sub=1024, warm_frac=0.25,
                slot_chunk=4096, val_fast=8192, base_tr=None, base_ev=None,
-               device=None, seed=0, log=None, save_cb=None, resume=None):
+               c_init=0.0, device=None, seed=0, log=None, save_cb=None,
+               resume=None):
     """PHASE slot machine (log-space characters): S slots, each learning its
     phase table z_s (character content), soft support sigma(theta_s), offset
     psi_s, and coefficient c_s -- one AdamW, no STE, no anneal (the churn it
@@ -1215,11 +1216,11 @@ def slots_core(tok_tr, y_tr_raw, evals, E, S=100_000, r=64,
          ).requires_grad_(True)
     Z = torch.randn(S, r, device=dev).requires_grad_(True)
     psi = (2 * np.pi * torch.rand(S, device=dev)).requires_grad_(True)
-    # c = 0: phase slots emit O(1), so 100k x 0.01-coef features sum to
-    # ~2.2 std of init noise on a 0.11-std residual (step-0 val -1.27).
-    # With smooth gates c gets immediate gradient; the STE-era warm-c
-    # requirement no longer applies.
-    c = torch.zeros(S, device=dev).requires_grad_(True)
+    # c_init 0 in production: phase slots emit O(1), so at S=100k any randn
+    # init sums to multi-std output noise (observed step-0 val -1.27).  Tiny
+    # test problems (S~256) pass c_init~0.01 to bootstrap gate learning.
+    c = (c_init * torch.randn(S, device=dev)).requires_grad_(True) \
+        if c_init else torch.zeros(S, device=dev).requires_grad_(True)
     b = torch.tensor(float(ytr.mean()), device=dev).requires_grad_(True)
     if resume is not None:
         with torch.no_grad():
