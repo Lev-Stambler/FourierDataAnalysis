@@ -123,6 +123,7 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         coefficient_decay_steps: int = 100
         minimum_lr_ratio: float = 1.0 / 3.0
         eval_every: int = 25
+        early_stop_patience: int = 12
         ewt_sampling_weight: int = 10
 
     config = Config(
@@ -170,8 +171,14 @@ def train_direct(terms: int = 524288, steps: int = 1000,
     ewt_bits, ewt_probability = gpu_split(ewt, "train")
     val_bits, val_probability = gpu_split(web, "val")
     test_bits, test_probability = gpu_split(web, "test")
-    train_probe_bits = web_bits[:8192]
-    train_probe_probability = web_probability[:8192]
+    probe_per_source = min(4096, len(web_bits), len(ewt_bits))
+    train_probe_bits = torch.cat((
+        web_bits[:probe_per_source], ewt_bits[:probe_per_source],
+    ))
+    train_probe_probability = torch.cat((
+        web_probability[:probe_per_source],
+        ewt_probability[:probe_per_source],
+    ))
     lsh_codes = web["lsh_codes_packed"]
     if torch.is_tensor(lsh_codes):
         lsh_codes = lsh_codes.numpy()
@@ -338,6 +345,7 @@ def train_direct(terms: int = 524288, steps: int = 1000,
     best_state = model.sparse_state()
     best_val_logits = initial_val_logits
     best_train_probe_ce = initial_train["ce"]
+    stale_evaluations = 0
     last_log = time.perf_counter()
     last_diversity = {}
     recent_norms = []
@@ -416,6 +424,17 @@ def train_direct(terms: int = 524288, steps: int = 1000,
                 best_state = model.sparse_state()
                 best_val_logits = val_logits
                 best_train_probe_ce = train_metrics["ce"]
+                stale_evaluations = 0
+            else:
+                stale_evaluations += 1
+            if stale_evaluations >= config.early_stop_patience:
+                print(json.dumps({
+                    "early_stop": True,
+                    "step": current,
+                    "best_step": best_step,
+                    "best_val_kl": best_kl,
+                }), flush=True)
+                break
 
     compact = encode_compact_student(best_state)
     deployed = decode_compact_student(compact)
@@ -503,7 +522,8 @@ def train_direct(terms: int = 524288, steps: int = 1000,
     os.replace(summary_path + ".tmp", summary_path)
     volume.commit()
     run.log({
-        "global_step": steps,
+        "global_step": current,
+        "steps_run": current,
         **{f"deployed_val/{key}": value for key, value in val_metrics.items()},
         **{f"test/{key}": value for key, value in test_metrics.items()},
     })
@@ -523,6 +543,212 @@ def train_direct(terms: int = 524288, steps: int = 1000,
     run.finish()
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     return summary
+
+
+@app.function(
+    image=image, gpu="A100-80GB", volumes={"/cache": volume}, timeout=3600,
+    memory=49152, secrets=WANDB_SECRET,
+)
+def diagnose_bank(terms: int = 524288, scan_n: int = 32768,
+                  confirm_n: int = 32768, top_k: int = 4096,
+                  char_chunk: int = 4096, seed: int = 0):
+    """Measure whether additional random characters carry repeatable signal."""
+    import json
+
+    import numpy as np
+    import torch
+    import wandb
+
+    from fourier_kiss.model import deterministic_mask_rows
+
+    source = torch.load(WEB_LABELS, map_location="cpu", weights_only=False)
+    item = source["splits"]["train"]
+    n_bits = int(source["metadata"]["n_bits"])
+    required = scan_n + confirm_n
+    if required > len(item["teacher_probability"]):
+        raise ValueError("diagnostic splits exceed the cached training set")
+
+    def unpack(split_item, lo, hi):
+        packed = split_item["packed_bits"][lo:hi].numpy()
+        bits = np.unpackbits(
+            packed, axis=-1, count=n_bits, bitorder="little"
+        ).astype(np.float32, copy=False)
+        probability = split_item["teacher_probability"][lo:hi].float().numpy()
+        return torch.from_numpy(bits).cuda(), torch.from_numpy(probability).cuda()
+
+    scan_bits, scan_probability = unpack(item, 0, scan_n)
+    confirm_bits, confirm_probability = unpack(item, scan_n, required)
+    val_item = source["splits"]["val"]
+    val_bits = torch.from_numpy(np.unpackbits(
+        val_item["packed_bits"].numpy(), axis=-1, count=n_bits,
+        bitorder="little",
+    ).astype(np.float32, copy=False)).cuda()
+    val_probability = val_item["teacher_probability"].float().cuda()
+    del source, item, val_item
+    rows, degrees = deterministic_mask_rows(
+        n_bits, terms, max_degree=8, seed=seed
+    )
+
+    def dense_mask(index_rows):
+        count = len(index_rows)
+        hard = torch.zeros((count, n_bits), device="cuda")
+        block = torch.from_numpy(index_rows.astype(np.int64)).cuda()
+        active = block < n_bits
+        row = torch.arange(count, device="cuda")[:, None].expand_as(block)[active]
+        hard[row, block[active]] = 1.0
+        return hard
+
+    @torch.no_grad()
+    def correlations(bits, probability, index_rows):
+        centered = probability - probability.mean()
+        target_ss = centered.square().sum()
+        output = []
+        for lo in range(0, len(index_rows), char_chunk):
+            block_rows = index_rows[lo:lo + char_chunk]
+            hard = dense_mask(block_rows)
+            character = 1.0 - 2.0 * torch.remainder(bits @ hard.t(), 2.0)
+            mean = character.mean(dim=0)
+            dot = character.t() @ centered
+            denominator = (
+                len(bits) * (1.0 - mean.square()).clamp_min(1e-8) * target_ss
+            ).sqrt()
+            output.append((dot / denominator).float().cpu())
+        return torch.cat(output).numpy()
+
+    @torch.no_grad()
+    def character_matrix(bits, index_rows):
+        output = []
+        for lo in range(0, len(index_rows), char_chunk):
+            hard = dense_mask(index_rows[lo:lo + char_chunk])
+            output.append(
+                1.0 - 2.0 * torch.remainder(bits @ hard.t(), 2.0)
+            )
+        return torch.cat(output, dim=1)
+
+    scan = correlations(scan_bits, scan_probability, rows)
+    selected = np.argpartition(np.abs(scan), -top_k)[-top_k:]
+    selected = selected[np.argsort(-np.abs(scan[selected]))]
+    confirm = correlations(confirm_bits, confirm_probability, rows[selected])
+    validation = correlations(val_bits, val_probability, rows[selected])
+    probe_signatures = []
+    for lo in range(0, terms, char_chunk):
+        character = character_matrix(
+            scan_bits[:1024], rows[lo:lo + char_chunk]
+        )
+        probe_signatures.append(np.packbits(
+            (character < 0).cpu().numpy(), axis=0, bitorder="little"
+        ).T)
+    probe_signatures = np.concatenate(probe_signatures, axis=0)
+    functional_unique = len(np.unique(probe_signatures, axis=0))
+    selected_character = character_matrix(val_bits, rows[selected])
+    selected_signatures = np.packbits(
+        (selected_character < 0).cpu().numpy(), axis=0, bitorder="little"
+    ).T
+    selected_functional_unique = len(np.unique(selected_signatures, axis=0))
+    centered_character = selected_character - selected_character.mean(0)
+    centered_character /= centered_character.norm(dim=0).clamp_min(1e-8)
+    gram = centered_character.t() @ centered_character
+    squared_frobenius = float(gram.square().sum())
+    effective_rank = float(gram.trace().square()) / max(
+        1e-12, squared_frobenius
+    )
+    off_diagonal = gram.abs()[
+        ~torch.eye(len(gram), dtype=torch.bool, device=gram.device)
+    ]
+    combined_bits = torch.cat((scan_bits, confirm_bits, val_bits), dim=0)
+    input_signatures = np.packbits(
+        combined_bits.bool().cpu().numpy(), axis=0, bitorder="little"
+    ).T
+    input_ones = combined_bits.sum(0).cpu().numpy()
+    result = {
+        "terms": terms,
+        "scan_n": scan_n,
+        "confirm_n": confirm_n,
+        "top_k": top_k,
+        "top_scan_abs_correlation": float(np.abs(scan[selected[0]])),
+        "top_confirm_abs_correlation": float(np.abs(confirm).max()),
+        "top_validation_abs_correlation": float(np.abs(validation).max()),
+        "selected_scan_confirm_cosine": float(
+            np.dot(scan[selected], confirm)
+            / max(1e-12, np.linalg.norm(scan[selected]) * np.linalg.norm(confirm))
+        ),
+        "selected_scan_validation_cosine": float(
+            np.dot(scan[selected], validation)
+            / max(
+                1e-12,
+                np.linalg.norm(scan[selected]) * np.linalg.norm(validation),
+            )
+        ),
+        "selected_confirm_sign_agreement": float(
+            np.mean(np.sign(scan[selected]) == np.sign(confirm))
+        ),
+        "selected_validation_sign_agreement": float(
+            np.mean(np.sign(scan[selected]) == np.sign(validation))
+        ),
+        "functional_unique_probe_1024": functional_unique,
+        "functional_duplicate_fraction_probe_1024": 1.0 - (
+            functional_unique / terms
+        ),
+        "selected_functional_unique_validation": selected_functional_unique,
+        "selected_effective_rank_validation": effective_rank,
+        "selected_mean_abs_off_diagonal_correlation": float(
+            off_diagonal.mean()
+        ),
+        "selected_p99_abs_off_diagonal_correlation": float(
+            torch.quantile(off_diagonal, 0.99)
+        ),
+        "input_constant_zero_columns": int((input_ones == 0).sum()),
+        "input_constant_one_columns": int(
+            (input_ones == len(combined_bits)).sum()
+        ),
+        "input_unique_column_signatures": len(
+            np.unique(input_signatures, axis=0)
+        ),
+    }
+    for threshold in (0.005, 0.01, 0.02, 0.05):
+        label = str(threshold).replace(".", "p")
+        result[f"selected_confirm_abs_gt_{label}"] = int(
+            (np.abs(confirm) > threshold).sum()
+        )
+        result[f"selected_validation_abs_gt_{label}"] = int(
+            (np.abs(validation) > threshold).sum()
+        )
+    for degree in range(1, 9):
+        active = degrees == degree
+        values = np.abs(scan[active])
+        result[f"degree_{degree}/count"] = int(active.sum())
+        result[f"degree_{degree}/scan_abs_p99"] = float(
+            np.quantile(values, 0.99)
+        )
+        result[f"degree_{degree}/scan_abs_max"] = float(values.max())
+        chosen = degrees[selected] == degree
+        result[f"degree_{degree}/selected"] = int(chosen.sum())
+        result[f"degree_{degree}/confirm_abs_median"] = (
+            float(np.median(np.abs(confirm[chosen]))) if chosen.any() else 0.0
+        )
+        result[f"degree_{degree}/validation_abs_median"] = (
+            float(np.median(np.abs(validation[chosen]))) if chosen.any() else 0.0
+        )
+    prefix = min(131072, terms)
+    result["prefix_scan_abs_max"] = float(np.abs(scan[:prefix]).max())
+    result["extra_scan_abs_max"] = (
+        float(np.abs(scan[prefix:]).max()) if prefix < terms else 0.0
+    )
+    run = wandb.init(
+        project="fda-fourier-noun", group="fourier-kiss",
+        name=f"fourier-kiss-diagnose-x{terms}-s{seed}",
+        job_type="bank-diagnosis",
+        config={
+            "terms": terms, "scan_n": scan_n, "confirm_n": confirm_n,
+            "top_k": top_k, "char_chunk": char_chunk, "seed": seed,
+        },
+    )
+    run.log(result)
+    run.summary.update(result)
+    result["wandb_url"] = run.url
+    run.finish()
+    print(json.dumps(result, indent=2, sort_keys=True), flush=True)
+    return result
 
 
 @app.function(image=image, secrets=WANDB_SECRET)
@@ -598,6 +824,10 @@ def main(stage: str = "scale", x: int = 524288, steps: int = 1000,
             seed=seed, mask_lr=mask_lr, coefficient_lr=coefficient_lr,
             diversity_weight=diversity_weight,
             diversity_sample=min(diversity_sample, 256),
+        ))
+    elif stage == "diagnose":
+        print(diagnose_bank.remote(
+            terms=x, char_chunk=char_chunk, seed=seed,
         ))
     else:
         raise SystemExit(f"unknown stage {stage!r}")

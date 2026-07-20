@@ -6,6 +6,7 @@ import torch
 
 from fourier_kiss.model import (
     DirectWalshStudent,
+    binary_metrics,
     decode_compact_student,
     deterministic_mask_rows,
     encode_compact_student,
@@ -14,6 +15,18 @@ from fourier_kiss.model import (
     sampled_diversity_loss,
     sparse_logits,
 )
+
+
+def test_binary_metrics_report_positive_rates_and_normalized_information():
+    target = np.array([0.1, 0.2, 0.8, 0.9])
+    logits = np.log(target / (1.0 - target))
+    metrics = binary_metrics(logits, target)
+    assert metrics["teacher_positive_rate"] == pytest.approx(0.5)
+    assert metrics["student_positive_rate"] == pytest.approx(0.5)
+    assert metrics["balanced_agreement"] == pytest.approx(1.0)
+    assert metrics["hard_mutual_information_bits"] == pytest.approx(1.0)
+    assert metrics["hard_mutual_information_fraction"] == pytest.approx(1.0)
+    assert metrics["absolute_error_variance"] == pytest.approx(0.0, abs=1e-15)
 
 
 def test_deterministic_masks_are_prefix_stable_and_cover_bits():

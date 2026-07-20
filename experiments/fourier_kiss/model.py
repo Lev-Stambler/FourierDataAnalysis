@@ -469,6 +469,28 @@ def binary_metrics(logits: np.ndarray | torch.Tensor,
     positive = teacher_hard.sum().clamp_min(1)
     negative = (~teacher_hard).sum().clamp_min(1)
     teacher_variance = (target - target.mean()).square().sum()
+    joint = torch.stack([
+        ((~teacher_hard) & (~student_hard)).sum(),
+        ((~teacher_hard) & student_hard).sum(),
+        (teacher_hard & (~student_hard)).sum(),
+        (teacher_hard & student_hard).sum(),
+    ]).reshape(2, 2).double()
+    joint /= joint.sum().clamp_min(1.0)
+    independent = joint.sum(dim=1, keepdim=True) * joint.sum(
+        dim=0, keepdim=True
+    )
+    active_joint = joint > 0
+    hard_mi = float(
+        (joint[active_joint] * torch.log2(
+            joint[active_joint] / independent[active_joint].clamp_min(1e-12)
+        )).sum()
+    )
+    teacher_rate = float(teacher_hard.double().mean())
+    teacher_hard_entropy = (
+        -teacher_rate * math.log2(teacher_rate)
+        - (1.0 - teacher_rate) * math.log2(1.0 - teacher_rate)
+        if 0.0 < teacher_rate < 1.0 else 0.0
+    )
 
     def cosine(left: torch.Tensor, right: torch.Tensor) -> float:
         denominator = left.norm() * right.norm()
@@ -493,6 +515,16 @@ def binary_metrics(logits: np.ndarray | torch.Tensor,
             torch.logit(target) - torch.logit(target).mean(), z - z.mean()
         ),
         "agreement": float((teacher_hard == student_hard).double().mean()),
+        "balanced_agreement": 0.5 * float(
+            (teacher_hard & student_hard).sum() / positive
+            + ((~teacher_hard) & (~student_hard)).sum() / negative
+        ),
+        "teacher_positive_rate": teacher_rate,
+        "student_positive_rate": float(student_hard.double().mean()),
+        "hard_mutual_information_bits": hard_mi,
+        "hard_mutual_information_fraction": (
+            hard_mi / teacher_hard_entropy if teacher_hard_entropy else 0.0
+        ),
         "teacher_positive_recall": float(
             (teacher_hard & student_hard).sum() / positive
         ),
@@ -500,6 +532,7 @@ def binary_metrics(logits: np.ndarray | torch.Tensor,
             ((~teacher_hard) & (~student_hard)).sum() / negative
         ),
         "absolute_error_max": float(absolute.max()),
+        "absolute_error_variance": float(absolute.var(unbiased=False)),
         "absolute_error_p50": float(quantiles[0]),
         "absolute_error_p90": float(quantiles[1]),
         "absolute_error_p95": float(quantiles[2]),
