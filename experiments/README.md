@@ -33,6 +33,14 @@ Variable-degree top-k hardening sorts the top-eight candidates before taking
 each row's requested degree, so degree-1 through degree-7 characters always
 use their actual highest-scoring coordinates.
 
+Teacher sharpening is a log-odds multiplier (`--teacher-sharpness`), not the
+usual softening temperature: 2.0 is equivalent to temperature 0.5. The
+original cached teacher remains the canonical evaluation distribution. Each
+run exports a constrained-agreement champion and an uncalibrated minimum-KL
+champion, and reports KL, MAE/RMSE, p50/p90/p95/p99 absolute error,
+confidence-bucketed MAE, probability/logit centered cosine, probability R²,
+and hard mutual information normalized by teacher-label entropy.
+
 ```bash
 uv run pytest tests/test_fourier_noun.py -q
 uv run modal run modal_fourier_noun.py --stage pilot
@@ -49,6 +57,16 @@ uv run modal run modal_fourier_noun.py --stage v4-pilot \
   --m 131072 --steps 1500 --batch-size 16384 --extra-train-repeat 10 \
   --mask-lr 1.0 --coefficient-lr 0.03 \
   --mask-discovery-fraction 1 --mask-schedule global_cosine
+uv run modal run modal_fourier_noun.py --stage sharpness-screen \
+  --train-n 1000000 --student-length 128 --lsh-bits 32 \
+  --batch-size 16384 --extra-train-repeat 10
+uv run modal run modal_fourier_noun.py --stage sharpness-full \
+  --train-n 1000000 --student-length 128 --lsh-bits 32 \
+  --batch-size 16384 --extra-train-repeat 10
+uv run modal run modal_fourier_noun.py --stage kl-ensemble \
+  --train-n 1000000 --student-length 128 --lsh-bits 32 \
+  --model-paths /cache/fourier_noun/models/member-a.npz,/cache/fourier_noun/models/member-b.npz \
+  --max-terms 495000
 ```
 
 Artifacts use `fda-cache` under `/cache/fourier_noun`; W&B project:
@@ -65,9 +83,17 @@ weighted three-support hybrid Fourier sum with a 70% validation positive-recall
 constraint reaches 91.27% held-out teacher agreement, 66.50% positive recall,
 and 95.56% negative recall. It exports to a standalone 7,632,448-byte NPZ:
 209.63× smaller than 1.6 GB of teacher weights. The `web-pilot` path streams
-unique
-`(document, token-index)` targets while retaining balanced EWT validation and
-test splits; `v2-pilot` reuses cached schema-6 teacher probabilities without
+unique `(document, token-index)` targets while retaining balanced EWT
+validation and test splits. For distribution fidelity, `kl-ensemble` fits a
+nonnegative validation-BCE logit stack, deduplicates identical characters
+globally, prunes by weighted coefficient magnitude, and refits its final affine
+calibration.
+The 495,000-character run exports to 15,866,126 bytes (100.84× compression)
+and reaches test KL 0.01331, probability MAE 0.05426, RMSE 0.07407, and R²
+0.7959. Artifact creation fails if the exact serialized size exceeds the 16 MB
+budget.
+
+`v2-pilot` reuses cached schema-6 teacher probabilities without
 rerunning Qwen, and `v3-pilot` appends 64 prompt-context token slots while
 reusing the same cached teacher probabilities. Exact sparse inference is
 vectorized over the degree-8 CSR masks. Every vocabulary token retains a

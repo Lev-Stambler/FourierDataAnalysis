@@ -8,9 +8,11 @@ import torch
 from fda_exp.fourier_noun import (
     HardWalshStudent,
     TrainConfig,
+    binary_metrics,
     build_lsh_codes_numpy,
     calibrate_agreement_threshold,
     export_sparse_student,
+    fit_probability_logit_stack,
     format_noun_payload,
     format_student_fields,
     iter_text_examples,
@@ -22,6 +24,7 @@ from fda_exp.fourier_noun import (
     restricted_binary_probability,
     sample_ud_examples,
     sparse_student_logits,
+    sharpen_probability,
     tokens_to_lsh_bits,
     tokenize_student_fields,
     train_student,
@@ -117,6 +120,73 @@ def test_restricted_teacher_probability_is_two_class_softmax():
     torch.testing.assert_close(actual, expected)
 
 
+def test_probability_sharpness_preserves_labels_and_reduces_entropy():
+    probability = torch.tensor([0.0, 0.1, 0.49, 0.5, 0.51, 0.9, 1.0])
+    identity = sharpen_probability(probability, 1.0)
+    torch.testing.assert_close(
+        identity[1:-1], probability[1:-1], rtol=1e-5, atol=1e-7
+    )
+    previous_entropy = math.inf
+    for sharpness in (1.0, 2.0, 4.0, 8.0, 16.0, 32.0):
+        sharpened = sharpen_probability(probability, sharpness)
+        assert torch.equal(sharpened >= 0.5, probability >= 0.5)
+        entropy = float(torch.nn.functional.binary_cross_entropy(
+            sharpened, sharpened
+        ))
+        assert entropy <= previous_entropy + 1e-7
+        previous_entropy = entropy
+        assert torch.isfinite(sharpened).all()
+
+
+def test_information_and_probability_divergence_metrics():
+    teacher = np.array([0.1, 0.2, 0.8, 0.9])
+    logits = np.log(teacher / (1.0 - teacher))
+    exact = binary_metrics(logits, teacher)
+    assert exact["kl"] == pytest.approx(0.0, abs=1e-12)
+    assert exact["probability_cosine"] == pytest.approx(1.0)
+    assert exact["centered_probability_cosine"] == pytest.approx(1.0)
+    assert exact["centered_logit_cosine"] == pytest.approx(1.0)
+    assert exact["probability_absolute_error_mean"] == pytest.approx(0.0)
+    assert exact["probability_absolute_error_max"] == pytest.approx(0.0)
+    assert exact["probability_absolute_error_variance"] == pytest.approx(0.0)
+    assert exact["probability_rmse"] == pytest.approx(0.0)
+    assert exact["probability_r_squared"] == pytest.approx(1.0)
+    for quantile in ("p50", "p90", "p95", "p99"):
+        assert exact[f"probability_absolute_error_{quantile}"] == pytest.approx(0.0)
+    assert exact["probability_residual_mean"] == pytest.approx(0.0)
+    assert exact["probability_residual_variance"] == pytest.approx(0.0)
+    assert exact["hard_mutual_information_fraction"] == pytest.approx(1.0)
+
+    opposite = binary_metrics(-logits, teacher)
+    expected_absolute = np.abs((1.0 - teacher) - teacher)
+    assert opposite["probability_absolute_error_mean"] == pytest.approx(
+        expected_absolute.mean()
+    )
+    assert opposite["probability_absolute_error_max"] == pytest.approx(
+        expected_absolute.max()
+    )
+    assert opposite["probability_absolute_error_variance"] == pytest.approx(
+        expected_absolute.var()
+    )
+    assert opposite["probability_rmse"] == pytest.approx(
+        np.sqrt(np.mean(np.square((1.0 - teacher) - teacher)))
+    )
+    assert opposite["probability_absolute_error_p50"] == pytest.approx(
+        np.quantile(expected_absolute, 0.50)
+    )
+    assert opposite["probability_mae_teacher_confidence_75_90"] == pytest.approx(
+        expected_absolute[[1, 2]].mean()
+    )
+    assert all(math.isfinite(value) for value in opposite.values())
+
+
+def test_information_metrics_are_finite_for_single_class_teacher():
+    metrics = binary_metrics(np.full(8, -3.0), np.zeros(8))
+    assert metrics["hard_mutual_information_bits"] == pytest.approx(0.0)
+    assert metrics["hard_mutual_information_fraction"] == pytest.approx(0.0)
+    assert all(math.isfinite(value) for value in metrics.values())
+
+
 def test_agreement_threshold_maximizes_validation_accuracy():
     logits = np.array([-3.0, -2.0, 0.1, 0.2, 0.3])
     teacher = np.array([0.1, 0.9, 0.8, 0.2, 0.9])
@@ -129,6 +199,21 @@ def test_agreement_threshold_maximizes_validation_accuracy():
     teacher_positive = teacher >= 0.5
     recall = ((logits >= constrained) & teacher_positive).sum() / teacher_positive.sum()
     assert recall == pytest.approx(1.0)
+
+
+def test_probability_logit_stack_recovers_soft_teacher_mixture():
+    rng = np.random.default_rng(91)
+    members = rng.normal(size=(3, 512))
+    expected_weights = np.array([0.25, 0.0, 1.1])
+    expected_bias = -0.37
+    teacher_logit = expected_weights @ members + expected_bias
+    teacher = 1.0 / (1.0 + np.exp(-teacher_logit))
+    weights, bias = fit_probability_logit_stack(members, teacher, l2=0.0)
+    fitted = weights @ members + bias
+    assert np.all(weights >= 0)
+    np.testing.assert_allclose(fitted, teacher_logit, atol=2e-5)
+    np.testing.assert_allclose(weights, expected_weights, atol=2e-5)
+    assert bias == pytest.approx(expected_bias, abs=2e-5)
 
 
 def test_hard_walsh_forward_is_exact_xor_and_gradients_are_alive():
@@ -330,10 +415,11 @@ def test_training_beats_bias_on_a_planted_initial_character():
         ste_variant="logspace", mask_parameterization="threshold",
         mask_init_magnitude=8.0,
     )
-    _, summary = train_student(
+    _, summary, distribution_student = train_student(
         bits[:1024], probability[:1024], bits[1024:], probability[1024:],
         gold[1024:], config, device="cpu",
     )
     assert math.isfinite(summary["val"]["ce"])
     assert summary["val"]["ce"] < summary["baseline"]["ce"]
     assert summary["val"]["agreement"] > summary["baseline"]["agreement"] + 0.1
+    assert distribution_student["coefficient"].ndim == 1

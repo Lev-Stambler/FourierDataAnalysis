@@ -655,6 +655,8 @@ class TrainConfig:
     ste_scale: float = 0.01
     mask_parameterization: str = "topk"
     hard_target_mix: float = 0.25
+    teacher_sharpness: float = 1.0
+    minimum_positive_recall: float = 0.70
     mask_discovery_fraction: float = 0.15
     mask_delay_fraction: float = 0.0
     mask_schedule: str = "discovery_cosine"
@@ -675,6 +677,54 @@ def warmup_cosine_factor(step: int, total_steps: int, warmup_steps: int,
     return minimum_ratio + (1.0 - minimum_ratio) * cosine
 
 
+def sharpen_probability(probability: torch.Tensor | np.ndarray,
+                        sharpness: float = 1.0,
+                        epsilon: float = 1e-6) -> torch.Tensor:
+    """Sharpen Bernoulli probabilities without changing their hard labels.
+
+    ``sharpness`` multiplies log-odds, so values above one correspond to a
+    conventional distillation temperature below one.
+    """
+    if not math.isfinite(sharpness) or sharpness <= 0:
+        raise ValueError("sharpness must be finite and positive")
+    if not 0 < epsilon < 0.5:
+        raise ValueError("epsilon must lie in (0,0.5)")
+    value = torch.as_tensor(probability)
+    if not value.is_floating_point():
+        value = value.float()
+    clipped = value.clamp(epsilon, 1.0 - epsilon)
+    return torch.sigmoid(torch.logit(clipped) * sharpness)
+
+
+def _safe_cosine(left: torch.Tensor, right: torch.Tensor) -> float:
+    denominator = left.norm() * right.norm()
+    if float(denominator) <= torch.finfo(left.dtype).eps:
+        return float(torch.allclose(left, right, rtol=1e-7, atol=1e-9))
+    return float(torch.dot(left, right) / denominator)
+
+
+def _mutual_information_bits(joint: torch.Tensor) -> float:
+    joint = joint.to(torch.float64)
+    total = joint.sum()
+    if float(total) <= 0:
+        return 0.0
+    joint = joint / total
+    left = joint.sum(dim=1, keepdim=True)
+    right = joint.sum(dim=0, keepdim=True)
+    independent = left @ right
+    active = joint > 0
+    return float((joint[active] * torch.log2(
+        joint[active] / independent[active].clamp_min(1e-300)
+    )).sum())
+
+
+def _binary_entropy_bits(positive_rate: torch.Tensor) -> float:
+    value = positive_rate.to(torch.float64).clamp(0.0, 1.0)
+    terms = torch.stack((value, 1.0 - value))
+    active = terms > 0
+    return float(-(terms[active] * torch.log2(terms[active])).sum())
+
+
 def binary_metrics(logits: torch.Tensor | np.ndarray,
                    teacher_probability: torch.Tensor | np.ndarray,
                    gold: torch.Tensor | np.ndarray | None = None) -> dict[str, float]:
@@ -692,16 +742,102 @@ def binary_metrics(logits: torch.Tensor | np.ndarray,
     teacher_negative = len(teacher_answer) - teacher_positive
     positive_recall = float((answer & teacher_answer).sum() / max(1, teacher_positive))
     negative_recall = float((~answer & ~teacher_answer).sum() / max(1, teacher_negative))
+    teacher_logit = torch.logit(p.clamp(1e-6, 1.0 - 1e-6))
+    logit_limit = float(abs(torch.logit(torch.tensor(1e-6, dtype=z.dtype))))
+    clipped_logit = z.clamp(-logit_limit, logit_limit)
+    probability_residual = probability - p
+    absolute_probability_residual = probability_residual.abs()
+    hard_joint = torch.zeros((2, 2), dtype=torch.float64)
+    hard_joint.index_put_(
+        (teacher_answer.to(torch.long), answer.to(torch.long)),
+        torch.ones_like(z), accumulate=True,
+    )
+    hard_mi = _mutual_information_bits(hard_joint)
+    hard_entropy = _binary_entropy_bits(teacher_answer.double().mean())
+    teacher_pair = torch.stack((1.0 - p, p), dim=1)
+    student_pair = torch.stack((1.0 - probability, probability), dim=1)
+    soft_joint = torch.einsum("ni,nj->ij", teacher_pair, student_pair) / len(z)
+    soft_mi = _mutual_information_bits(soft_joint)
+    soft_entropy = _binary_entropy_bits(p.mean())
+    kl = float(ce - entropy)
+    squared_error = probability_residual.square()
+    teacher_variance_sum = (p - p.mean()).square().sum()
+    r_squared = (
+        1.0 - float(squared_error.sum() / teacher_variance_sum)
+        if float(teacher_variance_sum) > 0
+        else float(torch.allclose(probability, p, rtol=1e-7, atol=1e-9))
+    )
+    quantiles = torch.quantile(
+        absolute_probability_residual,
+        torch.tensor([0.50, 0.90, 0.95, 0.99], dtype=z.dtype),
+    )
+    confidence = torch.maximum(p, 1.0 - p)
+
+    def confidence_mae(lower: float, upper: float | None) -> tuple[float, int]:
+        active = confidence >= lower
+        if upper is not None:
+            active &= confidence < upper
+        count = int(active.sum())
+        return (
+            float(absolute_probability_residual[active].mean()) if count else 0.0,
+            count,
+        )
+
+    confidence_rows = {
+        "50_60": confidence_mae(0.50, 0.60),
+        "60_75": confidence_mae(0.60, 0.75),
+        "75_90": confidence_mae(0.75, 0.90),
+        "90_100": confidence_mae(0.90, None),
+    }
     result = {
         "ce": float(ce),
-        "kl": float(ce - entropy),
+        "kl": kl,
+        "kl_bits": kl / math.log(2.0),
         "agreement": float((answer == teacher_answer).double().mean()),
         "balanced_agreement": 0.5 * (positive_recall + negative_recall),
         "teacher_positive_recall": positive_recall,
         "teacher_negative_recall": negative_recall,
         "teacher_positive_rate": teacher_positive / max(1, len(teacher_answer)),
-        "brier": float(((probability - p) ** 2).mean()),
+        "brier": float(squared_error.mean()),
+        "probability_rmse": float(squared_error.mean().sqrt()),
+        "probability_r_squared": r_squared,
+        "probability_absolute_error_mean": float(
+            absolute_probability_residual.mean()
+        ),
+        "probability_absolute_error_max": float(
+            absolute_probability_residual.max()
+        ),
+        "probability_absolute_error_variance": float(
+            absolute_probability_residual.var(unbiased=False)
+        ),
+        "probability_absolute_error_p50": float(quantiles[0]),
+        "probability_absolute_error_p90": float(quantiles[1]),
+        "probability_absolute_error_p95": float(quantiles[2]),
+        "probability_absolute_error_p99": float(quantiles[3]),
+        "probability_residual_mean": float(probability_residual.mean()),
+        "probability_residual_variance": float(
+            probability_residual.var(unbiased=False)
+        ),
+        "probability_cosine": _safe_cosine(p, probability),
+        "centered_probability_cosine": _safe_cosine(
+            p - p.mean(), probability - probability.mean()
+        ),
+        "centered_logit_cosine": _safe_cosine(
+            teacher_logit - teacher_logit.mean(),
+            clipped_logit - clipped_logit.mean(),
+        ),
+        "hard_mutual_information_bits": hard_mi,
+        "hard_mutual_information_fraction": (
+            hard_mi / hard_entropy if hard_entropy > 0 else 0.0
+        ),
+        "soft_mutual_information_bits": soft_mi,
+        "soft_mutual_information_fraction": (
+            soft_mi / soft_entropy if soft_entropy > 0 else 0.0
+        ),
     }
+    for bucket, (mae, count) in confidence_rows.items():
+        result[f"probability_mae_teacher_confidence_{bucket}"] = mae
+        result[f"teacher_confidence_{bucket}_count"] = count
     if gold is not None:
         y = torch.as_tensor(gold, dtype=torch.bool).reshape(-1)
         if len(y) != len(z):
@@ -746,6 +882,52 @@ def calibrate_agreement_threshold(logits: torch.Tensor | np.ndarray,
         if positive_recall >= minimum_positive_recall and correct > best_correct:
             best_correct, best_threshold = correct, threshold
     return best_threshold, best_correct / len(y)
+
+
+def fit_probability_logit_stack(member_logits: np.ndarray,
+                                teacher_probability: np.ndarray,
+                                max_iter: int = 300,
+                                l2: float = 1e-6,
+                                ) -> tuple[np.ndarray, float]:
+    """Fit a nonnegative logit mixture plus bias by validation soft BCE.
+
+    A softmax mixture and positive global scale are optimized separately. The
+    returned effective weights already include the scale, making deployment a
+    single weighted Fourier sum plus bias.
+    """
+    values = np.asarray(member_logits, dtype=np.float64)
+    target = np.asarray(teacher_probability, dtype=np.float64).reshape(-1)
+    if values.ndim != 2 or values.shape[1] != len(target) or not len(target):
+        raise ValueError("member_logits must be [members,examples]")
+    if values.shape[0] < 1 or max_iter <= 0 or l2 < 0:
+        raise ValueError("invalid stack optimizer configuration")
+    logits = torch.as_tensor(values, dtype=torch.float64)
+    probability = torch.as_tensor(target, dtype=torch.float64)
+    mixture_logits = torch.zeros(values.shape[0], dtype=torch.float64,
+                                  requires_grad=True)
+    log_scale = torch.zeros((), dtype=torch.float64, requires_grad=True)
+    bias = torch.zeros((), dtype=torch.float64, requires_grad=True)
+    optimizer = torch.optim.LBFGS(
+        [mixture_logits, log_scale, bias], lr=0.8, max_iter=max_iter,
+        tolerance_grad=1e-12, tolerance_change=1e-14,
+        line_search_fn="strong_wolfe",
+    )
+
+    def closure():
+        optimizer.zero_grad(set_to_none=True)
+        mixture = mixture_logits.softmax(dim=0)
+        scale = log_scale.exp()
+        prediction = scale * (mixture @ logits) + bias
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            prediction, probability
+        ) + l2 * scale.square()
+        loss.backward()
+        return loss
+
+    optimizer.step(closure)
+    with torch.no_grad():
+        weights = log_scale.exp() * mixture_logits.softmax(dim=0)
+    return weights.numpy(), float(bias.detach())
 
 
 def _gradient_norm(parameters: Sequence[nn.Parameter]) -> float:
@@ -814,7 +996,8 @@ def _sparse_mask_changed_fraction(model: HardWalshStudent,
 @torch.no_grad()
 def evaluate_student(model: nn.Module, bits: torch.Tensor,
                      teacher_probability: torch.Tensor, gold: torch.Tensor,
-                     batch_size: int = 8192) -> dict[str, float]:
+                     batch_size: int = 8192, teacher_sharpness: float = 1.0,
+                     minimum_positive_recall: float = 0.0) -> dict[str, float]:
     was_training = model.training
     model.eval()
     outputs = []
@@ -824,11 +1007,42 @@ def evaluate_student(model: nn.Module, bits: torch.Tensor,
         model.train()
     logits = torch.cat(outputs)
     result = binary_metrics(logits, teacher_probability.cpu(), gold.cpu())
-    threshold, agreement = calibrate_agreement_threshold(
-        logits, teacher_probability.cpu()
+    sharpened = sharpen_probability(
+        teacher_probability.cpu(), teacher_sharpness
     )
+    sharpened_metrics = binary_metrics(logits, sharpened)
+    for key in (
+        "ce", "kl", "kl_bits", "brier", "probability_cosine",
+        "centered_probability_cosine", "centered_logit_cosine",
+        "soft_mutual_information_bits", "soft_mutual_information_fraction",
+        "probability_absolute_error_mean", "probability_absolute_error_max",
+        "probability_absolute_error_variance", "probability_residual_mean",
+        "probability_residual_variance", "probability_rmse",
+        "probability_r_squared", "probability_absolute_error_p50",
+        "probability_absolute_error_p90", "probability_absolute_error_p95",
+        "probability_absolute_error_p99",
+        "probability_mae_teacher_confidence_50_60",
+        "probability_mae_teacher_confidence_60_75",
+        "probability_mae_teacher_confidence_75_90",
+        "probability_mae_teacher_confidence_90_100",
+    ):
+        result[f"sharpened_{key}"] = sharpened_metrics[key]
+    threshold, agreement = calibrate_agreement_threshold(
+        logits, teacher_probability.cpu(), minimum_positive_recall
+    )
+    calibrated = logits >= threshold
+    teacher_answer = teacher_probability.cpu() >= 0.5
+    positives = teacher_answer.sum().clamp_min(1)
+    negatives = (~teacher_answer).sum().clamp_min(1)
+    positive_recall = float((calibrated & teacher_answer).sum() / positives)
+    negative_recall = float((~calibrated & ~teacher_answer).sum() / negatives)
     result["calibrated_agreement"] = agreement
     result["calibrated_threshold"] = threshold
+    result["calibrated_teacher_positive_recall"] = positive_recall
+    result["calibrated_teacher_negative_recall"] = negative_recall
+    result["calibrated_balanced_agreement"] = 0.5 * (
+        positive_recall + negative_recall
+    )
     return result
 
 
@@ -851,6 +1065,10 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
     logger = log or (lambda _: None)
     if not 0.0 <= config.hard_target_mix <= 1.0:
         raise ValueError("hard_target_mix must lie in [0,1]")
+    if not math.isfinite(config.teacher_sharpness) or config.teacher_sharpness <= 0:
+        raise ValueError("teacher_sharpness must be finite and positive")
+    if not 0.0 <= config.minimum_positive_recall <= 1.0:
+        raise ValueError("minimum_positive_recall must lie in [0,1]")
     if config.loss_scale <= 0:
         raise ValueError("loss_scale must be positive")
     if config.mask_init_magnitude <= 0:
@@ -937,6 +1155,10 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
     start_step = 0
     best_ce = math.inf
     best_calibrated_agreement = -math.inf
+    best_calibrated_balanced_agreement = -math.inf
+    best_distribution_kl = math.inf
+    best_distribution_step = 0
+    best_distribution_student: dict[str, Any] | None = None
     best_step = 0
     stale = 0
     best_state: dict[str, torch.Tensor] | None = None
@@ -950,6 +1172,12 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
         best_calibrated_agreement = float(
             saved.get("best_calibrated_agreement", -math.inf)
         )
+        best_calibrated_balanced_agreement = float(
+            saved.get("best_calibrated_balanced_agreement", -math.inf)
+        )
+        best_distribution_kl = float(saved.get("best_distribution_kl", math.inf))
+        best_distribution_step = int(saved.get("best_distribution_step", 0))
+        best_distribution_student = saved.get("best_distribution_student")
         best_step = int(saved["best_step"])
         stale = int(saved["stale"])
         best_state = saved.get("best_state")
@@ -973,23 +1201,36 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
         torch.full_like(pva, base_logit).cpu(), pva.cpu(), yva.cpu()
     )
     try:
-        initial = evaluate_student(train_model, xva, pva, yva, config.batch_size)
+        initial = evaluate_student(
+            train_model, xva, pva, yva, config.batch_size,
+            config.teacher_sharpness, config.minimum_positive_recall,
+        )
     except Exception as error:
         if train_model is model:
             raise
         compile_error = repr(error)
         train_model = model
-        initial = evaluate_student(train_model, xva, pva, yva, config.batch_size)
+        initial = evaluate_student(
+            train_model, xva, pva, yva, config.batch_size,
+            config.teacher_sharpness, config.minimum_positive_recall,
+        )
     if best_state is None:
         best_ce = initial["ce"]
         best_calibrated_agreement = initial["calibrated_agreement"]
+        best_calibrated_balanced_agreement = initial[
+            "calibrated_balanced_agreement"
+        ]
         best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+    if best_distribution_student is None:
+        best_distribution_kl = initial["kl"]
+        best_distribution_student = export_sparse_student(model)
     logger({"global_step": start_step, **{f"val/{k}": v for k, v in initial.items()},
             **{f"baseline/{k}": v for k, v in baseline.items()}})
     history: list[dict[str, Any]] = []
     loop_started = time.perf_counter()
     last_log = loop_started
     current = start_step
+    sharpened_train_probability = sharpen_probability(ptr, config.teacher_sharpness)
     hard_train_target = (ptr >= 0.5).to(ptr.dtype)
     positive_weight = None
     if config.balance_teacher_classes:
@@ -1009,7 +1250,7 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
         optimizer.zero_grad(set_to_none=True)
         try:
             logits = train_model(xtr[selection])
-            selected_probability = ptr[selection]
+            selected_probability = sharpened_train_probability[selection]
             training_target = torch.lerp(
                 selected_probability,
                 (selected_probability >= 0.5).to(selected_probability.dtype),
@@ -1027,7 +1268,7 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
             train_model = model
             optimizer.zero_grad(set_to_none=True)
             logits = train_model(xtr[selection])
-            selected_probability = ptr[selection]
+            selected_probability = sharpened_train_probability[selection]
             training_target = torch.lerp(
                 selected_probability,
                 (selected_probability >= 0.5).to(selected_probability.dtype),
@@ -1072,7 +1313,10 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
             logger(row)
             history.append(row)
         if current % config.eval_every == 0 or current == config.steps:
-            metrics = evaluate_student(train_model, xva, pva, yva, config.batch_size)
+            metrics = evaluate_student(
+                train_model, xva, pva, yva, config.batch_size,
+                config.teacher_sharpness, config.minimum_positive_recall,
+            )
             with torch.no_grad():
                 degrees = model.mask_degree.float()
                 changed = (_sparse_mask_changed_fraction(model, initial_hard_masks)
@@ -1090,10 +1334,17 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
                 metrics["calibrated_agreement"] > best_calibrated_agreement + 1e-7
                 or (abs(metrics["calibrated_agreement"]
                         - best_calibrated_agreement) <= 1e-7
-                    and metrics["ce"] < best_ce - 1e-7)
+                    and (metrics["calibrated_balanced_agreement"]
+                         > best_calibrated_balanced_agreement + 1e-7
+                         or (abs(metrics["calibrated_balanced_agreement"]
+                                 - best_calibrated_balanced_agreement) <= 1e-7
+                             and metrics["ce"] < best_ce - 1e-7)))
             )
             if improved:
                 best_calibrated_agreement = metrics["calibrated_agreement"]
+                best_calibrated_balanced_agreement = metrics[
+                    "calibrated_balanced_agreement"
+                ]
                 best_ce = metrics["ce"]
                 best_step = current
                 stale = 0
@@ -1101,6 +1352,10 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
                               for k, v in model.state_dict().items()}
             else:
                 stale += 1
+            if metrics["kl"] < best_distribution_kl - 1e-9:
+                best_distribution_kl = metrics["kl"]
+                best_distribution_step = current
+                best_distribution_student = export_sparse_student(model)
             if (config.repair_duplicate_masks
                     and current <= mask_freeze_step
                     and model.mask_parameterization == "topk"):
@@ -1123,6 +1378,12 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
                     "step": current,
                     "best_ce": best_ce,
                     "best_calibrated_agreement": best_calibrated_agreement,
+                    "best_calibrated_balanced_agreement": (
+                        best_calibrated_balanced_agreement
+                    ),
+                    "best_distribution_kl": best_distribution_kl,
+                    "best_distribution_step": best_distribution_step,
+                    "best_distribution_student": best_distribution_student,
                     "best_step": best_step,
                     "stale": stale,
                     "best_state": best_state,
@@ -1131,12 +1392,17 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
                 break
     if best_state is not None:
         model.load_state_dict(best_state)
-    final = evaluate_student(model, xva, pva, yva, config.batch_size)
+    final = evaluate_student(
+        model, xva, pva, yva, config.batch_size,
+        config.teacher_sharpness, config.minimum_positive_recall,
+    )
     recent_norms = [row["grad/global_preclip"] for row in history[-10:]]
     median_norm = float(np.median(recent_norms)) if recent_norms else math.nan
     summary = {
         "steps_run": current,
         "best_step": best_step,
+        "best_distribution_step": best_distribution_step,
+        "best_distribution_kl": best_distribution_kl,
         "seconds": time.perf_counter() - overall_started,
         "training_loop_seconds": time.perf_counter() - loop_started,
         "mask_freeze_step": mask_freeze_step,
@@ -1156,7 +1422,9 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
             "healthy": bool(math.isfinite(median_norm) and 0.05 <= median_norm <= 1.0),
         },
     }
-    return model, summary
+    if best_distribution_student is None:
+        raise RuntimeError("distribution checkpoint was not initialized")
+    return model, summary, best_distribution_student
 
 
 def export_sparse_student(model: HardWalshStudent,

@@ -1333,7 +1333,10 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
                   warmup_fraction: float = 0.02,
                   mask_warmup_fraction: float = 0.20,
                   eval_every: int = 25,
-                  patience: int = 12):
+                  patience: int = 12,
+                  teacher_sharpness: float = 1.0,
+                  minimum_positive_recall: float = 0.70,
+                  checkpoint_enabled: bool = True):
     """Train from the cached labels and save a standalone sparse artifact."""
     import dataclasses
     import json
@@ -1345,7 +1348,7 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
 
     from fda_exp.fourier_noun import (
         TrainConfig, binary_metrics, calibrate_agreement_threshold,
-        export_sparse_student,
+        export_sparse_student, sharpen_probability,
         sparse_student_logits, train_student, unpack_bits,
     )
 
@@ -1400,6 +1403,8 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
         mask_delay_fraction=mask_delay_fraction,
         mask_schedule=mask_schedule,
         loss_scale=loss_scale, hard_target_mix=hard_target_mix,
+        teacher_sharpness=teacher_sharpness,
+        minimum_positive_recall=minimum_positive_recall,
         warmup_fraction=warmup_fraction,
         mask_warmup_fraction=mask_warmup_fraction,
         eval_every=eval_every, patience=patience,
@@ -1412,6 +1417,7 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
            f"mlr{config.mask_lr:g}-clr{config.coefficient_lr:g}-"
            f"mb2{config.mask_beta2:g}-cb2{config.coefficient_beta2:g}-"
            f"hard{config.hard_target_mix:g}-"
+           f"sharp{config.teacher_sharpness:g}-"
            f"classbal{int(config.balance_teacher_classes)}-"
            f"divrepair{int(config.repair_duplicate_masks)}-"
            f"ls{config.loss_scale:g}-wu{config.warmup_fraction:g}-"
@@ -1438,18 +1444,21 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
     monitor = _GpuSampler()
     monitor.start()
     try:
-        model, summary = train_student(
+        model, summary, distribution_sparse = train_student(
             train_bits, train_p, val_bits, val_p, val_gold, config,
-            device="cuda", log=logger, checkpoint_path=checkpoint, resume=resume,
+            device="cuda", log=logger,
+            checkpoint_path=checkpoint if checkpoint_enabled else None,
+            resume=resume,
         )
     finally:
         gpu_samples = monitor.finish()
-    sparse = export_sparse_student(model)
-    val_logits = sparse_student_logits(val_bits, sparse)
+    summary["config"] = dataclasses.asdict(config)
+    agreement_sparse = export_sparse_student(model)
+    val_logits = sparse_student_logits(val_bits, agreement_sparse)
     threshold, calibrated_val_agreement = calibrate_agreement_threshold(
-        val_logits, val_p
+        val_logits, val_p, config.minimum_positive_recall
     )
-    sparse["bias"] -= threshold
+    agreement_sparse["bias"] -= threshold
     summary["val"] = binary_metrics(
         val_logits - threshold, val_p, val_gold
     )
@@ -1457,12 +1466,35 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
         "validation_logit_threshold": threshold,
         "validation_agreement": calibrated_val_agreement,
     }
-    test_logits = sparse_student_logits(test_bits, sparse)
+    test_logits = sparse_student_logits(test_bits, agreement_sparse)
     summary["test"] = binary_metrics(test_logits, test_p, test_gold)
+    distribution_val_logits = sparse_student_logits(val_bits, distribution_sparse)
+    distribution_test_logits = sparse_student_logits(test_bits, distribution_sparse)
+
+    def metric_pair(logits, probability, gold):
+        return {
+            "original_teacher": binary_metrics(logits, probability, gold),
+            "sharpened_target": binary_metrics(
+                logits, sharpen_probability(probability, config.teacher_sharpness)
+            ),
+        }
+
+    summary["champions"] = {
+        "agreement": {
+            "best_step": summary["best_step"],
+            "val": metric_pair(val_logits - threshold, val_p, val_gold),
+            "test": metric_pair(test_logits, test_p, test_gold),
+        },
+        "distribution": {
+            "best_step": summary["best_distribution_step"],
+            "val": metric_pair(distribution_val_logits, val_p, val_gold),
+            "test": metric_pair(distribution_test_logits, test_p, test_gold),
+        },
+    }
     summary["export"] = {
-        "terms": int(len(sparse["coefficient"])),
-        "nonzero_indices": int(len(sparse["indices"])),
-        "bytes": int(sum(np.asarray(sparse[key]).nbytes
+        "terms": int(len(agreement_sparse["coefficient"])),
+        "nonzero_indices": int(len(agreement_sparse["indices"])),
+        "list_bytes": int(sum(np.asarray(agreement_sparse[key]).nbytes
                          for key in ("offsets", "indices", "coefficient")) + 4),
     }
     summary["performance"] = {
@@ -1481,17 +1513,47 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
         summary["performance"]["median_active_gpu_utilization"] is not None
         and summary["performance"]["median_active_gpu_utilization"] >= 70.0
     )
-    artifact = {
-        "metadata": {**meta, "training_config": dataclasses.asdict(config),
-                     "source_labeled_path": labeled_path},
-        "student": sparse,
-        "lsh_codes_packed": data["lsh_codes_packed"],
-        "summary": summary,
-    }
-    Path(output).parent.mkdir(parents=True, exist_ok=True)
-    temporary = output + ".tmp"
-    torch.save(artifact, temporary)
-    os.replace(temporary, output)
+    distribution_output = output.removesuffix(".pt") + "-distribution.pt"
+
+    def write_artifact(path, student, champion):
+        artifact = {
+            "metadata": {
+                **meta, "training_config": dataclasses.asdict(config),
+                "source_labeled_path": labeled_path, "champion": champion,
+            },
+            "student": student,
+            "lsh_codes_packed": data["lsh_codes_packed"],
+            "summary": summary,
+        }
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        temporary = path + ".tmp"
+        torch.save(artifact, temporary)
+        os.replace(temporary, path)
+        return os.path.getsize(path)
+
+    agreement_bytes = write_artifact(output, agreement_sparse, "agreement")
+    distribution_bytes = write_artifact(
+        distribution_output, distribution_sparse, "distribution"
+    )
+    summary["export"].update({
+        "agreement_artifact_bytes": agreement_bytes,
+        "agreement_compression_vs_1_6gb": 1_600_000_000 / agreement_bytes,
+        "distribution_artifact_bytes": distribution_bytes,
+        "distribution_compression_vs_1_6gb": 1_600_000_000 / distribution_bytes,
+    })
+    if max(agreement_bytes, distribution_bytes) > 16_000_000:
+        raise RuntimeError("champion artifact exceeds the 100x compression budget")
+    # Rewrite once so each artifact carries its measured compression metadata.
+    agreement_bytes = write_artifact(output, agreement_sparse, "agreement")
+    distribution_bytes = write_artifact(
+        distribution_output, distribution_sparse, "distribution"
+    )
+    summary["export"].update({
+        "agreement_artifact_bytes": agreement_bytes,
+        "agreement_compression_vs_1_6gb": 1_600_000_000 / agreement_bytes,
+        "distribution_artifact_bytes": distribution_bytes,
+        "distribution_compression_vs_1_6gb": 1_600_000_000 / distribution_bytes,
+    })
     Path(summary_path).parent.mkdir(parents=True, exist_ok=True)
     with open(summary_path + ".tmp", "w") as handle:
         json.dump(summary, handle, indent=2, sort_keys=True)
@@ -1500,11 +1562,39 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     if run is not None:
         run.log({"global_step": summary["steps_run"],
-                 **{f"test/{k}": v for k, v in summary["test"].items()}})
+                 **{f"test/{k}": v for k, v in summary["test"].items()},
+                 **{f"test/distribution/{k}": v for k, v in
+                    summary["champions"]["distribution"]["test"]
+                    ["original_teacher"].items()}})
         run.summary.update({
             "best_step": summary["best_step"],
             "test_agreement": summary["test"]["agreement"],
             "test_gold_accuracy": summary["test"]["gold_accuracy"],
+            "test_distribution_kl": summary["champions"]["distribution"]
+            ["test"]["original_teacher"]["kl"],
+            "test_centered_logit_cosine": summary["champions"]["distribution"]
+            ["test"]["original_teacher"]["centered_logit_cosine"],
+            "test_hard_mutual_information_fraction": summary["champions"]
+            ["agreement"]["test"]["original_teacher"]
+            ["hard_mutual_information_fraction"],
+            **{
+                f"test_distribution_{key}": summary["champions"]
+                ["distribution"]["test"]["original_teacher"][key]
+                for key in (
+                    "probability_absolute_error_mean", "probability_rmse",
+                    "probability_absolute_error_p50",
+                    "probability_absolute_error_p90",
+                    "probability_absolute_error_p95",
+                    "probability_absolute_error_p99",
+                    "probability_r_squared", "centered_probability_cosine",
+                    "centered_logit_cosine",
+                    "hard_mutual_information_fraction",
+                    "probability_mae_teacher_confidence_50_60",
+                    "probability_mae_teacher_confidence_60_75",
+                    "probability_mae_teacher_confidence_75_90",
+                    "probability_mae_teacher_confidence_90_100",
+                )
+            },
             "export_terms": summary["export"]["terms"],
             "grad_healthy": summary["grad_health"]["healthy"],
         })
@@ -1514,11 +1604,474 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
                 f"fourier-noun-{run.id}", type="model", metadata=summary
             )
             saved.add_file(output)
+            saved.add_file(distribution_output)
             run.log_artifact(saved)
         except Exception as error:
             print(f"[wandb] artifact upload failed: {error!r}", flush=True)
         run.finish()
-    return {"model": output, "summary": summary_path, "metrics": summary}
+    return {
+        "models": {"agreement": output, "distribution": distribution_output},
+        "summary": summary_path, "metrics": summary,
+        "wandb_run_id": run.id if run is not None else "offline",
+    }
+
+
+@app.function(image=image, timeout=1800, memory=4096, secrets=WANDB_SECRET)
+def compare_sharpness_runs(results):
+    """Log the screening Pareto frontier and return a compact comparison."""
+    import wandb
+
+    rows = []
+    for result in results:
+        summary = result["metrics"]
+        config = summary.get("config", {})
+        distribution = summary["champions"]["distribution"]
+        agreement = summary["champions"]["agreement"]
+        sharpness = float(config["teacher_sharpness"])
+        row = {
+            "teacher_sharpness": sharpness,
+            "wandb_run_id": result["wandb_run_id"],
+            "val_original_kl": distribution["val"]["original_teacher"]["kl"],
+            "test_original_kl": distribution["test"]["original_teacher"]["kl"],
+            "test_probability_mae": distribution["test"]["original_teacher"]
+            ["probability_absolute_error_mean"],
+            "test_probability_rmse": distribution["test"]["original_teacher"]
+            ["probability_rmse"],
+            "test_probability_max_error": distribution["test"]["original_teacher"]
+            ["probability_absolute_error_max"],
+            **{
+                f"test_probability_absolute_error_{quantile}":
+                distribution["test"]["original_teacher"]
+                [f"probability_absolute_error_{quantile}"]
+                for quantile in ("p50", "p90", "p95", "p99")
+            },
+            "test_probability_error_variance": distribution["test"]
+            ["original_teacher"]["probability_absolute_error_variance"],
+            "test_probability_r_squared": distribution["test"]
+            ["original_teacher"]["probability_r_squared"],
+            "test_centered_probability_cosine": distribution["test"]
+            ["original_teacher"]["centered_probability_cosine"],
+            "test_centered_logit_cosine": distribution["test"]
+            ["original_teacher"]["centered_logit_cosine"],
+            "test_hard_mi_fraction": agreement["test"]["original_teacher"]
+            ["hard_mutual_information_fraction"],
+            **{
+                f"test_mae_confidence_{bucket}": distribution["test"]
+                ["original_teacher"]
+                [f"probability_mae_teacher_confidence_{bucket}"]
+                for bucket in ("50_60", "60_75", "75_90", "90_100")
+            },
+            "test_soft_mi_fraction": distribution["test"]["original_teacher"]
+            ["soft_mutual_information_fraction"],
+            "val_balanced_agreement": agreement["val"]["original_teacher"]
+            ["balanced_agreement"],
+            "test_agreement": agreement["test"]["original_teacher"]["agreement"],
+            "test_balanced_agreement": agreement["test"]["original_teacher"]
+            ["balanced_agreement"],
+            "test_positive_recall": agreement["test"]["original_teacher"]
+            ["teacher_positive_recall"],
+            "agreement_compression": summary["export"]
+            ["agreement_compression_vs_1_6gb"],
+            "distribution_compression": summary["export"]
+            ["distribution_compression_vs_1_6gb"],
+        }
+        rows.append(row)
+    for candidate in rows:
+        candidate["pareto"] = not any(
+            other["val_original_kl"] <= candidate["val_original_kl"]
+            and other["val_balanced_agreement"]
+            >= candidate["val_balanced_agreement"]
+            and (other["val_original_kl"] < candidate["val_original_kl"]
+                 or other["val_balanced_agreement"]
+                 > candidate["val_balanced_agreement"])
+            for other in rows
+        )
+    run = wandb.init(
+        project="fda-fourier-noun", name="teacher-sharpness-screen",
+        job_type="sharpness-comparison",
+        config={"sharpness_values": [x["teacher_sharpness"] for x in rows]},
+    )
+    columns = list(rows[0])
+    table = wandb.Table(
+        columns=columns,
+        data=[[row[column] for column in columns] for row in rows],
+    )
+    run.log({"sharpness_frontier": table})
+    for index, row in enumerate(sorted(rows, key=lambda x: x["teacher_sharpness"])):
+        run.log({"global_step": index, **{
+            f"screen/{key}": value for key, value in row.items()
+            if key not in {"wandb_run_id", "pareto"}
+        }})
+    url = run.url
+    run.finish()
+    return {"wandb_url": url, "rows": rows}
+
+
+@app.function(image=image, timeout=1800, memory=4096, secrets=WANDB_SECRET)
+def compare_completed_sharpness_runs(run_ids: str):
+    """Rebuild a comparison from completed W&B runs without retraining."""
+    import wandb
+
+    api = wandb.Api()
+    rows = []
+    for run_id in (value.strip() for value in run_ids.split(",")):
+        if not run_id:
+            continue
+        source = api.run(f"umd-leans-well/fda-fourier-noun/{run_id}")
+        summary = dict(source.summary)
+        history = list(source.scan_history(keys=[
+            "global_step", "val/kl", "val/calibrated_agreement",
+            "val/calibrated_balanced_agreement",
+        ]))
+        distribution_rows = [x for x in history if x.get("val/kl") is not None]
+        agreement_rows = [
+            x for x in history if x.get("val/calibrated_agreement") is not None
+        ]
+        distribution_best = min(distribution_rows, key=lambda x: x["val/kl"])
+        agreement_best = max(
+            agreement_rows,
+            key=lambda x: (
+                x["val/calibrated_agreement"],
+                x.get("val/calibrated_balanced_agreement", -1.0),
+            ),
+        )
+        artifact_metadata = {}
+        artifacts = list(source.logged_artifacts())
+        if artifacts:
+            artifact_metadata = artifacts[-1].metadata
+        export = artifact_metadata.get("export", {})
+        rows.append({
+            "teacher_sharpness": float(source.config["teacher_sharpness"]),
+            "wandb_run_id": run_id,
+            "val_original_kl": distribution_best["val/kl"],
+            "test_original_kl": summary["test/distribution/kl"],
+            "test_probability_mae": summary[
+                "test/distribution/probability_absolute_error_mean"
+            ],
+            "test_probability_rmse": summary.get(
+                "test/distribution/probability_rmse"
+            ),
+            "test_probability_max_error": summary[
+                "test/distribution/probability_absolute_error_max"
+            ],
+            **{
+                f"test_probability_absolute_error_{quantile}": summary[
+                    f"test/distribution/probability_absolute_error_{quantile}"
+                ]
+                for quantile in ("p50", "p90", "p95", "p99")
+                if f"test/distribution/probability_absolute_error_{quantile}"
+                in summary
+            },
+            "test_probability_error_variance": summary[
+                "test/distribution/probability_absolute_error_variance"
+            ],
+            "test_probability_r_squared": summary.get(
+                "test/distribution/probability_r_squared"
+            ),
+            "test_centered_probability_cosine": summary[
+                "test/distribution/centered_probability_cosine"
+            ],
+            "test_centered_logit_cosine": summary[
+                "test/distribution/centered_logit_cosine"
+            ],
+            "test_hard_mi_fraction": summary[
+                "test/hard_mutual_information_fraction"
+            ],
+            **{
+                f"test_mae_confidence_{bucket}": summary.get(
+                    f"test/distribution/probability_mae_teacher_confidence_{bucket}"
+                )
+                for bucket in ("50_60", "60_75", "75_90", "90_100")
+            },
+            "test_soft_mi_fraction": summary[
+                "test/distribution/soft_mutual_information_fraction"
+            ],
+            "val_calibrated_agreement": agreement_best[
+                "val/calibrated_agreement"
+            ],
+            "val_balanced_agreement": agreement_best[
+                "val/calibrated_balanced_agreement"
+            ],
+            "test_agreement": summary["test/agreement"],
+            "test_balanced_agreement": summary["test/balanced_agreement"],
+            "test_positive_recall": summary["test/teacher_positive_recall"],
+            "agreement_compression": export.get(
+                "agreement_compression_vs_1_6gb"
+            ),
+            "distribution_compression": export.get(
+                "distribution_compression_vs_1_6gb"
+            ),
+        })
+    for candidate in rows:
+        candidate["pareto"] = not any(
+            other["val_original_kl"] <= candidate["val_original_kl"]
+            and other["val_balanced_agreement"]
+            >= candidate["val_balanced_agreement"]
+            and (other["val_original_kl"] < candidate["val_original_kl"]
+                 or other["val_balanced_agreement"]
+                 > candidate["val_balanced_agreement"])
+            for other in rows
+        )
+    comparison = wandb.init(
+        project="fda-fourier-noun", name="teacher-sharpness-screen",
+        job_type="sharpness-comparison",
+        config={"source_run_ids": [x["wandb_run_id"] for x in rows]},
+    )
+    columns = list(rows[0])
+    comparison.log({"sharpness_frontier": wandb.Table(
+        columns=columns,
+        data=[[row[column] for column in columns] for row in rows],
+    )})
+    for index, row in enumerate(sorted(rows, key=lambda x: x["teacher_sharpness"])):
+        comparison.log({"global_step": index, **{
+            f"screen/{key}": value for key, value in row.items()
+            if key not in {"wandb_run_id", "pareto"} and value is not None
+        }})
+    url = comparison.url
+    comparison.finish()
+    return {"wandb_url": url, "rows": rows}
+
+
+@app.function(image=image, gpu="H100", volumes={"/cache": volume}, timeout=10800,
+              memory=32768, secrets=WANDB_SECRET)
+def kl_ensemble_fourier(model_paths: str, labeled_path: str,
+                        max_terms: int = 720000,
+                        artifact_budget_bytes: int = 16_000_000):
+    """Fit, deduplicate, prune, and calibrate a soft-probability ensemble."""
+    import json
+    import os
+    from pathlib import Path
+
+    import numpy as np
+    import torch
+
+    from fda_exp.fourier_noun import (
+        binary_metrics, fit_probability_logit_stack, unpack_bits,
+    )
+
+    volume.reload()
+    paths = [value.strip() for value in model_paths.split(",") if value.strip()]
+    if len(paths) < 2:
+        raise ValueError("KL ensemble requires at least two members")
+    artifacts = [
+        torch.load(path, map_location="cpu", weights_only=False) for path in paths
+    ]
+    reference = artifacts[0]
+    n_bits = int(reference["student"]["n_bits"])
+    code_hash = reference["metadata"]["lsh_sha256"]
+    if any(int(item["student"]["n_bits"]) != n_bits for item in artifacts):
+        raise ValueError("KL ensemble members have different input widths")
+    if any(item["metadata"]["lsh_sha256"] != code_hash for item in artifacts):
+        raise ValueError("KL ensemble members have incompatible LSH codes")
+    data = torch.load(labeled_path, map_location="cpu", weights_only=False)
+
+    def split(name):
+        item = data["splits"][name]
+        return (
+            unpack_bits(item["packed_bits"].numpy(), n_bits),
+            item["teacher_probability"].float().numpy(),
+            item["gold"].numpy(),
+        )
+
+    val_bits, val_p, val_gold = split("val")
+    test_bits, test_p, test_gold = split("test")
+
+    def exact_logits(bits, student, chunk=2048):
+        x = torch.as_tensor(bits, dtype=torch.uint8, device="cuda")
+        offsets = np.asarray(student["offsets"], dtype=np.int64)
+        indices = np.asarray(student["indices"], dtype=np.int64)
+        counts = np.diff(offsets)
+        max_degree = int(counts.max(initial=0))
+        padded = np.zeros((len(counts), max_degree), dtype=np.int64)
+        active = np.arange(max_degree)[None, :] < counts[:, None]
+        rows = np.repeat(np.arange(len(counts)), counts)
+        columns = np.arange(len(indices)) - np.repeat(offsets[:-1], counts)
+        padded[rows, columns] = indices
+        padded = torch.as_tensor(padded, device="cuda")
+        active = torch.as_tensor(active, dtype=torch.uint8, device="cuda")
+        coefficient = torch.as_tensor(
+            student["coefficient"], dtype=torch.float32, device="cuda"
+        )
+        output = torch.full(
+            (len(x),), float(student["bias"]), dtype=torch.float32, device="cuda"
+        )
+        for lo in range(0, len(counts), chunk):
+            hi = min(lo + chunk, len(counts))
+            selected = x[:, padded[lo:hi]]
+            selected.mul_(active[None, lo:hi])
+            parity = selected.sum(dim=2, dtype=torch.int32).bitwise_and_(1)
+            output.add_((1.0 - 2.0 * parity.float()) @ coefficient[lo:hi])
+        return output.cpu().numpy()
+
+    member_val = np.stack([
+        exact_logits(val_bits, item["student"]) for item in artifacts
+    ])
+    member_test = np.stack([
+        exact_logits(test_bits, item["student"]) for item in artifacts
+    ])
+    weights, stack_bias = fit_probability_logit_stack(member_val, val_p)
+    preprune_val = weights @ member_val + stack_bias
+    preprune_test = weights @ member_test + stack_bias
+    active_members = weights > 1e-6
+
+    counts = np.concatenate([
+        np.diff(np.asarray(item["student"]["offsets"], dtype=np.int64))
+        for item, active in zip(artifacts, active_members, strict=True) if active
+    ])
+    indices = np.concatenate([
+        np.asarray(item["student"]["indices"], dtype=np.int32)
+        for item, active in zip(artifacts, active_members, strict=True) if active
+    ])
+    coefficient = np.concatenate([
+        np.asarray(item["student"]["coefficient"], dtype=np.float64) * weight
+        for item, weight, active in zip(
+            artifacts, weights, active_members, strict=True
+        ) if active
+    ])
+    combined_bias = stack_bias + sum(
+        float(item["student"]["bias"]) * float(weight)
+        for item, weight, active in zip(
+            artifacts, weights, active_members, strict=True
+        ) if active
+    )
+
+    # Canonicalize each sparse mask to a sentinel-padded row, then combine
+    # repeated characters across checkpoints exactly before pruning.
+    max_degree = int(counts.max(initial=0))
+    padded = np.full((len(counts), max_degree), n_bits, dtype=np.int32)
+    term_rows = np.repeat(np.arange(len(counts)), counts)
+    columns = np.arange(len(indices)) - np.repeat(
+        np.concatenate(([0], np.cumsum(counts)))[:-1], counts
+    )
+    padded[term_rows, columns] = indices
+    padded.sort(axis=1)
+    unique_masks, inverse = np.unique(padded, axis=0, return_inverse=True)
+    coefficient = np.bincount(inverse, weights=coefficient)
+    nonzero = np.abs(coefficient) > 1e-12
+    unique_masks = unique_masks[nonzero]
+    coefficient = coefficient[nonzero]
+    terms_before_pruning = len(coefficient)
+    if max_terms > 0 and len(coefficient) > max_terms:
+        selected = np.argpartition(np.abs(coefficient), -max_terms)[-max_terms:]
+        unique_masks = unique_masks[selected]
+        coefficient = coefficient[selected]
+    valid = unique_masks < n_bits
+    counts = valid.sum(axis=1, dtype=np.int32)
+    indices = unique_masks[valid].astype(np.int32, copy=False)
+    offsets = np.concatenate(([0], np.cumsum(counts))).astype(np.int32)
+    merged = {
+        "schema_version": ARTIFACT_SCHEMA,
+        "n_bits": n_bits,
+        "offsets": offsets,
+        "indices": indices,
+        "coefficient": coefficient.astype(np.float32),
+        "bias": float(combined_bias),
+    }
+
+    # Pruning perturbs the logit scale and intercept. Refit just those two
+    # degrees of freedom using validation probabilities, then fold them into
+    # the deployed Fourier coefficients and bias.
+    pruned_val_raw = exact_logits(val_bits, merged)
+    affine_weight, affine_bias = fit_probability_logit_stack(
+        pruned_val_raw[None, :], val_p, l2=0.0
+    )
+    scale = float(affine_weight[0])
+    merged["coefficient"] *= scale
+    merged["bias"] = scale * float(merged["bias"]) + affine_bias
+    val_logits = exact_logits(val_bits, merged)
+    test_logits = exact_logits(test_bits, merged)
+    summary = {
+        "members": paths,
+        "effective_weights": weights.tolist(),
+        "normalized_weights": (weights / weights.sum()).tolist(),
+        "global_logit_scale": float(weights.sum()),
+        "stack_bias": float(stack_bias),
+        "postprune_affine_scale": scale,
+        "postprune_affine_bias": float(affine_bias),
+        "terms_before_pruning": int(terms_before_pruning),
+        "max_terms": int(max_terms),
+        "preprune_val": binary_metrics(preprune_val, val_p, val_gold),
+        "preprune_test": binary_metrics(preprune_test, test_p, test_gold),
+        "val": binary_metrics(val_logits, val_p, val_gold),
+        "test": binary_metrics(test_logits, test_p, test_gold),
+        "export": {
+            "terms": int(len(merged["coefficient"])),
+            "nonzero_indices": int(len(indices)),
+            "list_bytes": int(offsets.nbytes + indices.nbytes
+                              + merged["coefficient"].nbytes + 4),
+        },
+    }
+    run = _wandb_run("fourier-kl-ensemble", {
+        "members": paths, "max_terms": max_terms,
+        "artifact_budget_bytes": artifact_budget_bytes,
+    }, "probability-ensemble")
+    run_id = run.id if run is not None else "offline"
+    output = f"{ROOT}/models/fourier-kl-ensemble-{run_id}.npz"
+    result_path = f"{ROOT}/results/fourier-kl-ensemble-{run_id}.json"
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    lsh_codes = reference["lsh_codes_packed"]
+    if torch.is_tensor(lsh_codes):
+        lsh_codes = lsh_codes.numpy()
+    metadata = {
+        "schema_version": ARTIFACT_SCHEMA,
+        "model_id": reference["metadata"]["model_id"],
+        "model_revision": reference["metadata"]["model_revision"],
+        "student_layout": reference["metadata"]["student_layout"],
+        "lsh_bits": int(reference["metadata"]["lsh_bits"]),
+        "objective": "validation_teacher_probability_bce",
+        "effective_weights": weights.tolist(),
+    }
+    temporary = output + ".tmp"
+    with open(temporary, "wb") as handle:
+        np.savez(
+            handle, n_bits=np.asarray(n_bits, dtype=np.int32),
+            offsets=offsets, indices=indices,
+            coefficient=merged["coefficient"],
+            bias=np.asarray(merged["bias"], dtype=np.float32),
+            lsh_codes_packed=np.asarray(lsh_codes, dtype=np.uint8),
+            metadata_json=np.asarray(json.dumps(metadata)),
+        )
+    os.replace(temporary, output)
+    artifact_bytes = os.path.getsize(output)
+    summary["export"].update({
+        "artifact_bytes": artifact_bytes,
+        "compression_vs_1_6gb": 1_600_000_000 / artifact_bytes,
+        "within_100x_budget": artifact_bytes <= artifact_budget_bytes,
+    })
+    if artifact_bytes > artifact_budget_bytes:
+        raise RuntimeError(
+            f"KL ensemble is {artifact_bytes} bytes, over {artifact_budget_bytes}"
+        )
+    with open(result_path + ".tmp", "w") as handle:
+        json.dump(summary, handle, indent=2, sort_keys=True)
+    os.replace(result_path + ".tmp", result_path)
+    volume.commit()
+    print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
+    if run is not None:
+        run.log({
+            "global_step": 0,
+            **{f"val/{key}": value for key, value in summary["val"].items()},
+            **{f"test/{key}": value for key, value in summary["test"].items()},
+        })
+        run.summary.update({
+            "test_kl": summary["test"]["kl"],
+            "test_mae": summary["test"]["probability_absolute_error_mean"],
+            "test_rmse": summary["test"]["probability_rmse"],
+            "test_r_squared": summary["test"]["probability_r_squared"],
+            "test_agreement": summary["test"]["agreement"],
+            "compression": summary["export"]["compression_vs_1_6gb"],
+        })
+        saved = __import__("wandb").Artifact(
+            f"fourier-kl-ensemble-{run.id}", type="model", metadata=summary
+        )
+        saved.add_file(output)
+        run.log_artifact(saved)
+        run.finish()
+    return {
+        "model": output, "summary": result_path, "metrics": summary,
+        "wandb_url": (f"https://wandb.ai/umd-leans-well/"
+                      f"fda-fourier-noun/runs/{run_id}"),
+    }
 
 
 @app.function(image=image, gpu="H100", volumes={"/cache": volume}, timeout=10800,
@@ -1744,6 +2297,7 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
          loss_scale: float = 40.0, char_chunk: int = 8192,
          training_seed: int = -1, model_paths: str = "",
          hard_target_mix: float = 0.25, max_terms: int = 375000,
+         teacher_sharpness: float = 1.0,
          minimum_positive_recall: float = 0.70,
          warmup_fraction: float = 0.02,
          mask_warmup_fraction: float = 0.20,
@@ -1754,7 +2308,12 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             raise ValueError("upload requires run_id, model_path, and summary_path")
         print(upload_saved_artifact.remote(run_id, model_path, summary_path))
         return
-    if stage == "ensemble":
+    if stage == "sharpness-compare":
+        if not run_id:
+            raise ValueError("sharpness-compare requires comma-separated --run-id")
+        print(compare_completed_sharpness_runs.remote(run_id))
+        return
+    if stage in {"ensemble", "kl-ensemble"}:
         data_schema = {
             128: HYBRID_SCHEMA,
             192: LONG_CONTEXT_SCHEMA,
@@ -1763,9 +2322,14 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             train_n, val_n, test_n, student_length, lsh_bits, seed,
             schema=data_schema,
         )
-        print(ensemble_fourier.remote(
-            model_paths, labeled, max_terms, minimum_positive_recall
-        ))
+        if stage == "kl-ensemble":
+            print(kl_ensemble_fourier.remote(
+                model_paths, labeled, max_terms, 16_000_000
+            ))
+        else:
+            print(ensemble_fourier.remote(
+                model_paths, labeled, max_terms, minimum_positive_recall
+            ))
         return
     if stage == "lookup":
         if (train_n, val_n, test_n, student_length) != (
@@ -1817,6 +2381,113 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             ewt_prepared, ewt_labeled, extra_train_repeat,
         ))
         return
+    if stage == "sharpness-screen":
+        if (train_n, val_n, test_n, student_length, lsh_bits) != (
+            1_000_000, 8192, 8192, 128, 32
+        ):
+            raise ValueError(
+                "sharpness-screen requires the cached 1M/8192/8192/128/32 layout"
+            )
+        web_labeled = _labeled_name(
+            train_n, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        ewt_labeled = _labeled_name(
+            90000, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        calls = []
+        for sharpness in (1.0, 2.0, 4.0, 8.0, 16.0, 32.0):
+            calls.append(train_fourier.spawn(
+                labeled_path=web_labeled,
+                m=m,
+                steps=400,
+                batch_size=batch_size,
+                seed=run_seed,
+                balance_teacher_classes=balance_teacher_classes,
+                repair_duplicate_masks=True,
+                extra_train_path=ewt_labeled,
+                extra_train_repeat=extra_train_repeat,
+                mask_lr=1.0,
+                coefficient_lr=0.03,
+                mask_beta2=0.95,
+                coefficient_beta2=0.999,
+                ste_variant="product",
+                ste_scale=ste_scale,
+                mask_parameterization="topk",
+                mask_init_magnitude=mask_init_magnitude,
+                mask_discovery_fraction=1.0,
+                mask_delay_fraction=0.05,
+                mask_schedule="global_cosine",
+                loss_scale=loss_scale,
+                char_chunk=char_chunk,
+                hard_target_mix=hard_target_mix,
+                warmup_fraction=warmup_fraction,
+                mask_warmup_fraction=mask_warmup_fraction,
+                eval_every=25,
+                patience=8,
+                teacher_sharpness=sharpness,
+                minimum_positive_recall=minimum_positive_recall,
+                checkpoint_enabled=False,
+            ))
+        results = [call.get() for call in calls]
+        comparison = compare_sharpness_runs.remote(results)
+        print(comparison)
+        return
+    if stage == "sharpness-full":
+        if (train_n, val_n, test_n, student_length, lsh_bits) != (
+            1_000_000, 8192, 8192, 128, 32
+        ):
+            raise ValueError(
+                "sharpness-full requires the cached 1M/8192/8192/128/32 layout"
+            )
+        web_labeled = _labeled_name(
+            train_n, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        ewt_labeled = _labeled_name(
+            90000, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        calls = []
+        for sharpness in (1.0, 2.0):
+            for train_seed in (0, 1, 2):
+                calls.append(train_fourier.spawn(
+                    labeled_path=web_labeled,
+                    m=m,
+                    steps=1000,
+                    batch_size=batch_size,
+                    seed=train_seed,
+                    balance_teacher_classes=balance_teacher_classes,
+                    repair_duplicate_masks=True,
+                    extra_train_path=ewt_labeled,
+                    extra_train_repeat=extra_train_repeat,
+                    mask_lr=1.0,
+                    coefficient_lr=0.03,
+                    mask_beta2=0.95,
+                    coefficient_beta2=0.999,
+                    ste_variant="product",
+                    ste_scale=ste_scale,
+                    mask_parameterization="topk",
+                    mask_init_magnitude=mask_init_magnitude,
+                    mask_discovery_fraction=1.0,
+                    mask_delay_fraction=0.05,
+                    mask_schedule="global_cosine",
+                    loss_scale=loss_scale,
+                    char_chunk=char_chunk,
+                    hard_target_mix=hard_target_mix,
+                    warmup_fraction=warmup_fraction,
+                    mask_warmup_fraction=mask_warmup_fraction,
+                    eval_every=25,
+                    patience=12,
+                    teacher_sharpness=sharpness,
+                    minimum_positive_recall=minimum_positive_recall,
+                    checkpoint_enabled=False,
+                ))
+        results = [call.get() for call in calls]
+        comparison = compare_sharpness_runs.remote(results)
+        print(comparison)
+        return
     if stage == "v2-pilot":
         if (train_n, val_n, test_n, student_length, lsh_bits) != (
             1_000_000, 8192, 8192, 64, 32
@@ -1860,6 +2531,7 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             loss_scale, char_chunk,
             hard_target_mix,
             warmup_fraction, mask_warmup_fraction, eval_every, patience,
+            teacher_sharpness, minimum_positive_recall,
         ))
         return
     if stage == "v3-pilot":
@@ -1920,6 +2592,7 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             loss_scale, char_chunk,
             hard_target_mix,
             warmup_fraction, mask_warmup_fraction, eval_every, patience,
+            teacher_sharpness, minimum_positive_recall,
         ))
         return
     if stage == "v4-pilot":
@@ -1975,6 +2648,7 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             loss_scale, char_chunk,
             hard_target_mix,
             warmup_fraction, mask_warmup_fraction, eval_every, patience,
+            teacher_sharpness, minimum_positive_recall,
         ))
         return
     if stage in ("web-prepare", "web-pilot"):
@@ -1996,6 +2670,7 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             loss_scale, char_chunk,
             hard_target_mix,
             warmup_fraction, mask_warmup_fraction, eval_every, patience,
+            teacher_sharpness, minimum_positive_recall,
         ))
         return
     prepared = _prepared_name(train_n, val_n, test_n, student_length, seed)
@@ -2030,6 +2705,7 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             loss_scale, char_chunk,
             hard_target_mix,
             warmup_fraction, mask_warmup_fraction, eval_every, patience,
+            teacher_sharpness, minimum_positive_recall,
         ))
     else:
         raise SystemExit(f"unknown stage {stage!r}")
