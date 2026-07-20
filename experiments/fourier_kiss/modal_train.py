@@ -121,7 +121,7 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         mask_minimum_lr_ratio: float = 0.01
         coefficient_hold_steps: int = 50
         coefficient_decay_steps: int = 100
-        minimum_lr_ratio: float = 0.1
+        minimum_lr_ratio: float = 1.0 / 3.0
         eval_every: int = 25
         ewt_sampling_weight: int = 10
 
