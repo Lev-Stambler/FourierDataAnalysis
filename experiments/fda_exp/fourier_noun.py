@@ -1476,9 +1476,141 @@ def export_sparse_student(model: HardWalshStudent,
     }
 
 
+def pack_fixed_width(values: np.ndarray, bit_width: int) -> np.ndarray:
+    """Pack nonnegative integers into a dense little-endian bit stream."""
+    array = np.asarray(values)
+    if array.ndim != 1:
+        raise ValueError("values must be one-dimensional")
+    if not 1 <= bit_width <= 32:
+        raise ValueError("bit_width must lie in [1,32]")
+    unsigned = array.astype(np.uint64, copy=False)
+    if np.any(array < 0) or np.any(unsigned >= (1 << bit_width)):
+        raise ValueError("value does not fit requested bit width")
+    bit_positions = np.arange(bit_width, dtype=np.uint64)
+    bits = ((unsigned[:, None] >> bit_positions) & 1).astype(np.uint8)
+    return np.packbits(bits.reshape(-1), bitorder="little")
+
+
+def unpack_fixed_width(packed: np.ndarray, count: int,
+                       bit_width: int) -> np.ndarray:
+    """Decode integers produced by :func:`pack_fixed_width`."""
+    if count < 0 or not 1 <= bit_width <= 32:
+        raise ValueError("invalid packed integer shape")
+    raw = np.asarray(packed, dtype=np.uint8).reshape(-1)
+    required_bytes = (count * bit_width + 7) // 8
+    if len(raw) != required_bytes:
+        raise ValueError("packed integer byte count does not match metadata")
+    bits = np.unpackbits(
+        raw, count=count * bit_width, bitorder="little"
+    ).reshape(count, bit_width)
+    weights = np.left_shift(
+        np.uint64(1), np.arange(bit_width, dtype=np.uint64)
+    )
+    return (bits.astype(np.uint64) @ weights).astype(np.uint32)
+
+
+def encode_compact_sparse_student(
+    artifact: Mapping[str, Any], coefficient_block_size: int = 256,
+) -> dict[str, Any]:
+    """Encode CSR masks and coefficients for the standalone NPZ artifact.
+
+    Character degrees replace CSR offsets, mask indices use the minimum fixed
+    bit width, and coefficients use block-scaled FP16. The deployed values are
+    therefore explicit and can be evaluated before the file is published.
+    """
+    if coefficient_block_size <= 0:
+        raise ValueError("coefficient_block_size must be positive")
+    n_bits = int(artifact["n_bits"])
+    if n_bits <= 0:
+        raise ValueError("n_bits must be positive")
+    offsets = np.asarray(artifact["offsets"], dtype=np.int64)
+    indices = np.asarray(artifact["indices"], dtype=np.int64)
+    coefficient = np.asarray(artifact["coefficient"], dtype=np.float32)
+    if len(offsets) != len(coefficient) + 1 or offsets[0] != 0:
+        raise ValueError("invalid CSR offsets")
+    degrees = np.diff(offsets)
+    if np.any(degrees < 0) or int(offsets[-1]) != len(indices):
+        raise ValueError("CSR offsets do not match indices")
+    if degrees.max(initial=0) > np.iinfo(np.uint8).max:
+        raise ValueError("character degree exceeds compact uint8 format")
+    index_bits = max(1, (n_bits - 1).bit_length())
+    packed_indices = pack_fixed_width(indices, index_bits)
+    block_count = (len(coefficient) + coefficient_block_size - 1) // coefficient_block_size
+    scales = np.ones(block_count, dtype=np.float32)
+    quantized = np.empty(len(coefficient), dtype=np.float16)
+    for block in range(block_count):
+        lo = block * coefficient_block_size
+        hi = min(lo + coefficient_block_size, len(coefficient))
+        scale = float(np.max(np.abs(coefficient[lo:hi]), initial=0.0))
+        if scale > 0:
+            scales[block] = scale
+            quantized[lo:hi] = (coefficient[lo:hi] / scale).astype(np.float16)
+        else:
+            quantized[lo:hi] = 0
+    return {
+        "schema_version": int(artifact.get("schema_version", SCHEMA_VERSION)),
+        "serialization_version": 2,
+        "n_bits": n_bits,
+        "degrees": degrees.astype(np.uint8),
+        "index_bits": index_bits,
+        "index_count": len(indices),
+        "packed_indices": packed_indices,
+        "coefficient_fp16": quantized,
+        "coefficient_scale": scales,
+        "coefficient_block_size": coefficient_block_size,
+        "bias": float(artifact["bias"]),
+    }
+
+
+def decode_compact_sparse_student(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    """Decode serialization version 2 into the reference CSR representation."""
+    if "offsets" in artifact:
+        return {
+            "schema_version": int(artifact.get("schema_version", SCHEMA_VERSION)),
+            "n_bits": int(artifact["n_bits"]),
+            "offsets": np.asarray(artifact["offsets"]).copy(),
+            "indices": np.asarray(artifact["indices"]).copy(),
+            "coefficient": np.asarray(artifact["coefficient"]).copy(),
+            "bias": float(artifact["bias"]),
+        }
+    degrees = np.asarray(artifact["degrees"], dtype=np.uint8)
+    index_count = int(artifact["index_count"])
+    indices = unpack_fixed_width(
+        artifact["packed_indices"], index_count, int(artifact["index_bits"])
+    )
+    if int(degrees.astype(np.uint64).sum()) != index_count:
+        raise ValueError("compact degrees do not match packed index count")
+    quantized = np.asarray(artifact["coefficient_fp16"], dtype=np.float16)
+    if len(quantized) != len(degrees):
+        raise ValueError("compact coefficient and degree counts differ")
+    block_size = int(artifact["coefficient_block_size"])
+    if block_size <= 0:
+        raise ValueError("invalid coefficient block size")
+    scales = np.asarray(artifact["coefficient_scale"], dtype=np.float32)
+    expected_blocks = (len(quantized) + block_size - 1) // block_size
+    if len(scales) != expected_blocks:
+        raise ValueError("compact coefficient scale count differs")
+    coefficient = quantized.astype(np.float32) * np.repeat(
+        scales, block_size
+    )[:len(quantized)]
+    return {
+        "schema_version": int(artifact.get("schema_version", SCHEMA_VERSION)),
+        "n_bits": int(artifact["n_bits"]),
+        "offsets": np.concatenate((
+            np.zeros(1, dtype=np.int32),
+            np.cumsum(degrees, dtype=np.int64).astype(np.int32),
+        )),
+        "indices": indices,
+        "coefficient": coefficient,
+        "bias": float(artifact["bias"]),
+    }
+
+
 def sparse_student_logits(bits: np.ndarray, artifact: Mapping[str, Any],
                           chunk: int = 4096) -> np.ndarray:
     """Exact XOR reference inference for an exported sparse student."""
+    if "offsets" not in artifact:
+        artifact = decode_compact_sparse_student(artifact)
     x = np.asarray(bits, dtype=np.uint8)
     offsets = np.asarray(artifact["offsets"], dtype=np.int64)
     indices = np.asarray(artifact["indices"], dtype=np.int64)
@@ -1526,17 +1658,32 @@ def load_compact_student(path: str | os.PathLike[str]) -> dict[str, Any]:
     """Load the standalone ``.npz`` ensemble format without PyTorch pickle."""
     with np.load(path, allow_pickle=False) as saved:
         metadata = json.loads(str(saved["metadata_json"]))
-        return {
-            "metadata": metadata,
-            "lsh_codes_packed": saved["lsh_codes_packed"].copy(),
-            "student": {
+        if "degrees" in saved:
+            student = decode_compact_sparse_student({
+                "schema_version": int(metadata["schema_version"]),
+                "n_bits": int(saved["n_bits"]),
+                "degrees": saved["degrees"],
+                "index_bits": int(saved["index_bits"]),
+                "index_count": int(saved["index_count"]),
+                "packed_indices": saved["packed_indices"],
+                "coefficient_fp16": saved["coefficient_fp16"],
+                "coefficient_scale": saved["coefficient_scale"],
+                "coefficient_block_size": int(saved["coefficient_block_size"]),
+                "bias": float(saved["bias"]),
+            })
+        else:
+            student = {
                 "schema_version": int(metadata["schema_version"]),
                 "n_bits": int(saved["n_bits"]),
                 "offsets": saved["offsets"].copy(),
                 "indices": saved["indices"].copy(),
                 "coefficient": saved["coefficient"].copy(),
                 "bias": float(saved["bias"]),
-            },
+            }
+        return {
+            "metadata": metadata,
+            "lsh_codes_packed": saved["lsh_codes_packed"].copy(),
+            "student": student,
         }
 
 

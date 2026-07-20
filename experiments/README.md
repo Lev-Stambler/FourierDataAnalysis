@@ -66,7 +66,7 @@ uv run modal run modal_fourier_noun.py --stage sharpness-full \
 uv run modal run modal_fourier_noun.py --stage kl-ensemble \
   --train-n 1000000 --student-length 128 --lsh-bits 32 \
   --model-paths /cache/fourier_noun/models/member-a.npz,/cache/fourier_noun/models/member-b.npz \
-  --max-terms 495000
+  --max-terms 450000
 ```
 
 Artifacts use `fda-cache` under `/cache/fourier_noun`; W&B project:
@@ -87,11 +87,14 @@ unique `(document, token-index)` targets while retaining balanced EWT
 validation and test splits. For distribution fidelity, `kl-ensemble` fits a
 nonnegative validation-BCE logit stack, deduplicates identical characters
 globally, prunes by weighted coefficient magnitude, and refits its final affine
-calibration.
-The 495,000-character run exports to 15,866,126 bytes (100.84× compression)
-and reaches test KL 0.01331, probability MAE 0.05426, RMSE 0.07407, and R²
-0.7959. Artifact creation fails if the exact serialized size exceeds the 16 MB
-budget.
+calibration. Serialization stores degree-8 character lengths as `uint8`, packs
+the 4,096-bit input indices into 12 bits, and block-scales FP16 coefficients;
+the loader remains backward compatible with the original CSR NPZ format. The
+selected 450,000-character, sharpness-diverse ensemble exports to 6,153,776
+bytes (260.00× compression) and reaches test KL 0.01309, probability MAE
+0.05379, RMSE 0.07343, and R² 0.7994. Artifact creation fails if the exact
+serialized size exceeds the 16 MB budget, and reported metrics are recomputed
+from the deployed quantized representation.
 
 `v2-pilot` reuses cached schema-6 teacher probabilities without
 rerunning Qwen, and `v3-pilot` appends 64 prompt-context token slots while

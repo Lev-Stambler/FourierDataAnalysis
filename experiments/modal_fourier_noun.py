@@ -1846,7 +1846,8 @@ def kl_ensemble_fourier(model_paths: str, labeled_path: str,
     import torch
 
     from fda_exp.fourier_noun import (
-        binary_metrics, fit_probability_logit_stack, unpack_bits,
+        binary_metrics, decode_compact_sparse_student,
+        encode_compact_sparse_student, fit_probability_logit_stack, unpack_bits,
     )
 
     volume.reload()
@@ -1978,8 +1979,27 @@ def kl_ensemble_fourier(model_paths: str, labeled_path: str,
     scale = float(affine_weight[0])
     merged["coefficient"] *= scale
     merged["bias"] = scale * float(merged["bias"]) + affine_bias
-    val_logits = exact_logits(val_bits, merged)
-    test_logits = exact_logits(test_bits, merged)
+    prequant_val = exact_logits(val_bits, merged)
+    prequant_test = exact_logits(test_bits, merged)
+
+    # Evaluate exactly what is serialized. A final affine refit absorbs the
+    # small calibration shift from block-scaled FP16, then is quantized once
+    # more to produce the deployed coefficients.
+    compact = encode_compact_sparse_student(merged)
+    quantized = decode_compact_sparse_student(compact)
+    quantized_val_raw = exact_logits(val_bits, quantized)
+    quantized_weight, quantized_bias = fit_probability_logit_stack(
+        quantized_val_raw[None, :], val_p, l2=0.0
+    )
+    quantized_scale = float(quantized_weight[0])
+    quantized["coefficient"] *= quantized_scale
+    quantized["bias"] = (
+        quantized_scale * float(quantized["bias"]) + quantized_bias
+    )
+    compact = encode_compact_sparse_student(quantized)
+    deployed = decode_compact_sparse_student(compact)
+    val_logits = exact_logits(val_bits, deployed)
+    test_logits = exact_logits(test_bits, deployed)
     summary = {
         "members": paths,
         "effective_weights": weights.tolist(),
@@ -1988,17 +2008,32 @@ def kl_ensemble_fourier(model_paths: str, labeled_path: str,
         "stack_bias": float(stack_bias),
         "postprune_affine_scale": scale,
         "postprune_affine_bias": float(affine_bias),
+        "postquant_affine_scale": quantized_scale,
+        "postquant_affine_bias": float(quantized_bias),
         "terms_before_pruning": int(terms_before_pruning),
         "max_terms": int(max_terms),
         "preprune_val": binary_metrics(preprune_val, val_p, val_gold),
         "preprune_test": binary_metrics(preprune_test, test_p, test_gold),
+        "prequant_val": binary_metrics(prequant_val, val_p, val_gold),
+        "prequant_test": binary_metrics(prequant_test, test_p, test_gold),
         "val": binary_metrics(val_logits, val_p, val_gold),
         "test": binary_metrics(test_logits, test_p, test_gold),
         "export": {
-            "terms": int(len(merged["coefficient"])),
+            "serialization_version": 2,
+            "terms": int(len(deployed["coefficient"])),
             "nonzero_indices": int(len(indices)),
-            "list_bytes": int(offsets.nbytes + indices.nbytes
-                              + merged["coefficient"].nbytes + 4),
+            "index_bits": int(compact["index_bits"]),
+            "coefficient_block_size": int(compact["coefficient_block_size"]),
+            "list_bytes": int(
+                compact["degrees"].nbytes
+                + compact["packed_indices"].nbytes
+                + compact["coefficient_fp16"].nbytes
+                + compact["coefficient_scale"].nbytes
+                + 16
+            ),
+            "prequant_max_logit_delta": float(np.max(np.abs(
+                prequant_test - test_logits
+            ))),
         },
     }
     run = _wandb_run("fourier-kl-ensemble", {
@@ -2020,14 +2055,22 @@ def kl_ensemble_fourier(model_paths: str, labeled_path: str,
         "lsh_bits": int(reference["metadata"]["lsh_bits"]),
         "objective": "validation_teacher_probability_bce",
         "effective_weights": weights.tolist(),
+        "serialization_version": 2,
     }
     temporary = output + ".tmp"
     with open(temporary, "wb") as handle:
         np.savez(
             handle, n_bits=np.asarray(n_bits, dtype=np.int32),
-            offsets=offsets, indices=indices,
-            coefficient=merged["coefficient"],
-            bias=np.asarray(merged["bias"], dtype=np.float32),
+            degrees=compact["degrees"],
+            index_bits=np.asarray(compact["index_bits"], dtype=np.uint8),
+            index_count=np.asarray(compact["index_count"], dtype=np.int32),
+            packed_indices=compact["packed_indices"],
+            coefficient_fp16=compact["coefficient_fp16"],
+            coefficient_scale=compact["coefficient_scale"],
+            coefficient_block_size=np.asarray(
+                compact["coefficient_block_size"], dtype=np.int32
+            ),
+            bias=np.asarray(compact["bias"], dtype=np.float32),
             lsh_codes_packed=np.asarray(lsh_codes, dtype=np.uint8),
             metadata_json=np.asarray(json.dumps(metadata)),
         )

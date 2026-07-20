@@ -11,12 +11,15 @@ from fda_exp.fourier_noun import (
     binary_metrics,
     build_lsh_codes_numpy,
     calibrate_agreement_threshold,
+    decode_compact_sparse_student,
+    encode_compact_sparse_student,
     export_sparse_student,
     fit_probability_logit_stack,
     format_noun_payload,
     format_student_fields,
     iter_text_examples,
     load_compact_student,
+    pack_fixed_width,
     logspace_ste_characters,
     pack_bits,
     predict_token_layout,
@@ -28,6 +31,7 @@ from fda_exp.fourier_noun import (
     tokens_to_lsh_bits,
     tokenize_student_fields,
     train_student,
+    unpack_fixed_width,
     unpack_bits,
     warmup_cosine_factor,
     _repair_duplicate_topk_masks,
@@ -390,6 +394,63 @@ def test_compact_npz_student_round_trip(tmp_path):
     np.testing.assert_allclose(
         sparse_student_logits(bits, loaded["student"]),
         sparse_student_logits(bits, sparse), atol=1e-6,
+    )
+
+
+@pytest.mark.parametrize("bit_width", [1, 3, 8, 12, 16, 31])
+def test_fixed_width_integer_packing_round_trip(bit_width):
+    rng = np.random.default_rng(bit_width)
+    values = rng.integers(0, 1 << bit_width, 1003, dtype=np.uint32)
+    packed = pack_fixed_width(values, bit_width)
+    assert len(packed) == (len(values) * bit_width + 7) // 8
+    np.testing.assert_array_equal(
+        unpack_fixed_width(packed, len(values), bit_width), values
+    )
+
+
+def test_compact_sparse_encoding_preserves_logits_and_reduces_bytes(tmp_path):
+    rng = np.random.default_rng(29)
+    model = HardWalshStudent(4096, 2048, seed=6)
+    sparse = export_sparse_student(model)
+    compact = encode_compact_sparse_student(sparse, coefficient_block_size=64)
+    decoded = decode_compact_sparse_student(compact)
+    assert compact["index_bits"] == 12
+    assert compact["degrees"].dtype == np.uint8
+    assert compact["coefficient_fp16"].dtype == np.float16
+    assert compact["packed_indices"].nbytes < sparse["indices"].nbytes
+    np.testing.assert_array_equal(decoded["offsets"], sparse["offsets"])
+    np.testing.assert_array_equal(decoded["indices"], sparse["indices"])
+    bits = rng.integers(0, 2, (31, 4096), dtype=np.uint8)
+    original_logits = sparse_student_logits(bits, sparse)
+    compact_logits = sparse_student_logits(bits, compact)
+    np.testing.assert_allclose(compact_logits, original_logits, atol=2e-4)
+
+    codes = rng.integers(0, 2, (101, 32), dtype=np.uint8)
+    metadata = {
+        "schema_version": 7, "lsh_bits": 32,
+        "student_layout": "compact-test", "serialization_version": 2,
+    }
+    path = tmp_path / "compact-student.npz"
+    with open(path, "wb") as handle:
+        np.savez(
+            handle,
+            n_bits=np.asarray(compact["n_bits"], dtype=np.int32),
+            degrees=compact["degrees"],
+            index_bits=np.asarray(compact["index_bits"], dtype=np.uint8),
+            index_count=np.asarray(compact["index_count"], dtype=np.int32),
+            packed_indices=compact["packed_indices"],
+            coefficient_fp16=compact["coefficient_fp16"],
+            coefficient_scale=compact["coefficient_scale"],
+            coefficient_block_size=np.asarray(
+                compact["coefficient_block_size"], dtype=np.int32
+            ),
+            bias=np.asarray(compact["bias"], dtype=np.float32),
+            lsh_codes_packed=pack_bits(codes),
+            metadata_json=np.asarray(json.dumps(metadata)),
+        )
+    loaded = load_compact_student(path)
+    np.testing.assert_allclose(
+        sparse_student_logits(bits, loaded["student"]), compact_logits, atol=0
     )
 
 
