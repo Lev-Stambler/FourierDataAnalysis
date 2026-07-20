@@ -1,0 +1,86 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-AqqgUZJ0vYkviDJ5fJqseq
+✓ Created objects.
+├── 🔨 Created mount 
+│   /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh
+│   _dataset_gl.py
+├── 🔨 Created function make_data.
+├── 🔨 Created function wandb_ping.
+├── 🔨 Created function gen_data.
+├── 🔨 Created function make_oracle_data.
+├── 🔨 Created function search.
+├── 🔨 Created function gl_tree.
+├── 🔨 Created function relabel_hidden.
+├── 🔨 Created function stream_fit.
+├── 🔨 Created function stream_top1.
+├── 🔨 Created function gl_tree_top1.
+├── 🔨 Created function dl_fourier.
+├── 🔨 Created function refit_top1.
+├── 🔨 Created function sensitivity.
+├── 🔨 Created function make_plain_data.
+├── 🔨 Created function gen_plain_data.
+├── 🔨 Created function deg2_exact.
+├── 🔨 Created function deg3_fit.
+├── 🔨 Created function deg2_fit.
+├── 🔨 Created function grad_sense.
+├── 🔨 Created function gl_tree_refit.
+├── 🔨 Created function search_csamp.
+├── 🔨 Created function fit_deg1.
+├── 🔨 Created function fit_staged.
+├── 🔨 Created function fit_staged_real.
+├── 🔨 Created function fit_sparse2.
+├── 🔨 Created function oracle.
+├── 🔨 Created function spectrum_deg2.
+├── 🔨 Created function spectrum_deg1.
+├── 🔨 Created function fit_sparse3.
+└── 🔨 Created function search_slots.
+[deg3fit:lsh:w32] deg-1+160000 pairs base: top-1 0.2334 KL 3.4862 (residual 0.4447)
+Stopping app - user stopped from CLI.
+[deg3fit:lsh:w32] 378676 distinct triples above 6.0x floor (132s); fitting top 200000
+Runner terminated.
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh │
+│ _dataset_gl.py:4592 in main                                                  │
+│                                                                              │
+│   4591 │   │   print(relabel_hidden.remote(m_fibers, fill_len, r, span))     │
+│ ❱ 4592 │   if stage == "gen-data":                                           │
+│   4593 │   │   gen_data.remote(3000, r, fill_len, "edu", 0, "edu_test", 4)   │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_object.py:45 in wrapped                    │
+│                                                                              │
+│    44 │   │   await self.hydrate()                                           │
+│ ❱  45 │   │   return await method(self, *args, **kwargs)                     │
+│    46                                                                        │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_functions.py:1757 in remote                │
+│                                                                              │
+│   1756 │   │                                                                 │
+│ ❱ 1757 │   │   return await self._call_function(args, kwargs)                │
+│   1758                                                                       │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_functions.py:1695 in _call_function        │
+│                                                                              │
+│   1694 │   │                                                                 │
+│ ❱ 1695 │   │   return await invocation.run_function()                        │
+│   1696                                                                       │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_functions.py:476 in run_function           │
+│                                                                              │
+│    475 │   │   │   if await_response.output.result.status in TERMINAL_STATUS │
+│ ❱  476 │   │   │   │   return await _process_result(                         │
+│    477 │   │   │   │   │   await_response.output.result, await_response.outp │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_utils/function_utils.py:550 in             │
+│ _process_result                                                              │
+│                                                                              │
+│   549 │   │                                                                  │
+│ ❱ 550 │   │   raise RemoteError(result.exception)                            │
+│   551                                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+RemoteError

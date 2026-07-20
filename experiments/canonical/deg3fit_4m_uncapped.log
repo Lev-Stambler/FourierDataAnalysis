@@ -1,0 +1,133 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-YBlEcgwFGWs8w5SUytv1YB
+✓ Created objects.
+├── 🔨 Created mount 
+│   /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh
+│   _dataset_gl.py
+├── 🔨 Created function make_data.
+├── 🔨 Created function search.
+├── 🔨 Created function make_oracle_data.
+├── 🔨 Created function gen_data.
+├── 🔨 Created function gl_tree.
+├── 🔨 Created function stream_fit.
+├── 🔨 Created function stream_top1.
+├── 🔨 Created function relabel_hidden.
+├── 🔨 Created function gl_tree_top1.
+├── 🔨 Created function sensitivity.
+├── 🔨 Created function dl_fourier.
+├── 🔨 Created function wandb_ping.
+├── 🔨 Created function make_plain_data.
+├── 🔨 Created function refit_top1.
+├── 🔨 Created function deg2_exact.
+├── 🔨 Created function grad_sense.
+├── 🔨 Created function oracle.
+├── 🔨 Created function deg3_fit.
+├── 🔨 Created function deg2_fit.
+├── 🔨 Created function gen_plain_data.
+├── 🔨 Created function fit_staged.
+├── 🔨 Created function fourier_learn.
+├── 🔨 Created function spectrum_deg1.
+├── 🔨 Created function fit_sparse3.
+├── 🔨 Created function gl_tree_refit.
+├── 🔨 Created function fit_sparse2.
+├── 🔨 Created function fit_deg1.
+├── 🔨 Created function search_slots.
+├── 🔨 Created function fit_staged_real.
+├── 🔨 Created function spectrum_deg2.
+└── 🔨 Created function search_csamp.
+[deg3fit:lsh:w32] deg-1+800000 pairs base: top-1 0.2405 KL 3.3235 (residual 0.4203)
+[deg3fit:lsh:w32] 10692933 distinct triples above 4.0x floor (2310931 local, 8382002 far; 804s); fitting top 6000000 staged local-first
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+[W715 13:33:45.107904544 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 24576524288 bytes (free: 15983181824, total: 99949805568).
+[deg3fit:lsh:w32] === deg-1+2 + 1000 triples: TEST top-1 0.2407 KL 3.3197 (captured 0.0013)
+[deg3fit:lsh:w32] === deg-1+2 + 5000 triples: TEST top-1 0.2430 KL 3.2929 (captured 0.0064)
+[deg3fit:lsh:w32] === deg-1+2 + 20000 triples: TEST top-1 0.2479 KL 3.2002 (captured 0.0205)
+[deg3fit:lsh:w32] === deg-1+2 + 50000 triples: TEST top-1 0.2519 KL 3.1068 (captured 0.0359)
+[deg3fit:lsh:w32] === deg-1+2 + 100000 triples: TEST top-1 0.2587 KL 3.0256 (captured 0.0492)
+[deg3fit:lsh:w32] === deg-1+2 + 200000 triples: TEST top-1 0.2626 KL 2.9518 (captured 0.0627)
+[deg3fit:lsh:w32] === deg-1+2 + 500000 triples: TEST top-1 0.2708 KL 2.8725 (captured 0.0862)
+[deg3fit:lsh:w32] === deg-1+2 + 1000000 triples: TEST top-1 0.2836 KL 2.7873 (captured 0.1165)
+[deg3fit:lsh:w32] === deg-1+2 + 2000000 triples: TEST top-1 0.2964 KL 2.7067 (captured 0.1571)
+[deg3fit:lsh:w32] === deg-1+2 + 6000000 triples: TEST top-1 0.2914 KL 2.7871 (captured 0.2686)
+[deg3fit:lsh:w32] SPARSITY pairs {"N_eff": 23684.496471709706, "k50": 15593, "k90": 471521, "k99": 757997, "total_energy": 0.2583132664641319} triples {"N_eff": 1050232.6236134223, "k50": 1133520, "k90": 4093028, "k99": 5232014, "total_energy": 0.2685952454673092}
+[deg3fit:lsh:w32] deg-4: 3420669 distinct quads above 4.0x floor (525s); fitting top 3420669
+Stopping app - user stopped from CLI.
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh │
+│ _dataset_gl.py:5075 in main                                                  │
+│                                                                              │
+│   5074 │   if stage == "deg3-fit":                                           │
+│ ❱ 5075 │   │   print(deg3_fit.remote(n_train, n_test, win, 64, 800_000, bloc │
+│   5076 │   │   │   │   │   │   │     kappa, 3000, max_tris,                  │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_object.py:45 in wrapped                    │
+│                                                                              │
+│    44 │   │   await self.hydrate()                                           │
+│ ❱  45 │   │   return await method(self, *args, **kwargs)                     │
+│    46                                                                        │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_functions.py:1757 in remote                │
+│                                                                              │
+│   1756 │   │                                                                 │
+│ ❱ 1757 │   │   return await self._call_function(args, kwargs)                │
+│   1758                                                                       │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_functions.py:1695 in _call_function        │
+│                                                                              │
+│   1694 │   │                                                                 │
+│ ❱ 1695 │   │   return await invocation.run_function()                        │
+│   1696                                                                       │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_functions.py:476 in run_function           │
+│                                                                              │
+│    475 │   │   │   if await_response.output.result.status in TERMINAL_STATUS │
+│ ❱  476 │   │   │   │   return await _process_result(                         │
+│    477 │   │   │   │   │   await_response.output.result, await_response.outp │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_utils/function_utils.py:550 in             │
+│ _process_result                                                              │
+│                                                                              │
+│   549 │   │                                                                  │
+│ ❱ 550 │   │   raise RemoteError(result.exception)                            │
+│   551                                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+RemoteError

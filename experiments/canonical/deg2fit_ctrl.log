@@ -1,0 +1,84 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-9vDPgG2lfiVP9BRcvucP2x
+✓ Created objects.
+├── 🔨 Created mount 
+│   /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh
+│   _dataset_gl.py
+├── 🔨 Created function wandb_ping.
+├── 🔨 Created function make_data.
+├── 🔨 Created function gen_data.
+├── 🔨 Created function make_oracle_data.
+├── 🔨 Created function relabel_hidden.
+├── 🔨 Created function search.
+├── 🔨 Created function gl_tree.
+├── 🔨 Created function gl_tree_top1.
+├── 🔨 Created function stream_fit.
+├── 🔨 Created function sensitivity.
+├── 🔨 Created function refit_top1.
+├── 🔨 Created function dl_fourier.
+├── 🔨 Created function make_plain_data.
+├── 🔨 Created function grad_sense.
+├── 🔨 Created function stream_top1.
+├── 🔨 Created function gen_plain_data.
+├── 🔨 Created function deg2_fit.
+├── 🔨 Created function deg3_fit.
+├── 🔨 Created function oracle.
+├── 🔨 Created function deg2_exact.
+├── 🔨 Created function fourier_learn.
+├── 🔨 Created function search_csamp.
+├── 🔨 Created function gl_tree_refit.
+├── 🔨 Created function fit_staged.
+├── 🔨 Created function fit_deg1.
+├── 🔨 Created function spectrum_deg1.
+├── 🔨 Created function fit_sparse2.
+├── 🔨 Created function fit_sparse3.
+├── 🔨 Created function fit_staged_real.
+├── 🔨 Created function spectrum_deg2.
+└── 🔨 Created function search_slots.
+[deg2fit:ctrl:w32] deg-1 top-1 0.1243 KL 5.0731; fitting 400000 exact pairs (psi 3.01e-04..7.61e-07)
+[deg2fit:ctrl:w32] MP coefficients in 62s; deg-2 captured mass 0.2491 (residual 0.6467 -> 0.3976)
+[deg2fit:ctrl:w32] === deg-1 + 5 pairs: TEST top-1 0.1250 KL 5.0687 (captured 0.0002)
+[deg2fit:ctrl:w32] === deg-1 + 100 pairs: TEST top-1 0.1327 KL 5.0269 (captured 0.0046)
+[deg2fit:ctrl:w32] === deg-1 + 1500 pairs: TEST top-1 0.1717 KL 4.6966 (captured 0.0457)
+[deg2fit:ctrl:w32] === deg-1 + 6000 pairs: TEST top-1 0.1950 KL 4.4042 (captured 0.0950)
+[deg2fit:ctrl:w32] === deg-1 + 18000 pairs: TEST top-1 0.2080 KL 4.1851 (captured 0.1357)
+[deg2fit:ctrl:w32] === deg-1 + 48000 pairs: TEST top-1 0.2170 KL 4.0240 (captured 0.1706)
+[deg2fit:ctrl:w32] === deg-1 + 160000 pairs: TEST top-1 0.2182 KL 3.8605 (captured 0.2366)
+[deg2fit:ctrl:w32] === deg-1 + 400000 pairs: TEST top-1 0.2117 KL 3.8583 (captured 0.3168)
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: levstamb (umd-leans-well) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: Tracking run with wandb version 0.28.0
+wandb: Run data is saved locally in /root/wandb/run-20260715_065018-gr8shsu1
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run deg2fit-ctrl-w32-N1000000
+wandb: ⭐️ View project at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: 🚀 View run at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/gr8shsu1
+wandb: updating run metadata; uploading summary
+wandb: uploading summary; uploading requirements.txt; uploading wandb-summary.json; uploading config.yaml; uploading wandb-metadata.json
+wandb: uploading summary; uploading requirements.txt; uploading wandb-summary.json; uploading wandb-metadata.json
+wandb: uploading summary
+wandb: 
+wandb: Run history:
+wandb:      TEST_kl ██▆▄▃▂▁▁
+wandb:    TEST_top1 ▁▂▅▆▇███
+wandb: cum_captured ▁▁▂▃▄▅▆█
+wandb:        pairs ▁▁▁▁▁▂▄█
+wandb: 
+wandb: Run summary:
+wandb:      TEST_kl 3.85831
+wandb:    TEST_top1 0.2117
+wandb:    best_top1 0.2182
+wandb: cum_captured 0.31684
+wandb:    deg1_top1 0.1243
+wandb:        pairs 400000
+wandb: 
+wandb: 🚀 View run deg2fit-ctrl-w32-N1000000 at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/gr8shsu1
+wandb: ⭐️ View project at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: Synced 4 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260715_065018-gr8shsu1/logs
+{'encoding': 'ctrl', 'win': 32, 'n_train': 1000000, 'deg1_top1': 0.1243, 'deg1_kl': 5.073139299337939, 'K': 400000, 'pair_floor': 2.83261836353748e-07, 'ladder': [{'k': 5, 'top1': 0.125, 'kl': 5.068664434349909, 'cum_captured': 0.00023364654728982875}, {'k': 100, 'top1': 0.1327, 'kl': 5.026947990266606, 'cum_captured': 0.004591208720232656}, {'k': 1500, 'top1': 0.1717, 'kl': 4.696593699239241, 'cum_captured': 0.045667429827519514}, {'k': 6000, 'top1': 0.195, 'kl': 4.404190298253857, 'cum_captured': 0.09498811730336346}, {'k': 18000, 'top1': 0.208, 'kl': 4.185075323723163, 'cum_captured': 0.13571014351994828}, {'k': 48000, 'top1': 0.217, 'kl': 4.023976487914438, 'cum_captured': 0.1706098459743811}, {'k': 160000, 'top1': 0.2182, 'kl': 3.8605315984037296, 'cum_captured': 0.23662888253177847}, {'k': 400000, 'top1': 0.2117, 'kl': 3.858312621192992, 'cum_captured': 0.3168438381942683}]}
+{"encoding": "ctrl", "win": 32, "n_train": 1000000, "deg1_top1": 0.1243, "deg1_kl": 5.073139299337939, "K": 400000, "pair_floor": 2.83261836353748e-07, "ladder": [{"k": 5, "top1": 0.125, "kl": 5.068664434349909, "cum_captured": 0.00023364654728982875}, {"k": 100, "top1": 0.1327, "kl": 5.026947990266606, "cum_captured": 0.004591208720232656}, {"k": 1500, "top1": 0.1717, "kl": 4.696593699239241, "cum_captured": 0.045667429827519514}, {"k": 6000, "top1": 0.195, "kl": 4.404190298253857, "cum_captured": 0.09498811730336346}, {"k": 18000, "top1": 0.208, "kl": 4.185075323723163, "cum_captured": 0.13571014351994828}, {"k": 48000, "top1": 0.217, "kl": 4.023976487914438, "cum_captured": 0.1706098459743811}, {"k": 160000, "top1": 0.2182, "kl": 3.8605315984037296, "cum_captured": 0.23662888253177847}, {"k": 400000, "top1": 0.2117, "kl": 3.858312621192992, "cum_captured": 0.3168438381942683}]}
+✓ App completed. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-9vDPgG2lfiVP9BRcvucP2x

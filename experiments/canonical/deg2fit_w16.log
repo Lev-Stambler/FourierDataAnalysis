@@ -1,0 +1,81 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-z6w1xe4ncFlvJLMaadDI1P
+✓ Created objects.
+├── 🔨 Created mount 
+│   /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh
+│   _dataset_gl.py
+├── 🔨 Created function make_data.
+├── 🔨 Created function wandb_ping.
+├── 🔨 Created function gen_data.
+├── 🔨 Created function search.
+├── 🔨 Created function make_oracle_data.
+├── 🔨 Created function relabel_hidden.
+├── 🔨 Created function stream_fit.
+├── 🔨 Created function gl_tree.
+├── 🔨 Created function stream_top1.
+├── 🔨 Created function gl_tree_top1.
+├── 🔨 Created function refit_top1.
+├── 🔨 Created function sensitivity.
+├── 🔨 Created function gen_plain_data.
+├── 🔨 Created function dl_fourier.
+├── 🔨 Created function grad_sense.
+├── 🔨 Created function deg2_fit.
+├── 🔨 Created function deg2_exact.
+├── 🔨 Created function search_csamp.
+├── 🔨 Created function make_plain_data.
+├── 🔨 Created function gl_tree_refit.
+├── 🔨 Created function deg3_fit.
+├── 🔨 Created function oracle.
+├── 🔨 Created function fit_staged_real.
+├── 🔨 Created function fit_staged.
+├── 🔨 Created function fit_deg1.
+├── 🔨 Created function spectrum_deg1.
+├── 🔨 Created function fit_sparse3.
+├── 🔨 Created function spectrum_deg2.
+├── 🔨 Created function fit_sparse2.
+└── 🔨 Created function search_slots.
+[deg2fit:lsh:w16] deg-1 top-1 0.1465 KL 4.7529; fitting 329832 exact pairs (psi 3.26e-04..5.17e-07)
+[deg2fit:lsh:w16] MP coefficients in 50s; deg-2 captured mass 0.2180 (residual 0.6195 -> 0.4015)
+[deg2fit:lsh:w16] === deg-1 + 5 pairs: TEST top-1 0.1469 KL 4.7471 (captured 0.0004)
+[deg2fit:lsh:w16] === deg-1 + 100 pairs: TEST top-1 0.1515 KL 4.6933 (captured 0.0057)
+[deg2fit:lsh:w16] === deg-1 + 1500 pairs: TEST top-1 0.1815 KL 4.3796 (captured 0.0526)
+[deg2fit:lsh:w16] === deg-1 + 6000 pairs: TEST top-1 0.1985 KL 4.0932 (captured 0.1026)
+[deg2fit:lsh:w16] === deg-1 + 18000 pairs: TEST top-1 0.2167 KL 3.8485 (captured 0.1406)
+[deg2fit:lsh:w16] === deg-1 + 48000 pairs: TEST top-1 0.2271 KL 3.6750 (captured 0.1781)
+[deg2fit:lsh:w16] === deg-1 + 160000 pairs: TEST top-1 0.2293 KL 3.5403 (captured 0.2412)
+[deg2fit:lsh:w16] === deg-1 + 329832 pairs: TEST top-1 0.2301 KL 3.5622 (captured 0.2988)
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: levstamb (umd-leans-well) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: Tracking run with wandb version 0.28.0
+wandb: Run data is saved locally in /root/wandb/run-20260715_053652-wn24p3rq
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run deg2fit-lsh-w16-N1000000
+wandb: ⭐️ View project at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: 🚀 View run at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/wn24p3rq
+wandb: updating run metadata; uploading summary
+wandb: uploading wandb-summary.json; uploading config.yaml; uploading wandb-metadata.json; uploading requirements.txt
+wandb: 
+wandb: Run history:
+wandb:      TEST_kl ██▆▄▃▂▁▁
+wandb:    TEST_top1 ▁▁▄▅▇███
+wandb: cum_captured ▁▁▂▃▄▅▇█
+wandb:        pairs ▁▁▁▁▁▂▄█
+wandb: 
+wandb: Run summary:
+wandb:      TEST_kl 3.56225
+wandb:    TEST_top1 0.2301
+wandb:    best_top1 0.2301
+wandb: cum_captured 0.29883
+wandb:    deg1_top1 0.1465
+wandb:        pairs 329832
+wandb: 
+wandb: 🚀 View run deg2fit-lsh-w16-N1000000 at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/wn24p3rq
+wandb: ⭐️ View project at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: Synced 4 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260715_053652-wn24p3rq/logs
+{"encoding": "lsh", "win": 16, "n_train": 1000000, "deg1_top1": 0.1465, "deg1_kl": 4.7529055974930525, "K": 329832, "pair_floor": 2.585155671206273e-07, "ladder": [{"k": 5, "top1": 0.1469, "kl": 4.74705307488963, "cum_captured": 0.000440943961409766}, {"k": 100, "top1": 0.1515, "kl": 4.693308119598776, "cum_captured": 0.005717996686385613}, {"k": 1500, "top1": 0.1815, "kl": 4.379597699460993, "cum_captured": 0.05261347424285421}, {"k": 6000, "top1": 0.1985, "kl": 4.093222443030449, "cum_captured": 0.10255609118032842}, {"k": 18000, "top1": 0.2167, "kl": 3.848527190834988, "cum_captured": 0.1405710984329535}, {"k": 48000, "top1": 0.2271, "kl": 3.6750199584695453, "cum_captured": 0.17813353181194672}, {"k": 160000, "top1": 0.2293, "kl": 3.5403421318294015, "cum_captured": 0.2412032406037786}, {"k": 329832, "top1": 0.2301, "kl": 3.5622450025888335, "cum_captured": 0.29883190803782306}]}
+{'encoding': 'lsh', 'win': 16, 'n_train': 1000000, 'deg1_top1': 0.1465, 'deg1_kl': 4.7529055974930525, 'K': 329832, 'pair_floor': 2.585155671206273e-07, 'ladder': [{'k': 5, 'top1': 0.1469, 'kl': 4.74705307488963, 'cum_captured': 0.000440943961409766}, {'k': 100, 'top1': 0.1515, 'kl': 4.693308119598776, 'cum_captured': 0.005717996686385613}, {'k': 1500, 'top1': 0.1815, 'kl': 4.379597699460993, 'cum_captured': 0.05261347424285421}, {'k': 6000, 'top1': 0.1985, 'kl': 4.093222443030449, 'cum_captured': 0.10255609118032842}, {'k': 18000, 'top1': 0.2167, 'kl': 3.848527190834988, 'cum_captured': 0.1405710984329535}, {'k': 48000, 'top1': 0.2271, 'kl': 3.6750199584695453, 'cum_captured': 0.17813353181194672}, {'k': 160000, 'top1': 0.2293, 'kl': 3.5403421318294015, 'cum_captured': 0.2412032406037786}, {'k': 329832, 'top1': 0.2301, 'kl': 3.5622450025888335, 'cum_captured': 0.29883190803782306}]}
+✓ App completed. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-z6w1xe4ncFlvJLMaadDI1P

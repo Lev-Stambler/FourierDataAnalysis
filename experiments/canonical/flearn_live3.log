@@ -1,0 +1,113 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-ZYNPIOZXiLdqoBvSiugqKE
+✓ Created objects.
+├── 🔨 Created mount 
+│   /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh
+│   _dataset_gl.py
+├── 🔨 Created function make_data.
+├── 🔨 Created function wandb_ping.
+├── 🔨 Created function gen_data.
+├── 🔨 Created function search.
+├── 🔨 Created function gl_tree.
+├── 🔨 Created function make_oracle_data.
+├── 🔨 Created function relabel_hidden.
+├── 🔨 Created function sensitivity.
+├── 🔨 Created function stream_fit.
+├── 🔨 Created function gl_tree_top1.
+├── 🔨 Created function stream_top1.
+├── 🔨 Created function refit_top1.
+├── 🔨 Created function make_plain_data.
+├── 🔨 Created function deg2_exact.
+├── 🔨 Created function deg2_fit.
+├── 🔨 Created function grad_sense.
+├── 🔨 Created function gen_plain_data.
+├── 🔨 Created function deg3_fit.
+├── 🔨 Created function dl_fourier.
+├── 🔨 Created function gl_tree_refit.
+├── 🔨 Created function fourier_learn.
+├── 🔨 Created function fit_deg1.
+├── 🔨 Created function fit_staged_real.
+├── 🔨 Created function oracle.
+├── 🔨 Created function search_csamp.
+├── 🔨 Created function spectrum_deg2.
+├── 🔨 Created function fit_sparse3.
+├── 🔨 Created function fit_sparse2.
+├── 🔨 Created function fit_staged.
+├── 🔨 Created function search_slots.
+└── 🔨 Created function spectrum_deg1.
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: levstamb (umd-leans-well) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: Tracking run with wandb version 0.28.0
+wandb: Run data is saved locally in /root/wandb/run-20260715_084713-vbg01eln
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run fourierlearn-lsh-w32-K16384
+wandb: ⭐️ View project at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: 🚀 View run at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/vbg01eln
+[flearn:lsh:w32] K=16384 warm=16384 residual 0.2923
+/root/qary_lsh_dataset_gl.py:1404: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)
+  log_fn(t, {"train_mse": float(mse), "lr": float(sched.get_last_lr()[0]),
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+[flearn:lsh:w32] 8192 distinct hardened chars; deg hist [0, 0, 0, 8192]; deg>4: 0; span>3 blocks: 8192
+[flearn:lsh:w32] === deg-1 + 8192 LEARNED chars: TEST top-1 0.1472 KL 4.6829 (captured 0.0007)
+wandb: uploading history steps 119-119, summary, console lines 4-5; updating run metadata
+wandb: uploading wandb-summary.json; uploading config.yaml; uploading output.log
+wandb: uploading history steps 120-120, summary
+wandb: 
+wandb: Run history:
+wandb:     best_val_mse ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:    coef_norm_max ████▇▇▇▇▆▆▆▆▆▅▅▅▅▄▄▄▄▄▄▄▄▃▃▃▃▃▂▂▂▂▂▂▂▁▁▁
+wandb:   coef_norm_mean ██▇▆▆▆▆▆▆▆▅▅▅▅▅▄▄▄▄▄▄▄▃▃▃▃▃▃▃▃▂▂▂▂▂▂▂▂▂▁
+wandb:          deg_max ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:         deg_mean ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:               lr ▁▃██████████████████████████████████████
+wandb: masks_moved_frac ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:        n_deg_gt4 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:      pair_decorr █▃▄▂▂▆▂▆▄▂▃▄▆▂▃▅▅▅▁▂▁▃▅▆▄▃▂▅▃▃▅▄▄▃▅▄▅▂▃▃
+wandb:        train_mse ▃█▄▅▅▄▅▅▇▅▅▄▄▆▄▃▅▆▃▅▃▄▅▆▃▆▆▇▆▅▄▂▃▄▁▆▄▆▆▄
+wandb:               +1 ...
+wandb: 
+wandb: Run summary:
+wandb:              K 16384
+wandb:        TEST_kl 4.68286
+wandb:      TEST_top1 0.1472
+wandb:   best_val_mse 0.03226
+wandb:       captured 0.00069
+wandb:  coef_norm_max 0.15631
+wandb: coef_norm_mean 0.11256
+wandb:        deg_max 3
+wandb:       deg_mean 1.5
+wandb:       encoding lsh
+wandb:            +10 ...
+wandb: 
+wandb: 🚀 View run fourierlearn-lsh-w32-K16384 at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/vbg01eln
+wandb: ⭐️ View project at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260715_084713-vbg01eln/logs
+{'encoding': 'lsh', 'win': 32, 'K': 16384, 'n_chars': 8192, 'warm': 16384, 'TEST_top1': 0.1472, 'TEST_kl': 4.682860164024681, 'captured': 0.0006895363330841064, 'val_mse': 0.03226032853126526, 'deg_hist': {'0': 0, '1': 0, '2': 0, '3': 8192}, 'n_deg_gt4': 0, 'n_span_gt3': 8192, 'sparsity': {'N_eff': 3566.4439267576076, 'k50': 1573, 'k90': 3158, 'k99': 3629, 'total_energy': 0.0011937104258765764}}
+{"encoding": "lsh", "win": 32, "K": 16384, "n_chars": 8192, "warm": 16384, "TEST_top1": 0.1472, "TEST_kl": 4.682860164024681, "captured": 0.0006895363330841064, "val_mse": 0.03226032853126526, "deg_hist": {"0": 0, "1": 0, "2": 0, "3": 8192}, "n_deg_gt4": 0, "n_span_gt3": 8192, "sparsity": {"N_eff": 3566.4439267576076, "k50": 1573, "k90": 3158, "k99": 3629, "total_energy": 0.0011937104258765764}}
+✓ App completed. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-ZYNPIOZXiLdqoBvSiugqKE

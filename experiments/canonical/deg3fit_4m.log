@@ -1,0 +1,92 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-6n0AoiRlP9QtC2zub1Zf8T
+✓ Created objects.
+├── 🔨 Created mount 
+│   /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh
+│   _dataset_gl.py
+├── 🔨 Created function make_data.
+├── 🔨 Created function wandb_ping.
+├── 🔨 Created function search.
+├── 🔨 Created function gen_data.
+├── 🔨 Created function stream_top1.
+├── 🔨 Created function make_oracle_data.
+├── 🔨 Created function stream_fit.
+├── 🔨 Created function relabel_hidden.
+├── 🔨 Created function sensitivity.
+├── 🔨 Created function gl_tree_top1.
+├── 🔨 Created function gl_tree.
+├── 🔨 Created function refit_top1.
+├── 🔨 Created function make_plain_data.
+├── 🔨 Created function grad_sense.
+├── 🔨 Created function dl_fourier.
+├── 🔨 Created function gen_plain_data.
+├── 🔨 Created function deg2_exact.
+├── 🔨 Created function fourier_learn.
+├── 🔨 Created function deg2_fit.
+├── 🔨 Created function gl_tree_refit.
+├── 🔨 Created function deg3_fit.
+├── 🔨 Created function oracle.
+├── 🔨 Created function fit_staged.
+├── 🔨 Created function fit_deg1.
+├── 🔨 Created function spectrum_deg1.
+├── 🔨 Created function search_csamp.
+├── 🔨 Created function spectrum_deg2.
+├── 🔨 Created function fit_staged_real.
+├── 🔨 Created function fit_sparse3.
+├── 🔨 Created function fit_sparse2.
+└── 🔨 Created function search_slots.
+[deg3fit:lsh:w32] deg-1+400000 pairs base: top-1 0.2381 KL 3.3226 (residual 0.4525)
+[deg3fit:lsh:w32] 10866021 distinct triples above 4.0x floor (2245171 local, 8620850 far; 804s); fitting top 2500000 staged local-first
+[deg3fit:lsh:w32] === deg-1+2 + 1000 triples: TEST top-1 0.2384 KL 3.3181 (captured 0.0017)
+[deg3fit:lsh:w32] === deg-1+2 + 5000 triples: TEST top-1 0.2416 KL 3.2897 (captured 0.0075)
+[deg3fit:lsh:w32] === deg-1+2 + 20000 triples: TEST top-1 0.2467 KL 3.1952 (captured 0.0235)
+[deg3fit:lsh:w32] === deg-1+2 + 50000 triples: TEST top-1 0.2514 KL 3.0967 (captured 0.0406)
+[deg3fit:lsh:w32] === deg-1+2 + 100000 triples: TEST top-1 0.2579 KL 3.0156 (captured 0.0554)
+[deg3fit:lsh:w32] === deg-1+2 + 200000 triples: TEST top-1 0.2645 KL 2.9401 (captured 0.0704)
+[deg3fit:lsh:w32] === deg-1+2 + 500000 triples: TEST top-1 0.2737 KL 2.8606 (captured 0.0963)
+[deg3fit:lsh:w32] === deg-1+2 + 1000000 triples: TEST top-1 0.2808 KL 2.7715 (captured 0.1297)
+[deg3fit:lsh:w32] === deg-1+2 + 2000000 triples: TEST top-1 0.2941 KL 2.6873 (captured 0.1741)
+[deg3fit:lsh:w32] === deg-1+2 + 2500000 triples: TEST top-1 0.2961 KL 2.6818 (captured 0.1910)
+[deg3fit:lsh:w32] SPARSITY pairs {"N_eff": 17800.627537836383, "k50": 8664, "k90": 207649, "k99": 373358, "total_energy": 0.22381687572961084} triples {"N_eff": 439194.0404690318, "k50": 361099, "k90": 1628239, "k99": 2085278, "total_energy": 0.1909817343332472}
+[deg3fit:lsh:w32] deg-4: 3417125 distinct quads above 4.0x floor (490s); fitting top 2500000
+[W715 11:51:37.799471475 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 10240393216 bytes (free: 1051000832, total: 85017624576).
+[deg3fit:lsh:w32] === deg-1+2+3 + 5000 quads: TEST top-1 0.2959 KL 2.6805
+[deg3fit:lsh:w32] === deg-1+2+3 + 20000 quads: TEST top-1 0.2972 KL 2.6765
+[deg3fit:lsh:w32] === deg-1+2+3 + 50000 quads: TEST top-1 0.2961 KL 2.6712
+[deg3fit:lsh:w32] === deg-1+2+3 + 100000 quads: TEST top-1 0.2963 KL 2.6654
+[deg3fit:lsh:w32] === deg-1+2+3 + 200000 quads: TEST top-1 0.2973 KL 2.6559
+[deg3fit:lsh:w32] === deg-1+2+3 + 2500000 quads: TEST top-1 0.3007 KL 2.6243
+[deg3fit:lsh:w32] DIAG {"copy_share": 0.345, "acc_copy": 0.4289855072463768, "acc_nocopy": 0.23312977099236643, "top5": 0.5406, "top20": 0.6962, "rare_copy_share_of_rare": 0.16756393001345896, "acc_rare_copy": 0.05622489959839357, "acc_rare_nocopy": 0.05092966855295069, "acc_conf_0.00": 0.2096345514950166, "share_conf_0.00": 0.301, "acc_conf_0.25": 0.2702107581000315, "share_conf_0.25": 0.3179, "acc_conf_0.50": 0.3429063756461804, "share_conf_0.50": 0.1741, "acc_conf_0.75": 0.4444444444444444, "share_conf_0.75": 0.207, "acc_freq_rare": 0.051816958277254375, "share_freq_rare": 0.1486, "acc_freq_mid": 0.12835093419983754, "share_freq_mid": 0.3693, "acc_freq_common": 0.5094378759593445, "share_freq_common": 0.4821}
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: levstamb (umd-leans-well) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: Tracking run with wandb version 0.28.0
+wandb: Run data is saved locally in /root/wandb/run-20260715_115152-q8wjxjhq
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run deg3fit-lsh-w32-N4000000
+wandb: ⭐️ View project at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: 🚀 View run at https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/q8wjxjhq
+wandb: updating run metadata; uploading summary
+wandb: uploading history steps 0-9, summary
+wandb: 
+wandb: Run history:
+wandb:   TEST_kl ██▇▆▅▄▃▂▁▁
+wandb: TEST_top1 ▁▁▂▃▃▄▅▆██
+wandb:   triples ▁▁▁▁▁▂▂▄▇█
+wandb: 
+wandb: Run summary:
+wandb:         TEST_kl 2.68178
+wandb:       TEST_top1 0.2961
+wandb:       base_top1 0.2381
+wandb: n_triples_found 10866021
+wandb:         triples 2500000
+wandb: 
+wandb: 🚀 View run deg3fit-lsh-w32-N4000000 at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh/runs/q8wjxjhq
+wandb: ⭐️ View project at: https://wandb.ai/umd-leans-well/fda-canonical-qary-lsh
+wandb: Synced 4 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260715_115152-q8wjxjhq/logs
+{"encoding": "lsh", "win": 32, "n_pairs": 400000, "base_top1": 0.2381, "base_kl": 3.322592178209359, "n_triples_found": 10866021, "blocks": 4, "ladder": [{"k": 1000, "top1": 0.2384, "kl": 3.318086580023216, "cum_captured": 0.001671948954735844}, {"k": 5000, "top1": 0.2416, "kl": 3.28971390776349, "cum_captured": 0.007460475397701981}, {"k": 20000, "top1": 0.2467, "kl": 3.1951930708791596, "cum_captured": 0.02345656809462067}, {"k": 50000, "top1": 0.2514, "kl": 3.0967246901307024, "cum_captured": 0.04059263292313205}, {"k": 100000, "top1": 0.2579, "kl": 3.015606281394232, "cum_captured": 0.055396227984659895}, {"k": 200000, "top1": 0.2645, "kl": 2.9401267180219524, "cum_captured": 0.07040936587732143}, {"k": 500000, "top1": 0.2737, "kl": 2.8606050365307163, "cum_captured": 0.09631348935725952}, {"k": 1000000, "top1": 0.2808, "kl": 2.7715334196226467, "cum_captured": 0.12965898358851072}, {"k": 2000000, "top1": 0.2941, "kl": 2.6873350191791077, "cum_captured": 0.17405579626892648}, {"k": 2500000, "top1": 0.2961, "kl": 2.681776002582279, "cum_captured": 0.1909817343353686}], "deg3_captured": 0.1417531669139862, "sparsity_pairs": {"N_eff": 17800.627537836383, "k50": 8664, "k90": 207649, "k99": 373358, "total_energy": 0.22381687572961084}, "sparsity_triples": {"N_eff": 439194.0404690318, "k50": 361099, "k90": 1628239, "k99": 2085278, "total_energy": 0.1909817343332472}, "n_quads_found": 3417125, "ladder4": [{"k": 5000, "top1": 0.2959, "kl": 2.6804773722971413}, {"k": 20000, "top1": 0.2972, "kl": 2.676523234942564}, {"k": 50000, "top1": 0.2961, "kl": 2.671224816983784}, {"k": 100000, "top1": 0.2963, "kl": 2.66539593591679}, {"k": 200000, "top1": 0.2973, "kl": 2.6558798515311066}, {"k": 2500000, "top1": 0.3007, "kl": 2.62426540390421}], "diag": {"copy_share": 0.345, "acc_copy": 0.4289855072463768, "acc_nocopy": 0.23312977099236643, "top5": 0.5406, "top20": 0.6962, "rare_copy_share_of_rare": 0.16756393001345896, "acc_rare_copy": 0.05622489959839357, "acc_rare_nocopy": 0.05092966855295069, "acc_conf_0.00": 0.2096345514950166, "share_conf_0.00": 0.301, "acc_conf_0.25": 0.2702107581000315, "share_conf_0.25": 0.3179, "acc_conf_0.50": 0.3429063756461804, "share_conf_0.50": 0.1741, "acc_conf_0.75": 0.4444444444444444, "share_conf_0.75": 0.207, "acc_freq_rare": 0.051816958277254375, "share_freq_rare": 0.1486, "acc_freq_mid": 0.12835093419983754, "share_freq_mid": 0.3693, "acc_freq_common": 0.5094378759593445, "share_freq_common": 0.4821}}
+{'encoding': 'lsh', 'win': 32, 'n_pairs': 400000, 'base_top1': 0.2381, 'base_kl': 3.322592178209359, 'n_triples_found': 10866021, 'blocks': 4, 'ladder': [{'k': 1000, 'top1': 0.2384, 'kl': 3.318086580023216, 'cum_captured': 0.001671948954735844}, {'k': 5000, 'top1': 0.2416, 'kl': 3.28971390776349, 'cum_captured': 0.007460475397701981}, {'k': 20000, 'top1': 0.2467, 'kl': 3.1951930708791596, 'cum_captured': 0.02345656809462067}, {'k': 50000, 'top1': 0.2514, 'kl': 3.0967246901307024, 'cum_captured': 0.04059263292313205}, {'k': 100000, 'top1': 0.2579, 'kl': 3.015606281394232, 'cum_captured': 0.055396227984659895}, {'k': 200000, 'top1': 0.2645, 'kl': 2.9401267180219524, 'cum_captured': 0.07040936587732143}, {'k': 500000, 'top1': 0.2737, 'kl': 2.8606050365307163, 'cum_captured': 0.09631348935725952}, {'k': 1000000, 'top1': 0.2808, 'kl': 2.7715334196226467, 'cum_captured': 0.12965898358851072}, {'k': 2000000, 'top1': 0.2941, 'kl': 2.6873350191791077, 'cum_captured': 0.17405579626892648}, {'k': 2500000, 'top1': 0.2961, 'kl': 2.681776002582279, 'cum_captured': 0.1909817343353686}], 'deg3_captured': 0.1417531669139862, 'sparsity_pairs': {'N_eff': 17800.627537836383, 'k50': 8664, 'k90': 207649, 'k99': 373358, 'total_energy': 0.22381687572961084}, 'sparsity_triples': {'N_eff': 439194.0404690318, 'k50': 361099, 'k90': 1628239, 'k99': 2085278, 'total_energy': 0.1909817343332472}, 'n_quads_found': 3417125, 'ladder4': [{'k': 5000, 'top1': 0.2959, 'kl': 2.6804773722971413}, {'k': 20000, 'top1': 0.2972, 'kl': 2.676523234942564}, {'k': 50000, 'top1': 0.2961, 'kl': 2.671224816983784}, {'k': 100000, 'top1': 0.2963, 'kl': 2.66539593591679}, {'k': 200000, 'top1': 0.2973, 'kl': 2.6558798515311066}, {'k': 2500000, 'top1': 0.3007, 'kl': 2.62426540390421}], 'diag': {'copy_share': 0.345, 'acc_copy': 0.4289855072463768, 'acc_nocopy': 0.23312977099236643, 'top5': 0.5406, 'top20': 0.6962, 'rare_copy_share_of_rare': 0.16756393001345896, 'acc_rare_copy': 0.05622489959839357, 'acc_rare_nocopy': 0.05092966855295069, 'acc_conf_0.00': 0.2096345514950166, 'share_conf_0.00': 0.301, 'acc_conf_0.25': 0.2702107581000315, 'share_conf_0.25': 0.3179, 'acc_conf_0.50': 0.3429063756461804, 'share_conf_0.50': 0.1741, 'acc_conf_0.75': 0.4444444444444444, 'share_conf_0.75': 0.207, 'acc_freq_rare': 0.051816958277254375, 'share_freq_rare': 0.1486, 'acc_freq_mid': 0.12835093419983754, 'share_freq_mid': 0.3693, 'acc_freq_common': 0.5094378759593445, 'share_freq_common': 0.4821}}
+✓ App completed. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-6n0AoiRlP9QtC2zub1Zf8T

@@ -1,0 +1,84 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/tear-labs-43657/main/ap-odc1Rm6cpg0yupVns9hH9T
+✓ Created objects.
+├── 🔨 Created mount 
+│   /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh
+│   _dataset_gl.py
+├── 🔨 Created function make_data.
+├── 🔨 Created function gen_data.
+├── 🔨 Created function wandb_ping.
+├── 🔨 Created function make_oracle_data.
+├── 🔨 Created function relabel_hidden.
+├── 🔨 Created function gl_tree.
+├── 🔨 Created function search.
+├── 🔨 Created function stream_top1.
+├── 🔨 Created function sensitivity.
+├── 🔨 Created function stream_fit.
+├── 🔨 Created function gl_tree_top1.
+├── 🔨 Created function refit_top1.
+├── 🔨 Created function dl_fourier.
+├── 🔨 Created function grad_sense.
+├── 🔨 Created function make_plain_data.
+├── 🔨 Created function deg2_exact.
+├── 🔨 Created function search_csamp.
+├── 🔨 Created function gen_plain_data.
+├── 🔨 Created function fit_staged.
+├── 🔨 Created function gl_tree_refit.
+├── 🔨 Created function oracle.
+├── 🔨 Created function deg2_fit.
+├── 🔨 Created function fit_sparse2.
+├── 🔨 Created function fit_sparse3.
+├── 🔨 Created function search_slots.
+├── 🔨 Created function fit_staged_real.
+├── 🔨 Created function spectrum_deg2.
+├── 🔨 Created function fit_deg1.
+└── 🔨 Created function spectrum_deg1.
+[deg2fit:lsh:w32] deg-1 top-1 0.1475 KL 4.6809; fitting 400000 exact pairs (psi 3.22e-04..5.29e-07)
+Stopping app - user stopped from CLI.
+Runner terminated.
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/qary_lsh │
+│ _dataset_gl.py:4442 in main                                                  │
+│                                                                              │
+│   4441 │   if stage == "refit-top1":                                         │
+│ ❱ 4442 │   │   print(refit_top1.remote(depth, fill_len))                     │
+│   4443 │   if stage == "stream-top1":                                        │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_object.py:45 in wrapped                    │
+│                                                                              │
+│    44 │   │   await self.hydrate()                                           │
+│ ❱  45 │   │   return await method(self, *args, **kwargs)                     │
+│    46                                                                        │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_functions.py:1757 in remote                │
+│                                                                              │
+│   1756 │   │                                                                 │
+│ ❱ 1757 │   │   return await self._call_function(args, kwargs)                │
+│   1758                                                                       │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_functions.py:1695 in _call_function        │
+│                                                                              │
+│   1694 │   │                                                                 │
+│ ❱ 1695 │   │   return await invocation.run_function()                        │
+│   1696                                                                       │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_functions.py:476 in run_function           │
+│                                                                              │
+│    475 │   │   │   if await_response.output.result.status in TERMINAL_STATUS │
+│ ❱  476 │   │   │   │   return await _process_result(                         │
+│    477 │   │   │   │   │   await_response.output.result, await_response.outp │
+│                                                                              │
+│ /home/lev/code/CompressIt/FourierDataAnalysis/experiments/canonical/.venv/li │
+│ b/python3.12/site-packages/modal/_utils/function_utils.py:550 in             │
+│ _process_result                                                              │
+│                                                                              │
+│   549 │   │                                                                  │
+│ ❱ 550 │   │   raise RemoteError(result.exception)                            │
+│   551                                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+RemoteError

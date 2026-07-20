@@ -1,5 +1,78 @@
 # Experiments — Fourier Analysis on a Dataset
 
+## Learned Walsh noun distillation (no Dataset-GL)
+
+`modal_fourier_noun.py` asks pinned `Qwen/Qwen3.5-0.8B` for contextual
+noun/not-noun labels, puts the target and nearest neighbors in independent
+fixed-width fields, converts every Qwen token to a distinct collision-repaired
+32-bit embedding-LSH code, and learns `M` exact Walsh parities and scalar
+coefficients with AdamW. Teacher labels are cached, so repeated H100 training
+runs do not reload Qwen. A hard top-k mask uses the multilinear product STE;
+its high-LR warmup+cosine schedule reaches zero at mask freeze, after which the
+remaining full cosine schedule fits coefficients and bias.
+
+Here, a `mask` is not an attention or padding mask. For Walsh term `j`, it is
+the sparse binary selector `m_j` choosing 1--8 input bits from the 4,096-bit
+example encoding; the resulting Fourier character is
+`(-1)^<m_j,x>`. The STE changes those selected coordinates during the first
+15% of training. A fixed-random-mask ablation (`--mask-discovery-fraction 0`)
+reached only 88.73% test agreement and 49.13% teacher-positive recall, versus
+roughly 90.5--90.9% agreement for individual learned-mask models. Consequently,
+mask discovery remains enabled briefly and is then frozen.
+
+Continuous mask search is available with
+`--mask-discovery-fraction 1 --mask-schedule global_cosine`; character and
+coefficient learning rates are independent (`--mask-lr` and
+`--coefficient-lr`). On the 192-slot/6,144-bit layout, 1,500-step no-freeze
+runs reached 90.19% test agreement at mask LR 1.0 and 90.12% at mask LR 5.0.
+The LR-1.0 run improved teacher-positive recall to 60.88%, but neither beat the
+best briefly-discovered/frozen member. Both sustained 100% median active H100
+utilization and healthy gradient norms. Thus no-freeze remains an ablation,
+while brief discovery remains the agreement-oriented default.
+Variable-degree top-k hardening sorts the top-eight candidates before taking
+each row's requested degree, so degree-1 through degree-7 characters always
+use their actual highest-scoring coordinates.
+
+```bash
+uv run pytest tests/test_fourier_noun.py -q
+uv run modal run modal_fourier_noun.py --stage pilot
+uv run modal run modal_fourier_noun.py --stage train --m 131072
+uv run modal run modal_fourier_noun.py --stage benchmark --m 131072
+uv run modal run modal_fourier_noun.py --stage web-pilot \
+  --train-n 1000000 --val-n 8192 --test-n 8192 \
+  --m 262144 --steps 4000 --batch-size 16384
+uv run modal run modal_fourier_noun.py --stage v3-pilot \
+  --train-n 1000000 --val-n 8192 --test-n 8192 --student-length 128 \
+  --m 131072 --batch-size 16384 --extra-train-repeat 10
+uv run modal run modal_fourier_noun.py --stage v4-pilot \
+  --train-n 1000000 --val-n 8192 --test-n 8192 --student-length 192 \
+  --m 131072 --steps 1500 --batch-size 16384 --extra-train-repeat 10 \
+  --mask-lr 1.0 --coefficient-lr 0.03 \
+  --mask-discovery-fraction 1 --mask-schedule global_cosine
+```
+
+Artifacts use `fda-cache` under `/cache/fourier_noun`; W&B project:
+`fda-fourier-noun`. Pilot defaults are 90,000/8,192/8,192 balanced EWT
+train/dev/test targets, 64 token slots × 32 collision-repaired unique LSH bits,
+131,072 fixed-context Fourier terms, batch 16,384, and 1,000 warmup+cosine
+steps. The fast schedule uses 20 coefficient-warmup steps, 15 mask-warmup
+steps, mask freeze at step 150, validation every 25 steps, and patience 12; its
+measured run stopped at step 750 in 235 seconds with healthy gradient norms.
+The measured large-data operating point combines one million unique
+FineWeb-Edu targets with 90,000 balanced EWT targets (EWT gets 10× sampling
+weight), and adds fixed lowercase/prefix/suffix/casing fields. A validation-
+weighted three-support hybrid Fourier sum with a 70% validation positive-recall
+constraint reaches 91.27% held-out teacher agreement, 66.50% positive recall,
+and 95.56% negative recall. It exports to a standalone 7,632,448-byte NPZ:
+209.63× smaller than 1.6 GB of teacher weights. The `web-pilot` path streams
+unique
+`(document, token-index)` targets while retaining balanced EWT validation and
+test splits; `v2-pilot` reuses cached schema-6 teacher probabilities without
+rerunning Qwen, and `v3-pilot` appends 64 prompt-context token slots while
+reusing the same cached teacher probabilities. Exact sparse inference is
+vectorized over the degree-8 CSR masks. Every vocabulary token retains a
+distinct collision-repaired LSH code.
+
 Tests the paper's two make-or-break empirical claims (small-`n` exact track, `n ≲ 18`, so there is genuine ground truth):
 
 - **E2 (context profile) — the GL metric.** For Goldreich–Levin the quantities that matter are the **output** (# heavy dataset coefficients = the list `L`) and the **search overhead** `N_max / output` (how far above the true answer the tree search wanders). Overhead ≈1 = output-sensitive (context repetition helps); large overhead = blindness. Coefficient *degree is irrelevant to GL*. `fda_exp/context_profile.py`.
