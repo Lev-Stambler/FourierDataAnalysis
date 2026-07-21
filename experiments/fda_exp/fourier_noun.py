@@ -1372,8 +1372,15 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
         **{f"val/{k}": v for k, v in initial.items()},
         **{f"baseline/{k}": v for k, v in baseline.items()},
         "mask/initial_unique_fraction_before_repair": initial_unique_fraction,
+        "mask/initial_unique_characters_before_repair": round(
+            initial_unique_fraction * model.terms
+        ),
         "mask/initial_duplicates_repaired": initial_duplicates_repaired,
+        "mask/initial_capacity_recovered_fraction": (
+            initial_duplicates_repaired / model.terms
+        ),
         "mask/initial_unique_fraction_after_repair": 1.0,
+        "mask/initial_unique_characters_after_repair": model.terms,
     })
     history: list[dict[str, Any]] = []
     loop_started = time.perf_counter()
@@ -1526,8 +1533,13 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
                 logger({
                     "global_step": current,
                     "mask/unique_fraction_before_repair": unique_fraction,
+                    "mask/unique_characters_before_repair": round(
+                        unique_fraction * model.terms
+                    ),
                     "mask/unique_fraction_after_repair": 1.0,
+                    "mask/unique_characters_after_repair": model.terms,
                     "mask/duplicates_repaired": repaired,
+                    "mask/capacity_recovered_fraction": repaired / model.terms,
                 })
             if checkpoint_path and (current % max(250, config.eval_every) == 0
                                     or stale >= config.patience):

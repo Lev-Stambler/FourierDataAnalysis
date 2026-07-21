@@ -51,6 +51,12 @@ identity
 c_1 chi_S(x) + ... + c_k chi_S(x) = (c_1 + ... + c_k) chi_S(x).
 ```
 
+For example, if three slots independently converge to support `{17, 91}` with
+coefficients `+0.8`, `-0.3`, and `+0.1`, they are only one effective feature:
+their combined contribution is `+0.6 chi_{17,91}(x)`. Repair retains `+0.6`
+on one slot, zeros the other two slots, and only then gives those two empty
+slots new supports. No prediction changes during that operation.
+
 The member with the largest absolute coefficient is the keeper. Its
 coefficient becomes the group sum; every other member's coefficient becomes
 zero. Only after this merge does repair relocate the zero-valued rows. It
@@ -74,6 +80,14 @@ that differ by one coordinate are distinct and will not be repaired. Overlap
 penalties or other diversity objectives are a separate experiment. Export
 also performs a final defensive global group-and-sum before serialization, so
 the deployed sparse artifact cannot double-count an identical character.
+
+The repair telemetry is intentionally explicit. `unique_characters_before`
+is the effective character-bank capacity immediately before one repair;
+`duplicates_repaired` is the number of redundant rows relocated in that one
+event, not a cumulative counter; and `capacity_recovered_fraction` divides
+that count by `M`. The corresponding `*_after_repair` count must equal `M` or
+training aborts. These metrics say nothing about pairwise support overlap:
+100% exact uniqueness can still contain many near-duplicate characters.
 
 Teacher sharpening is a log-odds multiplier (`--teacher-sharpness`), not the
 usual softening temperature: 2.0 is equivalent to temperature 0.5. The
