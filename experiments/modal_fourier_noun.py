@@ -1832,6 +1832,114 @@ def compare_completed_sharpness_runs(run_ids: str):
     return {"wandb_url": url, "rows": rows}
 
 
+@app.function(image=image, timeout=600, memory=1024, secrets=WANDB_SECRET)
+def inspect_wandb_runs(run_ids: str):
+    """Return compact live progress for one or more W&B training runs."""
+    import json
+
+    import wandb
+
+    train_keys = [
+        "global_step", "train/ce", "grad/global_preclip",
+        "optim/lr_mask", "optim/lr_coefficient_raw",
+        "perf/examples_per_second",
+    ]
+    validation_keys = [
+        "global_step", "val/kl", "val/agreement",
+        "val/calibrated_agreement", "val/teacher_positive_recall",
+        "val/calibrated_teacher_positive_recall",
+        "val/balanced_agreement", "val/calibrated_balanced_agreement",
+    ]
+    diversity_keys = [
+        "global_step", "mask/changed_fraction",
+        "mask/unique_fraction_before_repair", "mask/duplicates_repaired",
+    ]
+    api = wandb.Api()
+    result = []
+    for run_id in (value.strip() for value in run_ids.split(",")):
+        if not run_id:
+            continue
+        source = api.run(f"umd-leans-well/fda-fourier-noun/{run_id}")
+        train_rows = [
+            {key: value for key, value in row.items() if value is not None}
+            for row in source.scan_history(keys=train_keys)
+        ]
+        validation_rows = [
+            {key: value for key, value in row.items() if value is not None}
+            for row in source.scan_history(keys=validation_keys)
+        ]
+        diversity_rows = [
+            {key: value for key, value in row.items() if value is not None}
+            for row in source.scan_history(keys=diversity_keys)
+        ]
+        latest_train = train_rows[-1] if train_rows else {}
+        latest_validation = validation_rows[-1] if validation_rows else {}
+        best_validation = max(
+            validation_rows,
+            key=lambda row: (
+                row["val/calibrated_agreement"],
+                row.get("val/calibrated_balanced_agreement", -1.0),
+            ),
+            default={},
+        )
+        result.append({
+            "run_id": run_id,
+            "state": source.state,
+            "url": source.url,
+            "latest_train": latest_train,
+            "latest_validation": latest_validation,
+            "latest_diversity": diversity_rows[-1] if diversity_rows else {},
+            "best_validation": best_validation,
+            "summary": dict(source.summary),
+        })
+    return json.dumps(result, sort_keys=True, default=str)
+
+
+@app.function(image=image, gpu="H100", timeout=600, memory=4096)
+def validate_duplicate_repair():
+    """GPU smoke test that duplicate repair preserves logits and uniqueness."""
+    import numpy as np
+    import torch
+
+    from fda_exp.fourier_noun import (
+        HardWalshStudent, _repair_duplicate_topk_masks,
+    )
+
+    device = torch.device("cuda")
+    model = HardWalshStudent(
+        64, 256, seed=7, char_chunk=128, bits_per_token=32,
+        initialization="random", off_init=-1.0, on_init=1.0,
+        ste_variant="product", ste_scale=0.01,
+        mask_parameterization="topk",
+    ).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.01, fused=True)
+    bits = torch.randint(0, 2, (64, 64), device=device, dtype=torch.uint8)
+    model(bits).square().mean().backward()
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+    with torch.no_grad():
+        model.theta[1].copy_(model.theta[0])
+        model.mask_degree[1] = model.mask_degree[0]
+        model.theta[3].copy_(model.theta[2])
+        model.mask_degree[3] = model.mask_degree[2]
+        before = model(bits).float()
+        unique_before, repaired = _repair_duplicate_topk_masks(model, optimizer)
+        after = model(bits).float()
+        rows = model.hardened_index_rows()[:, :model.max_mask_degree].cpu().numpy()
+    result = {
+        "unique_fraction_before": unique_before,
+        "duplicates_repaired": repaired,
+        "unique_after": int(len(np.unique(rows, axis=0))),
+        "terms": model.terms,
+        "max_logit_delta": float((before - after).abs().max()),
+    }
+    if result["unique_after"] != model.terms:
+        raise RuntimeError("repair smoke test left duplicate characters")
+    if result["max_logit_delta"] > 1e-5:
+        raise RuntimeError("repair smoke test changed represented logits")
+    return result
+
+
 @app.function(image=image, gpu="H100", volumes={"/cache": volume}, timeout=10800,
               memory=32768, secrets=WANDB_SECRET)
 def kl_ensemble_fourier(model_paths: str, labeled_path: str,
@@ -2346,6 +2454,14 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
          mask_warmup_fraction: float = 0.20,
          eval_every: int = 25, patience: int = 12):
     run_seed = seed if training_seed < 0 else training_seed
+    if stage == "inspect":
+        if not run_id:
+            raise ValueError("inspect requires comma-separated --run-id")
+        print(inspect_wandb_runs.remote(run_id))
+        return
+    if stage == "repair-smoke":
+        print(validate_duplicate_repair.remote())
+        return
     if stage == "upload":
         if not (run_id and model_path and summary_path):
             raise ValueError("upload requires run_id, model_path, and summary_path")

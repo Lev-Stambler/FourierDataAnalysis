@@ -82,7 +82,12 @@ def train_direct(terms: int = 524288, steps: int = 1000,
                  wsd_stable_steps: int = 1400,
                  wsd_decay_steps: int = 550,
                  wsd_minimum_lr_ratio: float = 0.1,
-                 resume_run_id: str = ""):
+                 resume_run_id: str = "",
+                 resume_terms: int = 0,
+                 hard_weight: float = 0.0,
+                 teacher_logit_scale: float = 1.0,
+                 selection_metric: str = "kl",
+                 ewt_sampling_weight: int = 10):
     import dataclasses
     import gc
     import json
@@ -117,6 +122,10 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         wsd_decay_steps: int
         wsd_minimum_lr_ratio: float
         resume_run_id: str
+        resume_terms: int
+        hard_weight: float
+        teacher_logit_scale: float
+        selection_metric: str
         max_degree: int = 8
         mask_magnitude: float = 8.0
         mask_beta2: float = 0.95
@@ -147,6 +156,11 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         wsd_decay_steps=wsd_decay_steps,
         wsd_minimum_lr_ratio=wsd_minimum_lr_ratio,
         resume_run_id=resume_run_id,
+        resume_terms=resume_terms,
+        hard_weight=hard_weight,
+        teacher_logit_scale=teacher_logit_scale,
+        selection_metric=selection_metric,
+        ewt_sampling_weight=ewt_sampling_weight,
     )
     if terms <= 0 or steps <= 0 or batch_size <= 0:
         raise ValueError("terms, steps, and batch size must be positive")
@@ -154,6 +168,14 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         raise ValueError("schedule_kind must be 'legacy' or 'wsd'")
     if not 0.0 <= wsd_minimum_lr_ratio <= 1.0:
         raise ValueError("wsd_minimum_lr_ratio must lie in [0, 1]")
+    if resume_terms < 0 or resume_terms > terms:
+        raise ValueError("resume_terms must lie in [0, terms]")
+    if not 0.0 <= hard_weight <= 1.0 or teacher_logit_scale < 1.0:
+        raise ValueError("invalid teacher sharpening configuration")
+    if selection_metric not in {"kl", "agreement"}:
+        raise ValueError("selection_metric must be 'kl' or 'agreement'")
+    if ewt_sampling_weight < 0:
+        raise ValueError("ewt_sampling_weight must be non-negative")
     volume.reload()
     torch.manual_seed(seed)
     torch.set_float32_matmul_precision("high")
@@ -246,8 +268,9 @@ def train_direct(terms: int = 524288, steps: int = 1000,
     ).to(device)
     parent_step = 0
     if resume_run_id:
+        parent_terms = resume_terms or terms
         parent_path = (
-            f"{ROOT}/models/fourier-kiss-x{terms}-{resume_run_id}.npz"
+            f"{ROOT}/models/fourier-kiss-x{parent_terms}-{resume_run_id}.npz"
         )
         if not os.path.exists(parent_path):
             raise FileNotFoundError(
@@ -266,25 +289,31 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         parent = decode_compact_student(parent_compact)
         degree = np.asarray(parent["degrees"], dtype=np.int64)
         indices = np.asarray(parent["indices"], dtype=np.int64)
-        if len(degree) != terms or int(parent["n_bits"]) != n_bits:
+        if len(degree) != parent_terms or parent_terms > terms or \
+                int(parent["n_bits"]) != n_bits:
             raise RuntimeError("continuation artifact shape does not match run")
-        model.theta.data.fill_(-config.mask_magnitude)
+        model.theta.data[:parent_terms].fill_(-config.mask_magnitude)
         active_rows = torch.as_tensor(
-            np.repeat(np.arange(terms, dtype=np.int64), degree),
+            np.repeat(np.arange(parent_terms, dtype=np.int64), degree),
             device=device,
         )
         active_columns = torch.as_tensor(indices, device=device)
         model.theta.data[active_rows, active_columns] = config.mask_magnitude
-        model.degree.copy_(torch.as_tensor(degree, device=device))
-        model.coefficient.data.copy_(torch.as_tensor(
+        model.degree[:parent_terms].copy_(torch.as_tensor(
+            degree, device=device
+        ))
+        model.coefficient.data[:parent_terms].copy_(torch.as_tensor(
             np.asarray(parent["coefficient"], dtype=np.float32)
             / model.output_scale,
             device=device,
         ))
+        if parent_terms < terms:
+            model.coefficient.data[parent_terms:].zero_()
         model.bias.data.fill_(float(parent["bias"]))
         parent_step = int(parent_metadata.get("best_step", 0))
         run.summary["continued_from_step"] = parent_step
         run.summary["continuation_parent"] = resume_run_id
+        run.summary["continued_from_terms"] = parent_terms
     optimizer = torch.optim.AdamW(
         [
             {
@@ -427,6 +456,11 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         **{f"diversity/{key}": value for key, value in initial_repair.items()},
     })
     best_kl = initial_val["kl"]
+    best_rank = (
+        (initial_val["agreement"], -initial_val["kl"])
+        if config.selection_metric == "agreement"
+        else (-initial_val["kl"], initial_val["agreement"])
+    )
     best_step = 0
     best_state = model.sparse_state()
     best_val_logits = initial_val_logits
@@ -439,7 +473,21 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         bits, target = sample_batch()
         optimizer.zero_grad(set_to_none=True)
         logits = model(bits)
-        ce = torch.nn.functional.binary_cross_entropy_with_logits(logits, target)
+        soft_ce = torch.nn.functional.binary_cross_entropy_with_logits(
+            logits, target
+        )
+        if config.hard_weight:
+            sharpened = torch.sigmoid(
+                torch.logit(target.clamp(1e-5, 1.0 - 1e-5))
+                * config.teacher_logit_scale
+            )
+            sharp_ce = torch.nn.functional.binary_cross_entropy_with_logits(
+                logits, sharpened
+            )
+            ce = ((1.0 - config.hard_weight) * soft_ce
+                  + config.hard_weight * sharp_ce)
+        else:
+            ce = soft_ce
         diversity, diversity_diagnostics = sampled_diversity_loss(
             model, sample_size=diversity_sample, generator=generator,
             report=((step + 1) % 10 == 0),
@@ -506,7 +554,13 @@ def train_direct(terms: int = 524288, steps: int = 1000,
                 "duplicates_repaired": repair["duplicates_repaired"],
                 "recent_grad_norm": float(np.median(recent_norms[-25:])),
             }), flush=True)
-            if val_metrics["kl"] < best_kl:
+            candidate_rank = (
+                (val_metrics["agreement"], -val_metrics["kl"])
+                if config.selection_metric == "agreement"
+                else (-val_metrics["kl"], val_metrics["agreement"])
+            )
+            if candidate_rank > best_rank:
+                best_rank = candidate_rank
                 best_kl = val_metrics["kl"]
                 best_step = current
                 best_state = model.sparse_state()
@@ -899,7 +953,9 @@ def main(stage: str = "scale", x: int = 524288, steps: int = 1000,
          diversity_weight: float = 0.05, diversity_sample: int = 1024,
          schedule_kind: str = "legacy", wsd_stable_steps: int = 1400,
          wsd_decay_steps: int = 550, wsd_minimum_lr_ratio: float = 0.1,
-         resume_run_id: str = ""):
+         resume_run_id: str = "", resume_terms: int = 0,
+         hard_weight: float = 0.0, teacher_logit_scale: float = 1.0,
+         selection_metric: str = "kl", ewt_sampling_weight: int = 10):
     arguments = {
         "steps": steps, "batch_size": batch_size, "char_chunk": char_chunk,
         "seed": seed, "mask_lr": mask_lr,
@@ -911,6 +967,11 @@ def main(stage: str = "scale", x: int = 524288, steps: int = 1000,
         "wsd_decay_steps": wsd_decay_steps,
         "wsd_minimum_lr_ratio": wsd_minimum_lr_ratio,
         "resume_run_id": resume_run_id,
+        "resume_terms": resume_terms,
+        "hard_weight": hard_weight,
+        "teacher_logit_scale": teacher_logit_scale,
+        "selection_metric": selection_metric,
+        "ewt_sampling_weight": ewt_sampling_weight,
     }
     if stage == "train":
         print(train_direct.remote(terms=x, **arguments))

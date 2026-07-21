@@ -941,31 +941,124 @@ def _gradient_norm(parameters: Sequence[nn.Parameter]) -> float:
 def _repair_duplicate_topk_masks(model: HardWalshStudent,
                                  optimizer: torch.optim.Optimizer,
                                  ) -> tuple[float, int]:
-    """Move exact duplicate masks to their learned next-best coordinates."""
+    """Make top-k Fourier characters exactly unique, preserving all logits.
+
+    A character is identified by its sorted, padded support (the input-bit
+    coordinates selected by one hard top-k mask).  Equal supports compute the
+    same Walsh function, so their contribution can be combined exactly::
+
+        c_1 * chi_S(x) + ... + c_k * chi_S(x)
+        = (c_1 + ... + c_k) * chi_S(x)
+
+    Repair performs that identity before changing any support:
+
+    1. Group equal supports globally, including their variable degrees.
+    2. Keep the member with the largest absolute coefficient and replace its
+       coefficient by the group sum.  Zero every other group member.
+    3. Relocate each now-zero row by swapping one selected theta coordinate
+       with a score-ranked runner-up.  If all local runners-up collide, scan
+       the full coordinate space deterministically.
+    4. Reserve each proposed support immediately, so relocated rows cannot
+       collide with an original support or with one another.
+    5. Clear row-shaped AdamW moments for keepers and relocated rows.  The
+       moments would otherwise describe the pre-merge coefficient or the
+       pre-swap theta coordinates and can cause a discontinuous next update.
+    6. Assert that the resulting character bank is globally unique.
+
+    Relocated rows have coefficient zero, and the duplicate contribution has
+    already been transferred to its keeper.  Therefore the represented logit
+    is unchanged at the repair boundary (up to floating-point summation).  The
+    function returns the unique fraction *before* repair and the number of
+    redundant rows relocated.  This is character repair, not vocabulary-LSH
+    collision repair; token codes are made unique separately during encoding.
+    """
     candidates = model.hardened_index_rows(extra_candidates=8).cpu().numpy()
     selected = candidates[:, :model.max_mask_degree]
-    _, first = np.unique(selected, axis=0, return_index=True)
-    keep = np.zeros(len(selected), dtype=np.bool_)
-    keep[first] = True
-    duplicate_rows = np.flatnonzero(~keep)
-    unique_fraction = len(first) / max(1, len(selected))
-    if not len(duplicate_rows):
+    unique_rows, inverse, counts = np.unique(
+        selected, axis=0, return_inverse=True, return_counts=True
+    )
+    duplicate_groups = np.flatnonzero(counts > 1)
+    duplicate_count = int((counts[duplicate_groups] - 1).sum())
+    unique_fraction = len(unique_rows) / max(1, len(selected))
+    if not duplicate_count:
         return unique_fraction, 0
     degrees = model.mask_degree.cpu().numpy()
+    coefficient = model.coefficient.detach().cpu().numpy()
+    # Reserve all original unique supports. For each collision group, merge
+    # coefficients into its strongest member before relocating zero-valued
+    # rows. This preserves logits exactly at the repair boundary.
+    seen = {tuple(row) for row in unique_rows}
+    keepers: list[int] = []
+    duplicate_rows: list[int] = []
+    for group in duplicate_groups:
+        members = np.flatnonzero(inverse == group)
+        keeper = int(members[np.argmax(np.abs(coefficient[members]))])
+        model.coefficient[keeper] = float(coefficient[members].sum())
+        keepers.append(keeper)
+        for row in members:
+            row = int(row)
+            if row != keeper:
+                model.coefficient[row] = 0.0
+                duplicate_rows.append(row)
     remove = np.empty(len(duplicate_rows), dtype=np.int64)
     add = np.empty(len(duplicate_rows), dtype=np.int64)
     for out_index, row in enumerate(duplicate_rows):
         degree = int(degrees[row])
         active = selected[row, :degree]
-        remove[out_index] = active[row % degree]
         runners_up = candidates[row, model.max_mask_degree:]
-        replacement = next((int(x) for x in runners_up if x not in active), None)
+        replacement = None
+        removed = None
+        # Prefer score-ranked alternatives, while trying every removable
+        # coordinate.  A different support is accepted only if it is globally
+        # unused, so one repair pass ends with exact uniqueness.
+        for candidate in runners_up:
+            candidate = int(candidate)
+            if candidate in active:
+                continue
+            for old in active[::-1]:
+                proposal = np.sort(np.r_[active[active != old], candidate])
+                padded = tuple(np.r_[proposal, np.full(
+                    model.max_mask_degree - degree, model.n_bits,
+                    dtype=proposal.dtype,
+                )])
+                if padded not in seen:
+                    replacement, removed = candidate, int(old)
+                    break
+            if replacement is not None:
+                break
         if replacement is None:
-            replacement = int((active[-1] + row + 1) % model.n_bits)
-            while replacement in active:
-                replacement = (replacement + 1) % model.n_bits
+            # The local runner-up list can be exhausted in a dense focused
+            # pool.  Deterministically scan the full coordinate space; the
+            # degree-2--8 support space is far larger than the character bank.
+            for offset in range(model.n_bits):
+                candidate = int((row * 2654435761 + offset) % model.n_bits)
+                if candidate in active:
+                    continue
+                for old in active[::-1]:
+                    proposal = np.sort(np.r_[active[active != old], candidate])
+                    padded = tuple(np.r_[proposal, np.full(
+                        model.max_mask_degree - degree, model.n_bits,
+                        dtype=proposal.dtype,
+                    )])
+                    if padded not in seen:
+                        replacement, removed = candidate, int(old)
+                        break
+                if replacement is not None:
+                    break
+        if replacement is None or removed is None:
+            raise RuntimeError("could not construct a unique Fourier character")
+        remove[out_index] = removed
         add[out_index] = replacement
-    rows = torch.as_tensor(duplicate_rows, device=model.theta.device)
+        proposal = np.sort(np.r_[active[active != removed], replacement])
+        seen.add(tuple(np.r_[proposal, np.full(
+            model.max_mask_degree - degree, model.n_bits,
+            dtype=proposal.dtype,
+        )]))
+    if len(seen) != model.terms:
+        raise RuntimeError("duplicate repair did not produce unique characters")
+    rows = torch.as_tensor(
+        duplicate_rows, dtype=torch.long, device=model.theta.device
+    )
     old_columns = torch.as_tensor(remove, device=model.theta.device)
     new_columns = torch.as_tensor(add, device=model.theta.device)
 
@@ -975,9 +1068,13 @@ def _repair_duplicate_topk_masks(model: HardWalshStudent,
         value[rows, new_columns] = old
 
     swap_coordinates(model.theta)
-    for value in optimizer.state.get(model.theta, {}).values():
-        if torch.is_tensor(value) and value.shape == model.theta.shape:
-            swap_coordinates(value)
+    affected = torch.as_tensor(
+        keepers + duplicate_rows, dtype=torch.long, device=model.theta.device
+    )
+    for parameter in (model.theta, model.coefficient):
+        for value in optimizer.state.get(parameter, {}).values():
+            if torch.is_tensor(value) and value.shape == parameter.shape:
+                value[affected] = 0
     return unique_fraction, len(duplicate_rows)
 
 
@@ -1105,9 +1202,6 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
         ste_variant=config.ste_variant, ste_scale=config.ste_scale,
         mask_parameterization=config.mask_parameterization,
     ).to(dev)
-    initial_hard_masks = (model.hardened_index_rows()[:, :model.max_mask_degree].clone()
-                          if model.mask_parameterization == "topk"
-                          else model.hardened_masks().clone())
     optimizer = torch.optim.AdamW(
         [
             {"params": [model.theta], "lr": config.mask_lr, "weight_decay": 0.0,
@@ -1120,6 +1214,20 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
         ],
         betas=(0.9, 0.999), eps=1e-8, fused=(dev.type == "cuda"),
     )
+    initial_unique_fraction = 1.0
+    initial_duplicates_repaired = 0
+    resuming_checkpoint = bool(
+        resume and checkpoint_path and Path(checkpoint_path).exists()
+    )
+    if (config.repair_duplicate_masks
+            and model.mask_parameterization == "topk"
+            and not resuming_checkpoint):
+        initial_unique_fraction, initial_duplicates_repaired = (
+            _repair_duplicate_topk_masks(model, optimizer)
+        )
+    initial_hard_masks = (model.hardened_index_rows()[:, :model.max_mask_degree].clone()
+                          if model.mask_parameterization == "topk"
+                          else model.hardened_masks().clone())
     warmup_steps = max(1, round(config.steps * config.warmup_fraction))
     mask_freeze_step = round(config.steps * config.mask_discovery_fraction)
     mask_start_step = round(config.steps * config.mask_delay_fraction)
@@ -1224,8 +1332,14 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
     if best_distribution_student is None:
         best_distribution_kl = initial["kl"]
         best_distribution_student = export_sparse_student(model)
-    logger({"global_step": start_step, **{f"val/{k}": v for k, v in initial.items()},
-            **{f"baseline/{k}": v for k, v in baseline.items()}})
+    logger({
+        "global_step": start_step,
+        **{f"val/{k}": v for k, v in initial.items()},
+        **{f"baseline/{k}": v for k, v in baseline.items()},
+        "mask/initial_unique_fraction_before_repair": initial_unique_fraction,
+        "mask/initial_duplicates_repaired": initial_duplicates_repaired,
+        "mask/initial_unique_fraction_after_repair": 1.0,
+    })
     history: list[dict[str, Any]] = []
     loop_started = time.perf_counter()
     last_log = loop_started
@@ -1362,9 +1476,17 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
                 unique_fraction, repaired = _repair_duplicate_topk_masks(
                     model, optimizer
                 )
+                # Repair is function-preserving, so retain the exactly unique
+                # representation when this evaluation is the agreement champ.
+                if improved:
+                    best_state = {
+                        key: value.detach().cpu().clone()
+                        for key, value in model.state_dict().items()
+                    }
                 logger({
                     "global_step": current,
                     "mask/unique_fraction_before_repair": unique_fraction,
+                    "mask/unique_fraction_after_repair": 1.0,
                     "mask/duplicates_repaired": repaired,
                 })
             if checkpoint_path and (current % max(250, config.eval_every) == 0

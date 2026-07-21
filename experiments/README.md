@@ -33,6 +33,48 @@ Variable-degree top-k hardening sorts the top-eight candidates before taking
 each row's requested degree, so degree-1 through degree-7 characters always
 use their actual highest-scoring coordinates.
 
+### Exact character uniqueness and function-preserving repair
+
+Token-code uniqueness and Fourier-character uniqueness are separate
+invariants. Vocabulary encoding first makes every token's 32-bit LSH code
+distinct. During training, however, continuously moving top-k masks can make
+two character slots select the same sorted support. Equal supports compute the
+same Walsh function and waste capacity even when their coefficient values are
+different.
+
+At initialization and after each validation interval, optional duplicate-mask
+repair groups characters by their complete sorted, padded support. For a group
+with support `S` and coefficients `c_1, ..., c_k`, it applies the exact
+identity
+
+```text
+c_1 chi_S(x) + ... + c_k chi_S(x) = (c_1 + ... + c_k) chi_S(x).
+```
+
+The member with the largest absolute coefficient is the keeper. Its
+coefficient becomes the group sum; every other member's coefficient becomes
+zero. Only after this merge does repair relocate the zero-valued rows. It
+tries score-ranked runner-up coordinates first, replacing one currently
+selected coordinate, and accepts a proposal only when its full support is
+globally unused. If the local candidates are exhausted, a deterministic scan
+of all input coordinates supplies a replacement. Each accepted support is
+reserved immediately, preventing repaired rows from colliding with each other.
+
+Finally, repair clears row-shaped AdamW moments for the keeper and relocated
+rows: the old moments refer to pre-merge coefficients or pre-swap mask scores.
+It then asserts that the number of unique supports equals the number of
+character slots. Because every relocated row has coefficient zero and its old
+contribution was transferred to the keeper, repair leaves model logits
+unchanged except for floating-point summation noise. A Modal H100 smoke test
+measured a maximum logit delta of `7.45e-9` while repairing eight duplicates
+and ending with 256/256 unique characters.
+
+This operation guarantees exact uniqueness, not broad diversity: supports
+that differ by one coordinate are distinct and will not be repaired. Overlap
+penalties or other diversity objectives are a separate experiment. Export
+also performs a final defensive global group-and-sum before serialization, so
+the deployed sparse artifact cannot double-count an identical character.
+
 Teacher sharpening is a log-odds multiplier (`--teacher-sharpness`), not the
 usual softening temperature: 2.0 is equivalent to temperature 0.5. The
 original cached teacher remains the canonical evaluation distribution. Each
