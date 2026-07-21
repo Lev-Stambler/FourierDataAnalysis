@@ -72,7 +72,7 @@ It then asserts that the number of unique supports equals the number of
 character slots. Because every relocated row has coefficient zero and its old
 contribution was transferred to the keeper, repair leaves model logits
 unchanged except for floating-point summation noise. A Modal H100 smoke test
-measured a maximum logit delta of `7.45e-9` while repairing eight duplicates
+measured a maximum logit delta of `1.49e-8` while repairing eight duplicates
 and ending with 256/256 unique characters.
 
 This operation guarantees exact uniqueness, not broad diversity: supports
