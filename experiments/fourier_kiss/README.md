@@ -11,11 +11,22 @@ post-hoc character-count sweep.
 
 ```bash
 cd experiments
-uv run pytest fourier_kiss/test_model.py -q
 uv run modal run fourier_kiss/modal_train.py --stage smoke
 uv run modal run fourier_kiss/modal_train.py --stage train --x 524288
 uv run modal run fourier_kiss/modal_train.py --stage scale --x 524288
+uv run modal run fourier_kiss/modal_rescue.py --stage upper --steps 500
+uv run modal run fourier_kiss/modal_rescue.py --stage train --x 131072 \
+  --steps 1000 --batch-size 8192 --coefficient-lr 0.001
 ```
+
+`modal_rescue.py` is the screened, higher-order rescue ladder. It audits
+injective token codes, removes constant/equivalent input columns, screens
+degree-1/2 plus scored degree-3--8 characters on the H100, fits with
+resumable AdamW, and exports an independently calibrated probability scale
+and agreement threshold. All diagnostics (MAE/RMSE percentiles, confidence
+buckets, cosine/R², normalized hard MI, recall, uniqueness, and compression)
+are logged to W&B. Runtime tests and data work are intended to run remotely on
+Modal; the local machine is not a training/evaluation target.
 
 `scale` concurrently runs matched 131,072- and 524,288-character models and
 publishes a W&B comparison. Production defaults use fused AdamW, batch 16,384,

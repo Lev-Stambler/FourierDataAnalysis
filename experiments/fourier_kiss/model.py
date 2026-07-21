@@ -497,7 +497,9 @@ def binary_metrics(logits: np.ndarray | torch.Tensor,
         return float(torch.dot(left, right) / denominator.clamp_min(1e-12))
 
     quantiles = torch.quantile(
-        absolute, torch.tensor([0.5, 0.9, 0.95, 0.99], dtype=torch.float64)
+        absolute, torch.tensor(
+            [0.5, 0.9, 0.95, 0.99], dtype=torch.float64, device=absolute.device
+        )
     )
     result = {
         "ce": float(ce),
