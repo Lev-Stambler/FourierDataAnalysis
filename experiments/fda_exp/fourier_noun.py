@@ -727,16 +727,26 @@ def _binary_entropy_bits(positive_rate: torch.Tensor) -> float:
 
 def binary_metrics(logits: torch.Tensor | np.ndarray,
                    teacher_probability: torch.Tensor | np.ndarray,
-                   gold: torch.Tensor | np.ndarray | None = None) -> dict[str, float]:
+                   gold: torch.Tensor | np.ndarray | None = None,
+                   decision_threshold: float = 0.0) -> dict[str, float]:
+    """Report soft-distribution and hard-decision metrics independently.
+
+    ``decision_threshold`` is applied only to agreement, class recalls, hard
+    mutual information, and optional gold metrics.  Probability metrics always
+    use ``sigmoid(logits)``.  Keeping these paths separate prevents validation
+    threshold calibration from silently changing KL/MAE by shifting logits.
+    """
     z = torch.as_tensor(logits, dtype=torch.float64).reshape(-1)
     p = torch.as_tensor(teacher_probability, dtype=torch.float64).reshape(-1)
     if len(z) != len(p):
         raise ValueError("logits and teacher probabilities have different lengths")
+    if not math.isfinite(decision_threshold):
+        raise ValueError("decision_threshold must be finite")
     ce = torch.nn.functional.binary_cross_entropy_with_logits(z, p)
     entropy = -(p * torch.log(p.clamp_min(1e-12))
                 + (1 - p) * torch.log((1 - p).clamp_min(1e-12))).mean()
     probability = torch.sigmoid(z)
-    answer = probability >= 0.5
+    answer = z >= decision_threshold
     teacher_answer = p >= 0.5
     teacher_positive = int(teacher_answer.sum())
     teacher_negative = len(teacher_answer) - teacher_positive
@@ -793,6 +803,7 @@ def binary_metrics(logits: torch.Tensor | np.ndarray,
         "ce": float(ce),
         "kl": kl,
         "kl_bits": kl / math.log(2.0),
+        "decision_threshold": float(decision_threshold),
         "agreement": float((answer == teacher_answer).double().mean()),
         "balanced_agreement": 0.5 * (positive_recall + negative_recall),
         "teacher_positive_recall": positive_recall,
@@ -1094,12 +1105,18 @@ def _sparse_mask_changed_fraction(model: HardWalshStudent,
 def evaluate_student(model: nn.Module, bits: torch.Tensor,
                      teacher_probability: torch.Tensor, gold: torch.Tensor,
                      batch_size: int = 8192, teacher_sharpness: float = 1.0,
-                     minimum_positive_recall: float = 0.0) -> dict[str, float]:
+                     minimum_positive_recall: float = 0.0,
+                     base_logits: torch.Tensor | None = None) -> dict[str, float]:
+    if base_logits is not None and len(base_logits) != len(bits):
+        raise ValueError("base_logits must align with evaluation bits")
     was_training = model.training
     model.eval()
     outputs = []
     for lo in range(0, len(bits), batch_size):
-        outputs.append(model(bits[lo:lo + batch_size]).float().cpu())
+        value = model(bits[lo:lo + batch_size]).float()
+        if base_logits is not None:
+            value = value + base_logits[lo:lo + batch_size]
+        outputs.append(value.cpu())
     if was_training:
         model.train()
     logits = torch.cat(outputs)
@@ -1156,7 +1173,10 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
                   val_gold: np.ndarray, config: TrainConfig,
                   device: str = "cuda", log: Callable[[dict[str, Any]], None] | None = None,
                   checkpoint_path: str | None = None,
-                  resume: bool = False) -> tuple[HardWalshStudent, dict[str, Any]]:
+                  resume: bool = False,
+                  train_base_logits: np.ndarray | None = None,
+                  val_base_logits: np.ndarray | None = None,
+                  ) -> tuple[HardWalshStudent, dict[str, Any]]:
     """Train with soft BCE, warmup+cosine AdamW, clipping, and early stopping."""
     overall_started = time.perf_counter()
     logger = log or (lambda _: None)
@@ -1192,6 +1212,14 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
     xva = torch.as_tensor(val_bits, dtype=torch.uint8, device=dev)
     pva = torch.as_tensor(val_probability, dtype=torch.float32, device=dev)
     yva = torch.as_tensor(val_gold, dtype=torch.bool, device=dev)
+    if (train_base_logits is None) != (val_base_logits is None):
+        raise ValueError("train and validation base logits must be supplied together")
+    btr = (torch.as_tensor(train_base_logits, dtype=torch.float32, device=dev)
+           if train_base_logits is not None else None)
+    bva = (torch.as_tensor(val_base_logits, dtype=torch.float32, device=dev)
+           if val_base_logits is not None else None)
+    if btr is not None and (len(btr) != len(xtr) or len(bva) != len(xva)):
+        raise ValueError("base logits must align with their data splits")
     model = HardWalshStudent(
         xtr.shape[1], config.terms, seed=config.seed,
         initial_probability=float(ptr.mean()), char_chunk=config.char_chunk,
@@ -1202,6 +1230,11 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
         ste_variant=config.ste_variant, ste_scale=config.ste_scale,
         mask_parameterization=config.mask_parameterization,
     ).to(dev)
+    # With an additive lexical prior, the Fourier module represents only the
+    # contextual residual.  Starting its intercept at zero leaves the initial
+    # predictor exactly equal to that prior.
+    if btr is not None:
+        model.bias.data.zero_()
     optimizer = torch.optim.AdamW(
         [
             {"params": [model.theta], "lr": config.mask_lr, "weight_decay": 0.0,
@@ -1305,13 +1338,14 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
             train_model = model
     generator = torch.Generator(device=dev).manual_seed(config.seed + 1)
     base_logit = torch.logit(ptr.mean().clamp(1e-4, 1 - 1e-4))
-    baseline = binary_metrics(
-        torch.full_like(pva, base_logit).cpu(), pva.cpu(), yva.cpu()
-    )
+    baseline_logits = (bva if bva is not None
+                       else torch.full_like(pva, base_logit))
+    baseline = binary_metrics(baseline_logits.cpu(), pva.cpu(), yva.cpu())
     try:
         initial = evaluate_student(
             train_model, xva, pva, yva, config.batch_size,
             config.teacher_sharpness, config.minimum_positive_recall,
+            bva,
         )
     except Exception as error:
         if train_model is model:
@@ -1321,6 +1355,7 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
         initial = evaluate_student(
             train_model, xva, pva, yva, config.batch_size,
             config.teacher_sharpness, config.minimum_positive_recall,
+            bva,
         )
     if best_state is None:
         best_ce = initial["ce"]
@@ -1364,6 +1399,8 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
         optimizer.zero_grad(set_to_none=True)
         try:
             logits = train_model(xtr[selection])
+            if btr is not None:
+                logits = logits + btr[selection]
             selected_probability = sharpened_train_probability[selection]
             training_target = torch.lerp(
                 selected_probability,
@@ -1382,6 +1419,8 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
             train_model = model
             optimizer.zero_grad(set_to_none=True)
             logits = train_model(xtr[selection])
+            if btr is not None:
+                logits = logits + btr[selection]
             selected_probability = sharpened_train_probability[selection]
             training_target = torch.lerp(
                 selected_probability,
@@ -1430,6 +1469,7 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
             metrics = evaluate_student(
                 train_model, xva, pva, yva, config.batch_size,
                 config.teacher_sharpness, config.minimum_positive_recall,
+                bva,
             )
             with torch.no_grad():
                 degrees = model.mask_degree.float()
@@ -1517,6 +1557,7 @@ def train_student(train_bits: np.ndarray, train_probability: np.ndarray,
     final = evaluate_student(
         model, xva, pva, yva, config.batch_size,
         config.teacher_sharpness, config.minimum_positive_recall,
+        bva,
     )
     recent_norms = [row["grad/global_preclip"] for row in history[-10:]]
     median_norm = float(np.median(recent_norms)) if recent_norms else math.nan
@@ -1763,6 +1804,33 @@ def sparse_student_logits(bits: np.ndarray, artifact: Mapping[str, Any],
     return output
 
 
+def lexical_table_logits(bits: np.ndarray, artifact: Mapping[str, Any]
+                         ) -> np.ndarray:
+    """Apply a sorted exact-key lexical logit table with an unseen backoff."""
+    x = np.asarray(bits, dtype=np.uint8)
+    key_bits = int(artifact["key_bits"])
+    if x.ndim != 2 or key_bits <= 0 or key_bits > x.shape[1] or key_bits % 8:
+        raise ValueError("invalid byte-aligned lexical key width")
+    keys = np.ascontiguousarray(artifact["keys"], dtype=np.uint8)
+    values = np.asarray(artifact["logit"], dtype=np.float32)
+    key_bytes = key_bits // 8
+    if keys.ndim != 2 or keys.shape[1] != key_bytes or len(keys) != len(values):
+        raise ValueError("lexical keys and logits have incompatible shapes")
+    key_type = np.dtype((np.void, key_bytes))
+    table = keys.view(key_type).reshape(-1)
+    if (len(np.unique(table)) != len(table)
+            or not np.array_equal(table, np.sort(table))):
+        raise ValueError("lexical keys must be strictly sorted and unique")
+    packed = np.ascontiguousarray(pack_bits(x[:, :key_bits]))
+    query = packed.view(key_type).reshape(-1)
+    positions = np.searchsorted(table, query)
+    found = positions < len(table)
+    found[found] &= table[positions[found]] == query[found]
+    output = np.full(len(x), float(artifact["default_logit"]), dtype=np.float32)
+    output[found] = values[positions[found]]
+    return output
+
+
 def predict_token_layout(input_ids: np.ndarray, attention_mask: np.ndarray,
                          model_artifact: Mapping[str, Any]) -> np.ndarray:
     """Standalone inference from Qwen token ids without loading Qwen weights."""
@@ -1773,7 +1841,10 @@ def predict_token_layout(input_ids: np.ndarray, attention_mask: np.ndarray,
         packed_codes = packed_codes.cpu().numpy()
     codes = unpack_bits(packed_codes, lsh_bits)
     bits = tokens_to_lsh_bits(input_ids, attention_mask, codes)
-    return sparse_student_logits(bits, model_artifact["student"])
+    logits = sparse_student_logits(bits, model_artifact["student"])
+    if "lexical" in model_artifact:
+        logits += lexical_table_logits(bits, model_artifact["lexical"])
+    return logits
 
 
 def load_compact_student(path: str | os.PathLike[str]) -> dict[str, Any]:

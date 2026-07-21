@@ -1336,7 +1336,8 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
                   patience: int = 12,
                   teacher_sharpness: float = 1.0,
                   minimum_positive_recall: float = 0.70,
-                  checkpoint_enabled: bool = True):
+                  checkpoint_enabled: bool = True,
+                  lexical_prior_count: float = -1.0):
     """Train from the cached labels and save a standalone sparse artifact."""
     import dataclasses
     import json
@@ -1348,7 +1349,7 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
 
     from fda_exp.fourier_noun import (
         TrainConfig, binary_metrics, calibrate_agreement_threshold,
-        export_sparse_student, sharpen_probability,
+        export_sparse_student, lexical_table_logits, sharpen_probability,
         sparse_student_logits, train_student, unpack_bits,
     )
 
@@ -1389,6 +1390,46 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
         source_hashes.append(
             f"{str(extra_meta['metadata_sha256'])[:10]}x{extra_train_repeat}"
         )
+    lexical = None
+    train_base_logits = val_base_logits = test_base_logits = None
+    if lexical_prior_count >= 0:
+        target_span = meta.get("target_token_span", [0, 4])
+        if list(target_span)[0] != 0:
+            raise ValueError("lexical residual currently requires target span at zero")
+        key_bits = int(target_span[1]) * int(meta["lsh_bits"])
+        if key_bits <= 0 or key_bits % 8:
+            raise ValueError("lexical residual requires byte-aligned target bits")
+        key_bytes = key_bits // 8
+        train_keys = np.ascontiguousarray(
+            np.packbits(train_bits[:, :key_bits], axis=1, bitorder="little")
+        )
+        key_type = np.dtype((np.void, key_bytes))
+        key_view = train_keys.view(key_type).reshape(-1)
+        unique_keys, inverse = np.unique(key_view, return_inverse=True)
+        counts = np.bincount(inverse).astype(np.float64)
+        sums = np.bincount(inverse, weights=train_p.astype(np.float64))
+        default_probability = float(np.mean(train_p, dtype=np.float64))
+        table_probability = (
+            sums + lexical_prior_count * default_probability
+        ) / (counts + lexical_prior_count)
+        table_probability = np.clip(table_probability, 1e-5, 1.0 - 1e-5)
+        table_logit = np.log(table_probability / (1.0 - table_probability))
+        # Train against exactly the deployable FP16 table so export cannot
+        # introduce an unmeasured lexical calibration shift.
+        table_logit = table_logit.astype(np.float16).astype(np.float32)
+        default_logit = float(np.log(
+            default_probability / (1.0 - default_probability)
+        ))
+        lexical = {
+            "key_bits": key_bits,
+            "keys": unique_keys.view(np.uint8).reshape(-1, key_bytes).copy(),
+            "logit": table_logit.astype(np.float16),
+            "default_logit": default_logit,
+            "prior_count": float(lexical_prior_count),
+        }
+        train_base_logits = table_logit[inverse]
+        val_base_logits = lexical_table_logits(val_bits, lexical)
+        test_base_logits = lexical_table_logits(test_bits, lexical)
     config = TrainConfig(
         terms=m, steps=steps, batch_size=batch_size,
         char_chunk=min(m, char_chunk), bits_per_token=int(meta["lsh_bits"]), seed=seed,
@@ -1425,6 +1466,7 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
            f"pat{config.patience}-mdf{config.mask_discovery_fraction:g}-"
            f"mdly{config.mask_delay_fraction:g}-"
            f"ms{config.mask_schedule}-cc{config.char_chunk}-"
+           f"lex{lexical_prior_count:g}-"
            f"st{steps}-b{batch_size}-s{seed}")
     # Some informative configurations exceed common filesystem component
     # limits. Keep a readable prefix and a stable digest of the complete tag.
@@ -1439,6 +1481,7 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
         "extra_train_repeat": extra_train_repeat,
         "n_bits": n_bits, "model_revision": meta["model_revision"],
         "dataset_revision": meta["dataset_revision"],
+        "lexical_prior_count": lexical_prior_count,
     }, "student-train")
     logger = run.log if run is not None else lambda row: print(row, flush=True)
     monitor = _GpuSampler()
@@ -1449,46 +1492,77 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
             device="cuda", log=logger,
             checkpoint_path=checkpoint if checkpoint_enabled else None,
             resume=resume,
+            train_base_logits=train_base_logits,
+            val_base_logits=val_base_logits,
         )
     finally:
         gpu_samples = monitor.finish()
     summary["config"] = dataclasses.asdict(config)
     agreement_sparse = export_sparse_student(model)
     val_logits = sparse_student_logits(val_bits, agreement_sparse)
+    if val_base_logits is not None:
+        val_logits += val_base_logits
     threshold, calibrated_val_agreement = calibrate_agreement_threshold(
         val_logits, val_p, config.minimum_positive_recall
     )
-    agreement_sparse["bias"] -= threshold
+    agreement_sparse["decision_threshold"] = float(threshold)
     summary["val"] = binary_metrics(
-        val_logits - threshold, val_p, val_gold
+        val_logits, val_p, val_gold, decision_threshold=threshold
     )
     summary["calibration"] = {
         "validation_logit_threshold": threshold,
         "validation_agreement": calibrated_val_agreement,
     }
     test_logits = sparse_student_logits(test_bits, agreement_sparse)
-    summary["test"] = binary_metrics(test_logits, test_p, test_gold)
+    if test_base_logits is not None:
+        test_logits += test_base_logits
+    summary["test"] = binary_metrics(
+        test_logits, test_p, test_gold, decision_threshold=threshold
+    )
     distribution_val_logits = sparse_student_logits(val_bits, distribution_sparse)
     distribution_test_logits = sparse_student_logits(test_bits, distribution_sparse)
+    if val_base_logits is not None:
+        distribution_val_logits += val_base_logits
+        distribution_test_logits += test_base_logits
+    distribution_threshold, distribution_val_agreement = (
+        calibrate_agreement_threshold(
+            distribution_val_logits, val_p, config.minimum_positive_recall
+        )
+    )
+    distribution_sparse["decision_threshold"] = float(distribution_threshold)
+    summary["distribution_calibration"] = {
+        "validation_logit_threshold": float(distribution_threshold),
+        "validation_agreement": float(distribution_val_agreement),
+    }
 
-    def metric_pair(logits, probability, gold):
+    def metric_pair(logits, probability, gold, decision_threshold=0.0):
         return {
-            "original_teacher": binary_metrics(logits, probability, gold),
+            "original_teacher": binary_metrics(
+                logits, probability, gold,
+                decision_threshold=decision_threshold,
+            ),
             "sharpened_target": binary_metrics(
-                logits, sharpen_probability(probability, config.teacher_sharpness)
+                logits, sharpen_probability(probability, config.teacher_sharpness),
+                decision_threshold=decision_threshold,
             ),
         }
 
     summary["champions"] = {
         "agreement": {
             "best_step": summary["best_step"],
-            "val": metric_pair(val_logits - threshold, val_p, val_gold),
-            "test": metric_pair(test_logits, test_p, test_gold),
+            "val": metric_pair(val_logits, val_p, val_gold, threshold),
+            "test": metric_pair(test_logits, test_p, test_gold, threshold),
         },
         "distribution": {
             "best_step": summary["best_distribution_step"],
-            "val": metric_pair(distribution_val_logits, val_p, val_gold),
-            "test": metric_pair(distribution_test_logits, test_p, test_gold),
+            "val": metric_pair(
+                distribution_val_logits, val_p, val_gold,
+                distribution_threshold,
+            ),
+            "test": metric_pair(
+                distribution_test_logits, test_p, test_gold,
+                distribution_threshold,
+            ),
         },
     }
     summary["export"] = {
@@ -1496,6 +1570,9 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
         "nonzero_indices": int(len(agreement_sparse["indices"])),
         "list_bytes": int(sum(np.asarray(agreement_sparse[key]).nbytes
                          for key in ("offsets", "indices", "coefficient")) + 4),
+        "lexical_table_bytes": int(
+            lexical["keys"].nbytes + lexical["logit"].nbytes + 8
+        ) if lexical is not None else 0,
     }
     summary["performance"] = {
         "peak_memory_bytes": int(torch.cuda.max_memory_allocated()),
@@ -1516,15 +1593,19 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
     distribution_output = output.removesuffix(".pt") + "-distribution.pt"
 
     def write_artifact(path, student, champion):
+        decision_threshold = float(student.get("decision_threshold", 0.0))
         artifact = {
             "metadata": {
                 **meta, "training_config": dataclasses.asdict(config),
                 "source_labeled_path": labeled_path, "champion": champion,
+                "decision_threshold": decision_threshold,
             },
             "student": student,
             "lsh_codes_packed": data["lsh_codes_packed"],
             "summary": summary,
         }
+        if lexical is not None:
+            artifact["lexical"] = lexical
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         temporary = path + ".tmp"
         torch.save(artifact, temporary)
@@ -1942,9 +2023,211 @@ def validate_duplicate_repair():
 
 @app.function(image=image, gpu="H100", volumes={"/cache": volume}, timeout=10800,
               memory=32768, secrets=WANDB_SECRET)
+def lexical_fourier_probe(labeled_path: str, extra_labeled_path: str,
+                          model_path: str, extra_repeat: int = 10,
+                          target_token_slots: int = 4):
+    """Test a smoothed lexical prior beside an exported Fourier student.
+
+    The key is the exact packed LSH code of the fixed-layout target slots.  A
+    weighted training-only mean supplies the lexical probability, validation
+    probabilities fit the two nonnegative logit-stack weights, and test is
+    touched only for final reporting.  This is a cheap feasibility probe for
+    a lexical-prior + contextual-Fourier-residual architecture; it does not
+    mutate or retrain the supplied student.
+    """
+    import json
+    import math
+    import os
+
+    import numpy as np
+    import torch
+
+    from fda_exp.fourier_noun import (
+        binary_metrics, calibrate_agreement_threshold,
+        fit_probability_logit_stack, load_compact_student, unpack_bits,
+    )
+
+    volume.reload()
+    data = torch.load(labeled_path, map_location="cpu", weights_only=False)
+    extra = torch.load(
+        extra_labeled_path, map_location="cpu", weights_only=False
+    ) if extra_labeled_path else None
+    if model_path.endswith(".npz"):
+        artifact = load_compact_student(model_path)
+    else:
+        artifact = torch.load(model_path, map_location="cpu", weights_only=False)
+    student = artifact["student"]
+    n_bits = int(student["n_bits"])
+    lsh_bits = int(data["metadata"]["lsh_bits"])
+    target_bits = target_token_slots * lsh_bits
+    if target_bits % 8:
+        raise ValueError("lexical probe requires byte-aligned target codes")
+    key_bytes = target_bits // 8
+
+    def packed(name, source=data):
+        item = source["splits"][name]
+        value = np.asarray(item["packed_bits"], dtype=np.uint8)
+        if value.shape[1] * 8 < n_bits or value.shape[1] < key_bytes:
+            raise ValueError("labeled input is narrower than the supplied student")
+        return value, item["teacher_probability"].float().numpy(), item["gold"].numpy()
+
+    train_packed, train_p, _ = packed("train")
+    key_parts = [np.ascontiguousarray(train_packed[:, :key_bytes])]
+    probability_parts = [train_p.astype(np.float64, copy=False)]
+    weight_parts = [np.ones(len(train_p), dtype=np.float64)]
+    if extra is not None:
+        extra_packed, extra_p, _ = packed("train", extra)
+        key_parts.append(np.ascontiguousarray(extra_packed[:, :key_bytes]))
+        probability_parts.append(extra_p.astype(np.float64, copy=False))
+        weight_parts.append(np.full(len(extra_p), extra_repeat, dtype=np.float64))
+    key_matrix = np.ascontiguousarray(np.concatenate(key_parts))
+    key_type = np.dtype((np.void, key_bytes))
+    key_view = key_matrix.view(key_type).reshape(-1)
+    unique, inverse = np.unique(key_view, return_inverse=True)
+    probability = np.concatenate(probability_parts)
+    sample_weight = np.concatenate(weight_parts)
+    counts = np.bincount(inverse, weights=sample_weight)
+    sums = np.bincount(inverse, weights=sample_weight * probability)
+    global_probability = float(np.average(probability, weights=sample_weight))
+
+    val_packed, val_p, val_gold = packed("val")
+    test_packed, test_p, test_gold = packed("test")
+
+    def lookup_indices(values):
+        keys = np.ascontiguousarray(values[:, :key_bytes]).view(key_type).reshape(-1)
+        positions = np.searchsorted(unique, keys)
+        found = positions < len(unique)
+        found[found] &= unique[positions[found]] == keys[found]
+        return positions, found
+
+    val_positions, val_found = lookup_indices(val_packed)
+    test_positions, test_found = lookup_indices(test_packed)
+
+    def exact_logits(values, chunk=2048):
+        bits = unpack_bits(values, n_bits)
+        x = torch.as_tensor(bits, dtype=torch.uint8, device="cuda")
+        offsets = np.asarray(student["offsets"], dtype=np.int64)
+        indices = np.asarray(student["indices"], dtype=np.int64)
+        term_counts = np.diff(offsets)
+        max_degree = int(term_counts.max(initial=0))
+        padded = np.zeros((len(term_counts), max_degree), dtype=np.int64)
+        active = np.arange(max_degree)[None, :] < term_counts[:, None]
+        rows = np.repeat(np.arange(len(term_counts)), term_counts)
+        columns = np.arange(len(indices)) - np.repeat(offsets[:-1], term_counts)
+        padded[rows, columns] = indices
+        padded = torch.as_tensor(padded, device="cuda")
+        active = torch.as_tensor(active, dtype=torch.uint8, device="cuda")
+        coefficient = torch.as_tensor(
+            student["coefficient"], dtype=torch.float32, device="cuda"
+        )
+        output = torch.full(
+            (len(x),), float(student["bias"]), dtype=torch.float32, device="cuda"
+        )
+        for lo in range(0, len(term_counts), chunk):
+            hi = min(lo + chunk, len(term_counts))
+            chosen = x[:, padded[lo:hi]]
+            chosen.mul_(active[None, lo:hi])
+            parity = chosen.sum(dim=2, dtype=torch.int32).bitwise_and_(1)
+            output.add_((1.0 - 2.0 * parity.float()) @ coefficient[lo:hi])
+        return output.cpu().numpy()
+
+    fourier_val = exact_logits(val_packed)
+    fourier_test = exact_logits(test_packed)
+    candidates = {}
+    for prior_count in (0.3, 1.0, 3.0, 10.0, 30.0, 100.0):
+        smoothed = (sums + prior_count * global_probability) / (counts + prior_count)
+        smoothed = np.clip(smoothed, 1e-5, 1.0 - 1e-5)
+        table_logits = np.log(smoothed / (1.0 - smoothed))
+        default_logit = math.log(global_probability / (1.0 - global_probability))
+        lexical_val = np.full(len(val_p), default_logit, dtype=np.float64)
+        lexical_test = np.full(len(test_p), default_logit, dtype=np.float64)
+        lexical_val[val_found] = table_logits[val_positions[val_found]]
+        lexical_test[test_found] = table_logits[test_positions[test_found]]
+        weights, bias = fit_probability_logit_stack(
+            np.stack((fourier_val, lexical_val)), val_p, l2=1e-5
+        )
+        val_logits = weights[0] * fourier_val + weights[1] * lexical_val + bias
+        test_logits = weights[0] * fourier_test + weights[1] * lexical_test + bias
+        row = {
+            "prior_count": prior_count,
+            "weights": weights.tolist(),
+            "bias": float(bias),
+            "val": binary_metrics(val_logits, val_p, val_gold),
+            "test": binary_metrics(test_logits, test_p, test_gold),
+            "thresholds": {},
+        }
+        for minimum_recall in (0.0, 0.70, 0.85):
+            threshold, _ = calibrate_agreement_threshold(
+                torch.from_numpy(val_logits), torch.from_numpy(val_p), minimum_recall
+            )
+            row["thresholds"][str(minimum_recall)] = {
+                "threshold": float(threshold),
+                "val": binary_metrics(
+                    val_logits, val_p, val_gold,
+                    decision_threshold=threshold,
+                ),
+                "test": binary_metrics(
+                    test_logits, test_p, test_gold,
+                    decision_threshold=threshold,
+                ),
+            }
+        candidates[str(prior_count)] = row
+    best_key = min(candidates, key=lambda key: candidates[key]["val"]["kl"])
+    best = candidates[best_key]
+    table_bytes = int(len(unique) * (key_bytes + 2))
+    result = {
+        "model_path": model_path,
+        "target_token_slots": target_token_slots,
+        "target_key_bytes": key_bytes,
+        "unique_lexical_keys": int(len(unique)),
+        "global_teacher_probability": global_probability,
+        "val_coverage": float(val_found.mean()),
+        "test_coverage": float(test_found.mean()),
+        "estimated_fp16_table_bytes": table_bytes,
+        "source_artifact_bytes": int(os.path.getsize(model_path)),
+        "estimated_combined_bytes": int(os.path.getsize(model_path) + table_bytes),
+        "estimated_compression_vs_1_6gb": (
+            1_600_000_000 / (os.path.getsize(model_path) + table_bytes)
+        ),
+        "best_prior_count": float(best_key),
+        "best": best,
+        "candidates": candidates,
+    }
+    run = _wandb_run("lexical-fourier-feasibility", {
+        "labeled_path": labeled_path, "extra_labeled_path": extra_labeled_path,
+        "model_path": model_path, "extra_repeat": extra_repeat,
+        "target_token_slots": target_token_slots,
+    }, "diagnostic")
+    if run is not None:
+        flat = {
+            "global_step": 0,
+            "probe/unique_keys": len(unique),
+            "probe/val_coverage": float(val_found.mean()),
+            "probe/test_coverage": float(test_found.mean()),
+            "probe/combined_bytes": result["estimated_combined_bytes"],
+            "probe/compression": result["estimated_compression_vs_1_6gb"],
+            **{f"best/val/{key}": value for key, value in best["val"].items()},
+            **{f"best/test/{key}": value for key, value in best["test"].items()},
+        }
+        for minimum_recall, values in best["thresholds"].items():
+            flat.update({
+                f"recall_{minimum_recall}/test/{key}": value
+                for key, value in values["test"].items()
+            })
+        run.log(flat)
+        run.summary.update(result)
+        run.finish()
+        result["wandb_url"] = run.url
+    print(json.dumps(result, indent=2, sort_keys=True), flush=True)
+    return result
+
+
+@app.function(image=image, gpu="H100", volumes={"/cache": volume}, timeout=10800,
+              memory=32768, secrets=WANDB_SECRET)
 def kl_ensemble_fourier(model_paths: str, labeled_path: str,
                         max_terms: int = 720000,
-                        artifact_budget_bytes: int = 16_000_000):
+                        artifact_budget_bytes: int = 16_000_000,
+                        minimum_positive_recall: float = 0.0):
     """Fit, deduplicate, prune, and calibrate a soft-probability ensemble."""
     import json
     import os
@@ -1954,7 +2237,8 @@ def kl_ensemble_fourier(model_paths: str, labeled_path: str,
     import torch
 
     from fda_exp.fourier_noun import (
-        binary_metrics, decode_compact_sparse_student,
+        binary_metrics, calibrate_agreement_threshold,
+        decode_compact_sparse_student,
         encode_compact_sparse_student, fit_probability_logit_stack, unpack_bits,
     )
 
@@ -2108,6 +2392,9 @@ def kl_ensemble_fourier(model_paths: str, labeled_path: str,
     deployed = decode_compact_sparse_student(compact)
     val_logits = exact_logits(val_bits, deployed)
     test_logits = exact_logits(test_bits, deployed)
+    decision_threshold, _ = calibrate_agreement_threshold(
+        val_logits, val_p, minimum_positive_recall
+    )
     summary = {
         "members": paths,
         "effective_weights": weights.tolist(),
@@ -2118,14 +2405,22 @@ def kl_ensemble_fourier(model_paths: str, labeled_path: str,
         "postprune_affine_bias": float(affine_bias),
         "postquant_affine_scale": quantized_scale,
         "postquant_affine_bias": float(quantized_bias),
+        "minimum_positive_recall": float(minimum_positive_recall),
+        "decision_threshold": float(decision_threshold),
         "terms_before_pruning": int(terms_before_pruning),
         "max_terms": int(max_terms),
         "preprune_val": binary_metrics(preprune_val, val_p, val_gold),
         "preprune_test": binary_metrics(preprune_test, test_p, test_gold),
         "prequant_val": binary_metrics(prequant_val, val_p, val_gold),
         "prequant_test": binary_metrics(prequant_test, test_p, test_gold),
-        "val": binary_metrics(val_logits, val_p, val_gold),
-        "test": binary_metrics(test_logits, test_p, test_gold),
+        "val": binary_metrics(
+            val_logits, val_p, val_gold,
+            decision_threshold=decision_threshold,
+        ),
+        "test": binary_metrics(
+            test_logits, test_p, test_gold,
+            decision_threshold=decision_threshold,
+        ),
         "export": {
             "serialization_version": 2,
             "terms": int(len(deployed["coefficient"])),
@@ -2163,6 +2458,7 @@ def kl_ensemble_fourier(model_paths: str, labeled_path: str,
         "lsh_bits": int(reference["metadata"]["lsh_bits"]),
         "objective": "validation_teacher_probability_bce",
         "effective_weights": weights.tolist(),
+        "decision_threshold": float(decision_threshold),
         "serialization_version": 2,
     }
     temporary = output + ".tmp"
@@ -2353,9 +2649,9 @@ def ensemble_fourier(model_paths: str, labeled_path: str,
     threshold, _ = calibrate_agreement_threshold(
         val_logits_raw, val_p, minimum_positive_recall
     )
-    merged["bias"] -= threshold
+    merged["decision_threshold"] = float(threshold)
     bias = merged["bias"]
-    val_logits = val_logits_raw - threshold
+    val_logits = val_logits_raw
     test_logits = exact_logits(test_bits, merged)
     summary = {
         "members": paths,
@@ -2363,8 +2659,12 @@ def ensemble_fourier(model_paths: str, labeled_path: str,
         "max_terms": max_terms,
         "minimum_positive_recall": minimum_positive_recall,
         "validation_logit_threshold": float(threshold),
-        "val": binary_metrics(val_logits, val_p, val_gold),
-        "test": binary_metrics(test_logits, test_p, test_gold),
+        "val": binary_metrics(
+            val_logits, val_p, val_gold, decision_threshold=threshold
+        ),
+        "test": binary_metrics(
+            test_logits, test_p, test_gold, decision_threshold=threshold
+        ),
         "export": {
             "terms": int(len(coefficient)),
             "nonzero_indices": int(len(indices)),
@@ -2394,6 +2694,7 @@ def ensemble_fourier(model_paths: str, labeled_path: str,
         "student_layout": reference["metadata"]["student_layout"],
         "lsh_bits": int(reference["metadata"]["lsh_bits"]),
         "ensemble_weights": weights.tolist(),
+        "decision_threshold": float(threshold),
     }
     with open(temporary, "wb") as handle:
         np.savez(
@@ -2452,7 +2753,8 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
          minimum_positive_recall: float = 0.70,
          warmup_fraction: float = 0.02,
          mask_warmup_fraction: float = 0.20,
-         eval_every: int = 25, patience: int = 12):
+         eval_every: int = 25, patience: int = 12,
+         lexical_prior_count: float = 0.3):
     run_seed = seed if training_seed < 0 else training_seed
     if stage == "inspect":
         if not run_id:
@@ -2461,6 +2763,24 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
         return
     if stage == "repair-smoke":
         print(validate_duplicate_repair.remote())
+        return
+    if stage == "lexical-probe":
+        if student_length not in {128, 192} or lsh_bits != 32:
+            raise ValueError("lexical-probe requires a cached 128/192-slot 32-bit layout")
+        if not model_path:
+            raise ValueError("lexical-probe requires --model-path")
+        data_schema = HYBRID_SCHEMA if student_length == 128 else LONG_CONTEXT_SCHEMA
+        labeled = _labeled_name(
+            train_n, val_n, test_n, student_length, lsh_bits, seed,
+            schema=data_schema,
+        )
+        extra_labeled = _labeled_name(
+            90000, val_n, test_n, student_length, lsh_bits, seed,
+            schema=data_schema,
+        )
+        print(lexical_fourier_probe.remote(
+            labeled, extra_labeled, model_path, extra_train_repeat,
+        ))
         return
     if stage == "upload":
         if not (run_id and model_path and summary_path):
@@ -2483,7 +2803,8 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
         )
         if stage == "kl-ensemble":
             print(kl_ensemble_fourier.remote(
-                model_paths, labeled, max_terms, 16_000_000
+                model_paths, labeled, max_terms, 16_000_000,
+                minimum_positive_recall,
             ))
         else:
             print(ensemble_fourier.remote(
@@ -2754,11 +3075,13 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             teacher_sharpness, minimum_positive_recall,
         ))
         return
-    if stage == "v4-pilot":
+    if stage in {"v4-pilot", "lexical-residual"}:
         if (train_n, val_n, test_n, student_length, lsh_bits) != (
             1_000_000, 8192, 8192, 192, 32
         ):
-            raise ValueError("v4-pilot requires the cached 1M/8192/8192/192/32 layout")
+            raise ValueError(
+                f"{stage} requires the cached 1M/8192/8192/192/32 layout"
+            )
         web_source = _web_prepared_name(
             train_n, val_n, test_n, 64, seed, schema=ARTIFACT_SCHEMA
         )
@@ -2808,6 +3131,7 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
             hard_target_mix,
             warmup_fraction, mask_warmup_fraction, eval_every, patience,
             teacher_sharpness, minimum_positive_recall,
+            True, lexical_prior_count if stage == "lexical-residual" else -1.0,
         ))
         return
     if stage in ("web-prepare", "web-pilot"):
