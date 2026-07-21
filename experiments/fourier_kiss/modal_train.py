@@ -77,7 +77,12 @@ def train_direct(terms: int = 524288, steps: int = 1000,
                  seed: int = 0, mask_lr: float = 1.0,
                  coefficient_lr: float = 0.03,
                  diversity_weight: float = 0.05,
-                 diversity_sample: int = 1024):
+                 diversity_sample: int = 1024,
+                 schedule_kind: str = "legacy",
+                 wsd_stable_steps: int = 1400,
+                 wsd_decay_steps: int = 550,
+                 wsd_minimum_lr_ratio: float = 0.1,
+                 resume_run_id: str = ""):
     import dataclasses
     import gc
     import json
@@ -107,6 +112,11 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         coefficient_lr: float
         diversity_weight: float
         diversity_sample: int
+        schedule_kind: str
+        wsd_stable_steps: int
+        wsd_decay_steps: int
+        wsd_minimum_lr_ratio: float
+        resume_run_id: str
         max_degree: int = 8
         mask_magnitude: float = 8.0
         mask_beta2: float = 0.95
@@ -132,9 +142,18 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         coefficient_lr=coefficient_lr,
         diversity_weight=diversity_weight,
         diversity_sample=diversity_sample,
+        schedule_kind=schedule_kind,
+        wsd_stable_steps=wsd_stable_steps,
+        wsd_decay_steps=wsd_decay_steps,
+        wsd_minimum_lr_ratio=wsd_minimum_lr_ratio,
+        resume_run_id=resume_run_id,
     )
     if terms <= 0 or steps <= 0 or batch_size <= 0:
         raise ValueError("terms, steps, and batch size must be positive")
+    if schedule_kind not in {"legacy", "wsd"}:
+        raise ValueError("schedule_kind must be 'legacy' or 'wsd'")
+    if not 0.0 <= wsd_minimum_lr_ratio <= 1.0:
+        raise ValueError("wsd_minimum_lr_ratio must lie in [0, 1]")
     volume.reload()
     torch.manual_seed(seed)
     torch.set_float32_matmul_precision("high")
@@ -198,11 +217,22 @@ def train_direct(terms: int = 524288, steps: int = 1000,
 
     run = wandb.init(
         project="fda-fourier-noun", group="fourier-kiss",
-        name=f"fourier-kiss-x{terms}-s{seed}", job_type="direct-student",
+        name=(
+            f"fourier-kiss-x{terms}-wsd-cont-{resume_run_id}"
+            if resume_run_id else f"fourier-kiss-x{terms}-s{seed}"
+        ),
+        job_type=(
+            "direct-student-continuation" if resume_run_id
+            else "direct-student"
+        ),
         config={
             **dataclasses.asdict(config), "n_bits": n_bits,
             "web_labels": WEB_LABELS, "ewt_labels": EWT_LABELS,
             "objective": "original_teacher_soft_bce",
+            "parent_wandb_url": (
+                "https://wandb.ai/umd-leans-well/fda-fourier-noun/runs/"
+                f"{resume_run_id}" if resume_run_id else ""
+            ),
         },
     )
     monitor = _GpuSampler()
@@ -214,6 +244,47 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         mask_magnitude=config.mask_magnitude, checkpoint_chunks=True,
         compile_chunks=True,
     ).to(device)
+    parent_step = 0
+    if resume_run_id:
+        parent_path = (
+            f"{ROOT}/models/fourier-kiss-x{terms}-{resume_run_id}.npz"
+        )
+        if not os.path.exists(parent_path):
+            raise FileNotFoundError(
+                "continuation artifact is missing from Modal Volume: "
+                f"{parent_path}"
+            )
+        with np.load(parent_path, allow_pickle=False) as parent_file:
+            parent_compact = {
+                key: parent_file[key] for key in (
+                    "n_bits", "degrees", "index_bits", "index_count",
+                    "packed_indices", "coefficient_fp16",
+                    "coefficient_scale", "coefficient_block_size", "bias",
+                )
+            }
+            parent_metadata = json.loads(str(parent_file["metadata_json"]))
+        parent = decode_compact_student(parent_compact)
+        degree = np.asarray(parent["degrees"], dtype=np.int64)
+        indices = np.asarray(parent["indices"], dtype=np.int64)
+        if len(degree) != terms or int(parent["n_bits"]) != n_bits:
+            raise RuntimeError("continuation artifact shape does not match run")
+        model.theta.data.fill_(-config.mask_magnitude)
+        active_rows = torch.as_tensor(
+            np.repeat(np.arange(terms, dtype=np.int64), degree),
+            device=device,
+        )
+        active_columns = torch.as_tensor(indices, device=device)
+        model.theta.data[active_rows, active_columns] = config.mask_magnitude
+        model.degree.copy_(torch.as_tensor(degree, device=device))
+        model.coefficient.data.copy_(torch.as_tensor(
+            np.asarray(parent["coefficient"], dtype=np.float32)
+            / model.output_scale,
+            device=device,
+        ))
+        model.bias.data.fill_(float(parent["bias"]))
+        parent_step = int(parent_metadata.get("best_step", 0))
+        run.summary["continued_from_step"] = parent_step
+        run.summary["continuation_parent"] = resume_run_id
     optimizer = torch.optim.AdamW(
         [
             {
@@ -235,6 +306,19 @@ def train_direct(terms: int = 524288, steps: int = 1000,
     )
 
     def mask_factor(step):
+        if config.schedule_kind == "wsd":
+            if step < config.warmup_steps:
+                return (step + 1) / config.warmup_steps
+            if step < config.warmup_steps + config.wsd_stable_steps:
+                return 1.0
+            progress = min(
+                1.0,
+                (step - config.warmup_steps - config.wsd_stable_steps)
+                / max(1, config.wsd_decay_steps),
+            )
+            return config.wsd_minimum_lr_ratio + (
+                1.0 - config.wsd_minimum_lr_ratio
+            ) * 0.5 * (1.0 + math.cos(math.pi * progress))
         if step < config.mask_delay_steps:
             return 0.0
         local = step - config.mask_delay_steps
@@ -251,6 +335,8 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         ) * 0.5 * (1.0 + math.cos(math.pi * progress))
 
     def coefficient_factor(step):
+        if config.schedule_kind == "wsd":
+            return mask_factor(step)
         if step < config.warmup_steps:
             return (step + 1) / config.warmup_steps
         if step <= config.coefficient_hold_steps:
@@ -335,7 +421,7 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         train_probe_bits, train_probe_probability
     )
     run.log({
-        "global_step": 0,
+        "global_step": parent_step,
         **{f"val/{key}": value for key, value in initial_val.items()},
         **{f"train_probe/{key}": value for key, value in initial_train.items()},
         **{f"diversity/{key}": value for key, value in initial_repair.items()},
@@ -366,6 +452,7 @@ def train_direct(terms: int = 524288, steps: int = 1000,
         optimizer.step()
         scheduler.step()
         current = step + 1
+        global_step = parent_step + current
         recent_norms.append(float(global_norm))
         recent_norms = recent_norms[-100:]
         last_diversity = diversity_diagnostics
@@ -375,7 +462,7 @@ def train_direct(terms: int = 524288, steps: int = 1000,
             elapsed = now - last_log
             last_log = now
             run.log({
-                "global_step": current,
+                "global_step": global_step,
                 "train/ce": float(ce.detach()),
                 "train/diversity_loss": float(diversity.detach()),
                 "grad/global_preclip": float(global_norm),
@@ -400,7 +487,7 @@ def train_direct(terms: int = 524288, steps: int = 1000,
                 train_probe_bits, train_probe_probability
             )
             row = {
-                "global_step": current,
+                "global_step": global_step,
                 **{f"val/{key}": value for key, value in val_metrics.items()},
                 **{
                     f"train_probe/{key}": value
@@ -412,6 +499,7 @@ def train_direct(terms: int = 524288, steps: int = 1000,
             print(json.dumps({
                 "terms": terms,
                 "step": current,
+                "global_step": global_step,
                 "val_kl": val_metrics["kl"],
                 "val_agreement": val_metrics["agreement"],
                 "train_probe_ce": train_metrics["ce"],
@@ -427,7 +515,15 @@ def train_direct(terms: int = 524288, steps: int = 1000,
                 stale_evaluations = 0
             else:
                 stale_evaluations += 1
-            if stale_evaluations >= config.early_stop_patience:
+            wsd_schedule_complete = (
+                config.schedule_kind != "wsd"
+                or current >= (
+                    config.warmup_steps + config.wsd_stable_steps
+                    + config.wsd_decay_steps
+                )
+            )
+            if (wsd_schedule_complete
+                    and stale_evaluations >= config.early_stop_patience):
                 print(json.dumps({
                     "early_stop": True,
                     "step": current,
@@ -522,7 +618,7 @@ def train_direct(terms: int = 524288, steps: int = 1000,
     os.replace(summary_path + ".tmp", summary_path)
     volume.commit()
     run.log({
-        "global_step": current,
+        "global_step": parent_step + current,
         "steps_run": current,
         **{f"deployed_val/{key}": value for key, value in val_metrics.items()},
         **{f"test/{key}": value for key, value in test_metrics.items()},
@@ -800,13 +896,21 @@ def compare_scale(results):
 def main(stage: str = "scale", x: int = 524288, steps: int = 1000,
          batch_size: int = 16384, char_chunk: int = 4096, seed: int = 0,
          mask_lr: float = 1.0, coefficient_lr: float = 0.03,
-         diversity_weight: float = 0.05, diversity_sample: int = 1024):
+         diversity_weight: float = 0.05, diversity_sample: int = 1024,
+         schedule_kind: str = "legacy", wsd_stable_steps: int = 1400,
+         wsd_decay_steps: int = 550, wsd_minimum_lr_ratio: float = 0.1,
+         resume_run_id: str = ""):
     arguments = {
         "steps": steps, "batch_size": batch_size, "char_chunk": char_chunk,
         "seed": seed, "mask_lr": mask_lr,
         "coefficient_lr": coefficient_lr,
         "diversity_weight": diversity_weight,
         "diversity_sample": diversity_sample,
+        "schedule_kind": schedule_kind,
+        "wsd_stable_steps": wsd_stable_steps,
+        "wsd_decay_steps": wsd_decay_steps,
+        "wsd_minimum_lr_ratio": wsd_minimum_lr_ratio,
+        "resume_run_id": resume_run_id,
     }
     if stage == "train":
         print(train_direct.remote(terms=x, **arguments))
