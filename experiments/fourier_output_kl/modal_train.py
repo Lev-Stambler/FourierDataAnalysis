@@ -105,15 +105,76 @@ def inspect_teacher_baseline(model_run_id: str = "285960m5",
             output.add_((1.0 - 2.0 * parity.float()) @ coefficient_gpu[lo:hi])
         return output.cpu()
 
+    def calibrated_threshold(score, gold):
+        value = np.asarray(score, dtype=np.float64)
+        target = np.asarray(gold, dtype=np.bool_)
+        order = np.argsort(-value, kind="stable")
+        sorted_value = value[order]
+        sorted_target = target[order]
+        cumulative_positive = np.concatenate((
+            np.zeros(1, dtype=np.int64),
+            np.cumsum(sorted_target, dtype=np.int64),
+        ))
+        boundaries = np.concatenate((
+            np.zeros(1, dtype=np.int64),
+            np.flatnonzero(sorted_value[:-1] != sorted_value[1:]) + 1,
+            np.asarray([len(value)], dtype=np.int64),
+        ))
+        positive_count = int(target.sum())
+        negative_count = len(target) - positive_count
+        true_positive = cumulative_positive[boundaries]
+        false_positive = boundaries - true_positive
+        true_negative = negative_count - false_positive
+        balanced = 0.5 * (
+            true_positive / max(1, positive_count)
+            + true_negative / max(1, negative_count)
+        )
+        best_boundary = int(boundaries[int(np.argmax(balanced))])
+        if best_boundary == 0:
+            threshold = float(np.nextafter(sorted_value[0], np.inf))
+        elif best_boundary == len(value):
+            threshold = float(np.nextafter(sorted_value[-1], -np.inf))
+        else:
+            threshold = float(
+                0.5 * (
+                    sorted_value[best_boundary - 1]
+                    + sorted_value[best_boundary]
+                )
+            )
+        return threshold, float(balanced.max())
+
+    def threshold_metrics(score, gold, threshold):
+        prediction = np.asarray(score) >= threshold
+        target = np.asarray(gold, dtype=np.bool_)
+        positive_recall = float(prediction[target].mean())
+        negative_recall = float((~prediction[~target]).mean())
+        return {
+            "threshold": threshold,
+            "gold_accuracy": float((prediction == target).mean()),
+            "gold_balanced_accuracy": 0.5 * (
+                positive_recall + negative_recall
+            ),
+            "gold_positive_recall": positive_recall,
+            "gold_negative_recall": negative_recall,
+            "positive_rate": float(prediction.mean()),
+        }
+
     result = {"model_run_id": model_run_id, "terms": terms, "sources": {}}
     for source, artifact in artifacts.items():
         result["sources"][source] = {}
+        cached = {}
         for split in ("val", "test"):
             item = artifact["splits"][split]
             probability = item["teacher_probability"].float()
             gold = item["gold"].bool()
             prediction = probability >= 0.5
-            student_prediction = student_gap(item) >= 0.0
+            gap = student_gap(item)
+            student_prediction = gap >= 0.0
+            cached[split] = {
+                "teacher": probability.numpy(),
+                "student": gap.numpy(),
+                "gold": gold.numpy(),
+            }
             positive = gold
             negative = ~gold
             positive_recall = float((prediction[positive]).float().mean())
@@ -151,6 +212,20 @@ def inspect_teacher_baseline(model_run_id: str = "285960m5",
                     student_prediction.float().mean()
                 ),
                 "teacher_probability_mean": float(probability.mean()),
+            }
+        result["sources"][source]["calibrated"] = {}
+        for name in ("teacher", "student"):
+            threshold, val_balanced = calibrated_threshold(
+                cached["val"][name], cached["val"]["gold"]
+            )
+            result["sources"][source]["calibrated"][name] = {
+                "selected_val_balanced_accuracy": val_balanced,
+                "val": threshold_metrics(
+                    cached["val"][name], cached["val"]["gold"], threshold
+                ),
+                "test": threshold_metrics(
+                    cached["test"][name], cached["test"]["gold"], threshold
+                ),
             }
     return result
 
