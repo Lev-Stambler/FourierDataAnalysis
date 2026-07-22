@@ -213,6 +213,7 @@ def train_output_selector(
     run_label: str = "",
     resume_run_id: str = "",
     parent_run_id: str = "",
+    parent_terms: int = 0,
     compile_chunks: bool = True,
 ):
     import dataclasses
@@ -229,7 +230,7 @@ def train_output_selector(
     from fourier_output_kl.model import (
         OutputSelectorWalshStudent, distribution_metrics,
         encode_compact_student, functional_diversity_loss,
-        load_compact_student, repair_duplicate_supports,
+        load_compact_prefix, load_compact_student, repair_duplicate_supports,
         sampled_signature_audit, support_locality_audit,
         support_retention_audit, teacher_student_kl,
     )
@@ -252,6 +253,7 @@ def train_output_selector(
         seed: int
         run_label: str
         parent_run_id: str
+        parent_terms: int
         compile_chunks: bool
         max_degree: int = 8
         coefficient_std: float = 0.02
@@ -279,6 +281,7 @@ def train_output_selector(
         train_examples=train_examples, ewt_sampling_weight=ewt_sampling_weight,
         support_layout=support_layout, initial_score_gap=initial_score_gap,
         seed=seed, run_label=run_label, parent_run_id=parent_run_id,
+        parent_terms=parent_terms,
         compile_chunks=compile_chunks,
     )
     if min(terms, steps, batch_size, char_chunk, train_examples) <= 0:
@@ -290,6 +293,10 @@ def train_output_selector(
         raise ValueError("dense single-H100 implementation is capped at 786432 terms")
     if resume_run_id and parent_run_id:
         raise ValueError("resume_run_id and parent_run_id are mutually exclusive")
+    if parent_run_id and not 0 < (parent_terms or terms) <= terms:
+        raise ValueError("parent_terms must be positive and no larger than terms")
+    if parent_terms and not parent_run_id:
+        raise ValueError("parent_terms requires parent_run_id")
 
     started = time.perf_counter()
     torch.manual_seed(seed)
@@ -407,8 +414,9 @@ def train_output_selector(
             scheduler.step()
         print(f"[resume] step={start_step} best_kl={best_kl:.6g}", flush=True)
     elif parent_run_id:
+        resolved_parent_terms = parent_terms or terms
         parent_checkpoint_path = (
-            f"{ROOT}/checkpoints/{parent_run_id}-x{terms}.pt"
+            f"{ROOT}/checkpoints/{parent_run_id}-x{resolved_parent_terms}.pt"
         )
         if not os.path.exists(parent_checkpoint_path):
             raise FileNotFoundError(
@@ -421,14 +429,28 @@ def train_output_selector(
         best_val_metrics = parent.get("best_val_metrics")
         if best_compact is None or best_val_metrics is None:
             raise RuntimeError("parent checkpoint has no selected compact model")
-        load_compact_student(
+        loaded_terms = load_compact_prefix(
             model, best_compact, score_gap=config.initial_score_gap
         )
-        best_kl = float(best_val_metrics["kl"])
+        parent_kl = float(best_val_metrics["kl"])
         best_step = 0
+        growth_repair = repair_duplicate_supports(
+            model, optimizer, seed=seed ^ terms ^ resolved_parent_terms
+        )
+        if loaded_terms < terms:
+            # A smaller parent artifact cannot itself be exported as the child.
+            # The initial evaluation selects the functionally equivalent grown
+            # bank, including its zero-weight suffix.
+            best_kl = float("inf")
+            best_compact = None
+            best_val_metrics = None
+        else:
+            best_kl = parent_kl
         print(
             f"[parent] run={parent_run_id} source_step={parent['best_step']} "
-            f"best_kl={best_kl:.6g} reset_gap={config.initial_score_gap:g}",
+            f"source_terms={loaded_terms} target_terms={terms} "
+            f"best_kl={parent_kl:.6g} reset_gap={config.initial_score_gap:g} "
+            f"growth_repair={growth_repair['duplicates_repaired']}",
             flush=True,
         )
 
@@ -817,7 +839,8 @@ def main(stage: str = "tests", x: int = 131072, steps: int = 200,
          diversity_weight: float = 1e-3, seed: int = 0,
          ewt_sampling_weight: int = 10, run_label: str = "",
          resume_run_id: str = "", support_layout: str = "uniform",
-         initial_score_gap: float = 0.02, parent_run_id: str = ""):
+         initial_score_gap: float = 0.02, parent_run_id: str = "",
+         parent_terms: int = 0):
     common = {
         "batch_size": batch_size, "char_chunk": char_chunk,
         "diversity_weight": diversity_weight, "seed": seed,
@@ -840,7 +863,8 @@ def main(stage: str = "tests", x: int = 131072, steps: int = 200,
         print(train_output_selector.remote(
             terms=x, steps=steps, mask_lr=mask_lr,
             coefficient_lr=coefficient_lr, run_label=run_label,
-            resume_run_id=resume_run_id, parent_run_id=parent_run_id, **common,
+            resume_run_id=resume_run_id, parent_run_id=parent_run_id,
+            parent_terms=parent_terms, **common,
         ))
     elif stage == "sweep":
         calls = []

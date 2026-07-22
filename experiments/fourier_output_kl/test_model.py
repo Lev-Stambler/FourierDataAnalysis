@@ -13,6 +13,7 @@ from fourier_output_kl.model import (
     exact_walsh_ste,
     functional_diversity_loss,
     hard_topk_mask,
+    load_compact_prefix,
     load_compact_student,
     repair_duplicate_supports,
     sparse_scores,
@@ -183,6 +184,33 @@ def test_compact_output_selector_round_trip():
     metrics = distribution_metrics(restored, rng.uniform(0.01, 0.99, len(bits)))
     assert math.isfinite(metrics["kl"])
     assert "mae_confidence_90_100" in metrics
+
+
+def test_compact_prefix_grows_bank_without_changing_scores():
+    torch.manual_seed(13)
+    small = OutputSelectorWalshStudent(
+        64, 256, seed=2, max_degree=8, char_chunk=64,
+        checkpoint_chunks=False,
+    )
+    with torch.no_grad():
+        small.coefficient.normal_(std=0.1)
+        small.bias.fill_(-0.4)
+    small.eval()
+    bits = torch.randint(0, 2, (41, 64), dtype=torch.float32)
+    expected = small(bits)
+    compact = encode_compact_student(small.sparse_state(), block_size=64)
+    large = OutputSelectorWalshStudent(
+        64, 512, seed=2, max_degree=8, char_chunk=64,
+        checkpoint_chunks=False,
+    )
+    loaded = load_compact_prefix(large, compact, score_gap=1.25)
+    large.eval()
+    assert loaded == 256
+    torch.testing.assert_close(
+        large.coefficient[256:], torch.zeros_like(large.coefficient[256:])
+    )
+    # Compact block-fp16 quantization is the only permitted delta.
+    torch.testing.assert_close(large(bits), expected, atol=3e-4, rtol=3e-4)
 
 
 def test_mask_gradients_are_live_with_nonzero_coefficients():

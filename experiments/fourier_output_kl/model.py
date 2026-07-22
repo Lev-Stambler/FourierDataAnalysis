@@ -910,18 +910,30 @@ def load_compact_student(model: OutputSelectorWalshStudent,
                          state: Mapping[str, Any], *,
                          score_gap: float = 0.02) -> None:
     """Load a quantized hard-support artifact into a live GPU model."""
+    loaded_terms = load_compact_prefix(model, state, score_gap=score_gap)
+    if loaded_terms != model.terms:
+        raise ValueError("artifact has fewer terms than the model")
+
+
+@torch.no_grad()
+def load_compact_prefix(model: OutputSelectorWalshStudent,
+                        state: Mapping[str, Any], *,
+                        score_gap: float = 0.02) -> int:
+    """Seed the prefix of a larger bank while preserving its exact function."""
     if score_gap <= 0:
         raise ValueError("score_gap must be positive")
     decoded = decode_compact_student(state) if "packed_indices" in state else state
     degree = np.asarray(decoded["degrees"], dtype=np.int64)
-    if (int(decoded["n_bits"]) != model.n_bits or len(degree) != model.terms
-            or np.any(degree != model.degree.detach().cpu().numpy())):
+    loaded_terms = len(degree)
+    if (int(decoded["n_bits"]) != model.n_bits
+            or not 0 < loaded_terms <= model.terms
+            or np.any(degree != model.degree[:loaded_terms].detach().cpu().numpy())):
         raise ValueError("artifact shape or degree bank does not match model")
     indices = np.asarray(decoded["indices"], dtype=np.int64)
     offsets = np.concatenate(([0], np.cumsum(degree)))
-    model.theta.zero_()
-    for lo in range(0, model.terms, model.char_chunk):
-        hi = min(lo + model.char_chunk, model.terms)
+    model.theta[:loaded_terms].zero_()
+    for lo in range(0, loaded_terms, model.char_chunk):
+        hi = min(lo + model.char_chunk, loaded_terms)
         block_degree = degree[lo:hi]
         width = int(block_degree.max(initial=0))
         padded = np.full((hi - lo, width), model.n_bits, dtype=np.int64)
@@ -939,8 +951,13 @@ def load_compact_student(model: OutputSelectorWalshStudent,
         decoded["coefficient"], device=model.coefficient.device,
         dtype=model.coefficient.dtype,
     ) / model.output_scale
-    model.coefficient.copy_(coefficient)
+    # Fresh suffix characters start at zero so growing the bank initially
+    # represents exactly the selected parent function.  Their coefficients
+    # receive gradients immediately, and their masks become live thereafter.
+    model.coefficient.zero_()
+    model.coefficient[:loaded_terms].copy_(coefficient)
     model.bias.fill_(float(decoded["bias"]))
+    return loaded_terms
 
 
 def sparse_gap(bits: np.ndarray, state: Mapping[str, Any],

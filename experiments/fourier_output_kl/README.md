@@ -29,6 +29,13 @@ uv run modal run fourier_output_kl/modal_train.py --stage train \
   --diversity-weight 0.001 --ewt-sampling-weight 10 \
   --support-layout semantic_structured_v2 --initial-score-gap 2.0 \
   --parent-run-id 3lnxu8vc --run-label output-kl-x262k-refine-1500
+uv run modal run fourier_output_kl/modal_train.py --stage train \
+  --x 786432 --steps 1500 --batch-size 16384 --char-chunk 1024 \
+  --mask-lr 0.001 --coefficient-lr 0.003 \
+  --diversity-weight 0.001 --ewt-sampling-weight 10 \
+  --support-layout semantic_structured_v2 --initial-score-gap 2.0 \
+  --parent-run-id kjkkwj9e --parent-terms 262144 \
+  --run-label output-kl-grow-x786k-1500
 ```
 
 The semantic support bank reflects the actual fixed-field encoding.  Within
@@ -65,6 +72,11 @@ reopens every selected-vs-unselected mask boundary with the requested score
 gap, resets AdamW, and runs a fresh WSD horizon.  This is intentionally distinct
 from `--resume-run-id`, which continues the same run from its latest dense
 checkpoint and step counter.
+
+When `--parent-terms` is smaller than `--x`, the selected parent seeds the
+larger bank's prefix with exact function-preserving coefficient rescaling.  New
+characters begin at zero coefficient, all masks remain trainable, and any
+cross-boundary support collisions are repaired before the first optimizer step.
 
 The 1,500-step selected-model refinement
 [`kjkkwj9e`](https://wandb.ai/umd-leans-well/fda-fourier-noun/runs/kjkkwj9e)
