@@ -89,3 +89,16 @@ selected step 1,450.  Its serialized test model reached KL 0.012842, MAE
 matching over the parent, but did not reach the KL <= 0.01 or 95% agreement
 targets; positive recall remains the main hard-label failure at 52.36% versus
 97.24% negative recall.
+
+Growing that selected model to 786,432 characters and training all masks for
+1,500 steps produced
+[`285960m5`](https://wandb.ai/umd-leans-well/fda-fourier-noun/runs/285960m5).
+Its serialized test model reached KL 0.012576, MAE 0.05172, RMSE 0.07246,
+probability R2 0.8046, centered-probability cosine 0.8973,
+centered-logit cosine 0.9099, and 90.71% teacher agreement.  Positive recall
+rose to 53.18% while negative recall remained 97.21%.  The 7,675,775-byte
+artifact contains 786,432 globally unique supports and is 208.45x smaller than
+the teacher.  The H100 averaged 97.4% utilization at roughly 1,176
+examples/second; peak NVML memory was 83.37 GB.  Validation KL selected the
+final step, so this larger model was still improving at the end of its first
+WSD horizon.
