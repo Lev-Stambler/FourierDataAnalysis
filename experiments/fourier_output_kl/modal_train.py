@@ -40,6 +40,121 @@ def _retry():
     )
 
 
+@app.function(
+    image=image, gpu="H100", volumes={"/cache": volume}, timeout=1800,
+    memory=8192,
+)
+def inspect_teacher_baseline(model_run_id: str = "285960m5",
+                             terms: int = 786432):
+    """Compare Qwen and a compact Fourier artifact on gold EWT splits."""
+    import numpy as np
+    import torch
+
+    from fourier_output_kl.model import decode_compact_student
+
+    volume.reload()
+    artifacts = {
+        "web": torch.load(WEB_LABELS, map_location="cpu", weights_only=False),
+        "ewt": torch.load(EWT_LABELS, map_location="cpu", weights_only=False),
+    }
+    model_path = f"{ROOT}/models/output-kl-x{terms}-{model_run_id}.npz"
+    with np.load(model_path, allow_pickle=False) as saved:
+        compact = {
+            "schema": str(saved["schema"]),
+            "n_bits": int(saved["n_bits"]),
+            "degrees": saved["degrees"],
+            "index_bits": int(saved["index_bits"]),
+            "index_count": int(saved["index_count"]),
+            "packed_indices": saved["packed_indices"],
+            "coefficient_fp16": saved["coefficient_fp16"],
+            "coefficient_scale": saved["coefficient_scale"],
+            "coefficient_block_size": int(saved["coefficient_block_size"]),
+            "bias": float(saved["bias"]),
+        }
+    decoded = decode_compact_student(compact)
+    degree = np.asarray(decoded["degrees"], dtype=np.int64)
+    indices = np.asarray(decoded["indices"], dtype=np.int64)
+    offsets = np.concatenate(([0], np.cumsum(degree)))
+    width = int(degree.max(initial=0))
+    padded = np.zeros((len(degree), width), dtype=np.int64)
+    active = np.arange(width)[None, :] < degree[:, None]
+    rows = np.repeat(np.arange(len(degree)), degree)
+    columns = np.arange(len(indices)) - np.repeat(offsets[:-1], degree)
+    padded[rows, columns] = indices
+    padded_gpu = torch.from_numpy(padded).cuda()
+    active_gpu = torch.from_numpy(active.astype(np.uint8)).cuda()
+    coefficient_gpu = torch.as_tensor(
+        decoded["coefficient"], dtype=torch.float32, device="cuda"
+    )
+
+    def student_gap(item):
+        n_bits = int(compact["n_bits"])
+        bits = np.unpackbits(
+            item["packed_bits"].numpy(), axis=-1, count=n_bits,
+            bitorder="little",
+        ).astype(np.uint8, copy=False)
+        bits_gpu = torch.from_numpy(bits).cuda()
+        output = torch.full(
+            (len(bits_gpu),), float(decoded["bias"]), device="cuda"
+        )
+        for lo in range(0, len(degree), 2048):
+            hi = min(lo + 2048, len(degree))
+            selected = bits_gpu[:, padded_gpu[lo:hi]]
+            selected.mul_(active_gpu[None, lo:hi])
+            parity = selected.sum(dim=2, dtype=torch.int32).bitwise_and_(1)
+            output.add_((1.0 - 2.0 * parity.float()) @ coefficient_gpu[lo:hi])
+        return output.cpu()
+
+    result = {"model_run_id": model_run_id, "terms": terms, "sources": {}}
+    for source, artifact in artifacts.items():
+        result["sources"][source] = {}
+        for split in ("val", "test"):
+            item = artifact["splits"][split]
+            probability = item["teacher_probability"].float()
+            gold = item["gold"].bool()
+            prediction = probability >= 0.5
+            student_prediction = student_gap(item) >= 0.0
+            positive = gold
+            negative = ~gold
+            positive_recall = float((prediction[positive]).float().mean())
+            negative_recall = float((~prediction[negative]).float().mean())
+            student_positive_recall = float(
+                student_prediction[positive].float().mean()
+            )
+            student_negative_recall = float(
+                (~student_prediction[negative]).float().mean()
+            )
+            result["sources"][source][split] = {
+                "examples": len(gold),
+                "teacher_gold_accuracy": float(
+                    (prediction == gold).float().mean()
+                ),
+                "teacher_gold_balanced_accuracy": 0.5 * (
+                    positive_recall + negative_recall
+                ),
+                "teacher_gold_positive_recall": positive_recall,
+                "teacher_gold_negative_recall": negative_recall,
+                "student_gold_accuracy": float(
+                    (student_prediction == gold).float().mean()
+                ),
+                "student_gold_balanced_accuracy": 0.5 * (
+                    student_positive_recall + student_negative_recall
+                ),
+                "student_gold_positive_recall": student_positive_recall,
+                "student_gold_negative_recall": student_negative_recall,
+                "student_teacher_agreement": float(
+                    (student_prediction == prediction).float().mean()
+                ),
+                "gold_positive_rate": float(gold.float().mean()),
+                "teacher_positive_rate": float(prediction.float().mean()),
+                "student_positive_rate": float(
+                    student_prediction.float().mean()
+                ),
+                "teacher_probability_mean": float(probability.mean()),
+            }
+    return result
+
+
 class _GpuSampler:
     def __init__(self):
         import threading
@@ -850,6 +965,8 @@ def main(stage: str = "tests", x: int = 131072, steps: int = 200,
     }
     if stage == "tests":
         print(run_tests.remote())
+    elif stage == "teacher_baseline":
+        print(inspect_teacher_baseline.remote())
     elif stage == "smoke":
         print(train_output_selector.remote(
             terms=min(x, 4096), steps=min(steps, 10),
