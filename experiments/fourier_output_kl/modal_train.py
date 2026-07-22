@@ -170,7 +170,7 @@ def _wsd_factor(step: int, total: int, warmup: int, decay: int,
 
 
 @app.function(
-    image=image, gpu="H100", volumes={"/cache": volume}, timeout=28800,
+    image=image, gpu="H100", volumes={"/cache": volume}, timeout=21600,
     memory=65536, secrets=WANDB_SECRET, retries=_retry(),
 )
 def run_tests():
@@ -192,7 +192,7 @@ def run_tests():
 
 
 @app.function(
-    image=image, gpu="H100", volumes={"/cache": volume}, timeout=21600,
+    image=image, gpu="H100", volumes={"/cache": volume}, timeout=28800,
     memory=65536, secrets=WANDB_SECRET, retries=_retry(),
 )
 def train_output_selector(
