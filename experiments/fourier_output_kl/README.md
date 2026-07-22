@@ -24,9 +24,11 @@ uv run modal run fourier_output_kl/modal_train.py --stage train \
   --x 262144 --steps 800 --mask-lr 0.01 --coefficient-lr 0.01 \
   --support-layout semantic_structured_v2 --initial-score-gap 2.0
 uv run modal run fourier_output_kl/modal_train.py --stage train \
-  --x 262144 --steps 1000 --mask-lr 0.001 --coefficient-lr 0.003 \
+  --x 262144 --steps 1500 --batch-size 16384 --char-chunk 1024 \
+  --mask-lr 0.001 --coefficient-lr 0.003 \
+  --diversity-weight 0.001 --ewt-sampling-weight 10 \
   --support-layout semantic_structured_v2 --initial-score-gap 2.0 \
-  --parent-run-id 3lnxu8vc --run-label output-kl-x262k-refine-1k
+  --parent-run-id 3lnxu8vc --run-label output-kl-x262k-refine-1500
 ```
 
 The semantic support bank reflects the actual fixed-field encoding.  Within
@@ -63,3 +65,15 @@ reopens every selected-vs-unselected mask boundary with the requested score
 gap, resets AdamW, and runs a fresh WSD horizon.  This is intentionally distinct
 from `--resume-run-id`, which continues the same run from its latest dense
 checkpoint and step counter.
+
+The 1,500-step selected-model refinement
+[`kjkkwj9e`](https://wandb.ai/umd-leans-well/fda-fourier-noun/runs/kjkkwj9e)
+selected step 1,450.  Its serialized test model reached KL 0.012842, MAE
+0.05245, RMSE 0.07323, probability R2 0.8005, centered-probability cosine
+0.8948, centered-logit cosine 0.9074, and 90.61% teacher agreement.  The
+3,216,278-byte artifact contains 262,144 globally unique supports and is
+497.5x smaller than the 1.6 GB teacher.  Mean H100 utilization was 93.2%
+(p50/p90 100%) at roughly 8,746 examples/second.  This improved probability
+matching over the parent, but did not reach the KL <= 0.01 or 95% agreement
+targets; positive recall remains the main hard-label failure at 52.36% versus
+97.24% negative recall.
