@@ -23,6 +23,10 @@ uv run modal run fourier_output_kl/modal_train.py --stage mobility_sweep \
 uv run modal run fourier_output_kl/modal_train.py --stage train \
   --x 262144 --steps 800 --mask-lr 0.01 --coefficient-lr 0.01 \
   --support-layout semantic_structured_v2 --initial-score-gap 2.0
+uv run modal run fourier_output_kl/modal_train.py --stage train \
+  --x 262144 --steps 1000 --mask-lr 0.001 --coefficient-lr 0.003 \
+  --support-layout semantic_structured_v2 --initial-score-gap 2.0 \
+  --parent-run-id 3lnxu8vc --run-label output-kl-x262k-refine-1k
 ```
 
 The semantic support bank reflects the actual fixed-field encoding.  Within
@@ -52,3 +56,10 @@ full horizon.  Masks remain live at a 5% LR floor.  The resulting 262,144-term
 run [`3lnxu8vc`](https://wandb.ai/umd-leans-well/fda-fourier-noun/runs/3lnxu8vc)
 achieved test KL 0.01351, agreement 90.47%, probability R2 0.7905, and 497.5x
 compression; its best validation step was 700/800.
+
+`--parent-run-id` starts a new W&B run from the parent's selected compact
+artifact.  It restores the exact hard supports and quantized coefficients,
+reopens every selected-vs-unselected mask boundary with the requested score
+gap, resets AdamW, and runs a fresh WSD horizon.  This is intentionally distinct
+from `--resume-run-id`, which continues the same run from its latest dense
+checkpoint and step counter.

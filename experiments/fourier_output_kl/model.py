@@ -907,8 +907,11 @@ def decode_compact_student(state: Mapping[str, Any]) -> dict[str, Any]:
 
 @torch.no_grad()
 def load_compact_student(model: OutputSelectorWalshStudent,
-                         state: Mapping[str, Any]) -> None:
+                         state: Mapping[str, Any], *,
+                         score_gap: float = 0.02) -> None:
     """Load a quantized hard-support artifact into a live GPU model."""
+    if score_gap <= 0:
+        raise ValueError("score_gap must be positive")
     decoded = decode_compact_student(state) if "packed_indices" in state else state
     degree = np.asarray(decoded["degrees"], dtype=np.int64)
     if (int(decoded["n_bits"]) != model.n_bits or len(degree) != model.terms
@@ -931,7 +934,7 @@ def load_compact_student(model: OutputSelectorWalshStudent,
         local_row = torch.arange(
             hi - lo, device=model.theta.device
         )[:, None].expand_as(tensor)[active]
-        model.theta[lo:hi][local_row, tensor[active]] = 0.02
+        model.theta[lo:hi][local_row, tensor[active]] = score_gap
     coefficient = torch.as_tensor(
         decoded["coefficient"], device=model.coefficient.device,
         dtype=model.coefficient.dtype,

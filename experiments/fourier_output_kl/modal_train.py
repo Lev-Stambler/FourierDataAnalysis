@@ -212,6 +212,7 @@ def train_output_selector(
     seed: int = 0,
     run_label: str = "",
     resume_run_id: str = "",
+    parent_run_id: str = "",
     compile_chunks: bool = True,
 ):
     import dataclasses
@@ -250,6 +251,7 @@ def train_output_selector(
         initial_score_gap: float
         seed: int
         run_label: str
+        parent_run_id: str
         compile_chunks: bool
         max_degree: int = 8
         coefficient_std: float = 0.02
@@ -276,7 +278,7 @@ def train_output_selector(
         diversity_examples=diversity_examples,
         train_examples=train_examples, ewt_sampling_weight=ewt_sampling_weight,
         support_layout=support_layout, initial_score_gap=initial_score_gap,
-        seed=seed, run_label=run_label,
+        seed=seed, run_label=run_label, parent_run_id=parent_run_id,
         compile_chunks=compile_chunks,
     )
     if min(terms, steps, batch_size, char_chunk, train_examples) <= 0:
@@ -286,6 +288,8 @@ def train_output_selector(
         raise ValueError("invalid optimizer configuration")
     if terms > 786432:
         raise ValueError("dense single-H100 implementation is capped at 786432 terms")
+    if resume_run_id and parent_run_id:
+        raise ValueError("resume_run_id and parent_run_id are mutually exclusive")
 
     started = time.perf_counter()
     torch.manual_seed(seed)
@@ -402,6 +406,31 @@ def train_output_selector(
         for _ in range(start_step):
             scheduler.step()
         print(f"[resume] step={start_step} best_kl={best_kl:.6g}", flush=True)
+    elif parent_run_id:
+        parent_checkpoint_path = (
+            f"{ROOT}/checkpoints/{parent_run_id}-x{terms}.pt"
+        )
+        if not os.path.exists(parent_checkpoint_path):
+            raise FileNotFoundError(
+                f"parent checkpoint does not exist: {parent_checkpoint_path}"
+            )
+        parent = torch.load(
+            parent_checkpoint_path, map_location="cpu", weights_only=False
+        )
+        best_compact = parent.get("best_compact")
+        best_val_metrics = parent.get("best_val_metrics")
+        if best_compact is None or best_val_metrics is None:
+            raise RuntimeError("parent checkpoint has no selected compact model")
+        load_compact_student(
+            model, best_compact, score_gap=config.initial_score_gap
+        )
+        best_kl = float(best_val_metrics["kl"])
+        best_step = 0
+        print(
+            f"[parent] run={parent_run_id} source_step={parent['best_step']} "
+            f"best_kl={best_kl:.6g} reset_gap={config.initial_score_gap:g}",
+            flush=True,
+        )
 
     @torch.no_grad()
     def evaluate(bits, probability, eval_batch: int = 1024):
@@ -615,7 +644,7 @@ def train_output_selector(
 
     if best_compact is None:
         raise RuntimeError("training produced no selectable model")
-    load_compact_student(model, best_compact)
+    load_compact_student(model, best_compact, score_gap=config.initial_score_gap)
     model.eval()
     serialized_val_scores, serialized_val_metrics = evaluate(
         val_bits, val_probability
@@ -788,7 +817,7 @@ def main(stage: str = "tests", x: int = 131072, steps: int = 200,
          diversity_weight: float = 1e-3, seed: int = 0,
          ewt_sampling_weight: int = 10, run_label: str = "",
          resume_run_id: str = "", support_layout: str = "uniform",
-         initial_score_gap: float = 0.02):
+         initial_score_gap: float = 0.02, parent_run_id: str = ""):
     common = {
         "batch_size": batch_size, "char_chunk": char_chunk,
         "diversity_weight": diversity_weight, "seed": seed,
@@ -811,7 +840,7 @@ def main(stage: str = "tests", x: int = 131072, steps: int = 200,
         print(train_output_selector.remote(
             terms=x, steps=steps, mask_lr=mask_lr,
             coefficient_lr=coefficient_lr, run_label=run_label,
-            resume_run_id=resume_run_id, **common,
+            resume_run_id=resume_run_id, parent_run_id=parent_run_id, **common,
         ))
     elif stage == "sweep":
         calls = []

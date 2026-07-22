@@ -13,6 +13,7 @@ from fourier_output_kl.model import (
     exact_walsh_ste,
     functional_diversity_loss,
     hard_topk_mask,
+    load_compact_student,
     repair_duplicate_supports,
     sparse_scores,
     teacher_student_kl,
@@ -163,6 +164,22 @@ def test_compact_output_selector_round_trip():
     live = model(torch.from_numpy(bits).float()).detach().numpy()
     restored = sparse_scores(bits, compact, chunk=128)
     np.testing.assert_allclose(restored, live, atol=3e-4, rtol=3e-4)
+    reloaded = OutputSelectorWalshStudent(
+        64, 512, seed=11, max_degree=8, char_chunk=128,
+        checkpoint_chunks=False,
+    )
+    load_compact_student(reloaded, compact, score_gap=1.5)
+    mask = hard_topk_mask(
+        reloaded.theta, reloaded.degree, reloaded.max_degree
+    )
+    torch.testing.assert_close(
+        reloaded.theta[mask], torch.full_like(reloaded.theta[mask], 1.5)
+    )
+    reloaded.eval()
+    np.testing.assert_allclose(
+        reloaded(torch.from_numpy(bits).float()).detach().numpy(),
+        restored, atol=2e-6, rtol=2e-6,
+    )
     metrics = distribution_metrics(restored, rng.uniform(0.01, 0.99, len(bits)))
     assert math.isfinite(metrics["kl"])
     assert "mae_confidence_90_100" in metrics
