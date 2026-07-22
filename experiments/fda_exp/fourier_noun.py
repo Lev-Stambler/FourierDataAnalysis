@@ -503,7 +503,8 @@ class HardWalshStudent(nn.Module):
         if bits_per_token is not None and bits_per_token <= 0:
             raise ValueError("bits_per_token must be positive")
         if initialization not in {
-            "fixed_context", "target_token", "singleton_cover", "random"
+            "fixed_context", "target_token", "singleton_cover", "random",
+            "structured_cross",
         }:
             raise ValueError(f"unknown initialization {initialization!r}")
         if ste_variant not in {"logspace", "product"}:
@@ -543,24 +544,125 @@ class HardWalshStudent(nn.Module):
         focus_stop = min(n_bits, max(4 * bits_per_token, focus_start + max_degree))
         if focus_stop - focus_start < max_degree:
             focus_start, focus_stop = 0, n_bits
-        for row in range(covered, terms):
-            lower = max(2, min_degree) if covered else min_degree
-            degree = int(rng.integers(lower, max_degree + 1))
-            if initialization == "fixed_context" and row < covered + target_focused:
-                pool = np.arange(0, min(n_bits, 16 * bits_per_token))
-            elif (initialization == "fixed_context"
-                  and row < covered + target_focused + context_focused):
-                pool = np.arange(0, min(n_bits, 24 * bits_per_token))
-            else:
-                pool = (np.arange(focus_start, focus_stop)
-                        if row < covered + focused else np.arange(n_bits))
-            degree = min(degree, len(pool))
-            theta[row, rng.choice(pool, degree, replace=False)] = on_init
-        coefficient = rng.normal(0.0, coefficient_std, terms).astype(np.float32)
+        if initialization == "structured_cross":
+            # A deterministic, collision-free low-degree Walsh bank.  The
+            # fixed layout places the raw target in token slots 0:4,
+            # morphology in 4:16, nearby words in 16:56, and position/shape in
+            # 56:64.  Explicit target-by-context degree-two characters make
+            # the contextual disambiguation signal available to convex
+            # coefficient fitting instead of requiring an STE to discover a
+            # tiny useful support inside thousands of input coordinates.
+            cursor = 0
+            singleton_count = min(terms, n_bits)
+            singleton = np.arange(singleton_count, dtype=np.int64)
+            theta[np.arange(singleton_count), singleton] = on_init
+            cursor = singleton_count
+
+            def add_pairs(pairs: np.ndarray) -> None:
+                nonlocal cursor
+                if cursor >= terms or not len(pairs):
+                    return
+                pairs = np.asarray(pairs, dtype=np.int64)
+                # Spread a truncated family across all fields rather than
+                # exhausting the first target bit before reaching the next.
+                pairs = pairs[rng.permutation(len(pairs))]
+                take = min(terms - cursor, len(pairs))
+                rows = np.arange(cursor, cursor + take)
+                theta[rows, pairs[:take, 0]] = on_init
+                theta[rows, pairs[:take, 1]] = on_init
+                cursor += take
+
+            def add_cross(left: np.ndarray, right: np.ndarray) -> None:
+                if cursor >= terms or not len(left) or not len(right):
+                    return
+                first = np.repeat(left.astype(np.int64), len(right))
+                second = np.tile(right.astype(np.int64), len(left))
+                add_pairs(np.stack((first, second), axis=1))
+
+            token_bits = int(bits_per_token)
+            raw_target_stop = min(n_bits, 4 * token_bits)
+            morphology_stop = min(n_bits, 16 * token_bits)
+            neighbor_start = morphology_stop
+            fixed_context_stop = min(n_bits, 64 * token_bits)
+            target_bits = np.arange(0, raw_target_stop)
+
+            # Within-field target/morphology pairs supply compact lexical
+            # nonlinearities without generating duplicates across fields.
+            for start in range(0, morphology_stop, token_bits):
+                stop = min(morphology_stop, start + token_bits)
+                coordinates = np.arange(start, stop)
+                if len(coordinates) >= 2:
+                    left, right = np.triu_indices(len(coordinates), k=1)
+                    add_pairs(np.stack(
+                        (coordinates[left], coordinates[right]), axis=1
+                    ))
+            add_cross(target_bits, np.arange(neighbor_start, fixed_context_stop))
+            add_cross(target_bits, np.arange(raw_target_stop, morphology_stop))
+            add_cross(target_bits, np.arange(fixed_context_stop, n_bits))
+            # If M exceeds the targeted families, fill with within-token
+            # context interactions before falling back to seeded global pairs.
+            for start in range(morphology_stop, n_bits, token_bits):
+                if cursor >= terms:
+                    break
+                stop = min(n_bits, start + token_bits)
+                coordinates = np.arange(start, stop)
+                if len(coordinates) >= 2:
+                    left, right = np.triu_indices(len(coordinates), k=1)
+                    add_pairs(np.stack(
+                        (coordinates[left], coordinates[right]), axis=1
+                    ))
+            if cursor < terms:
+                seen_pairs: set[tuple[int, int]] = {
+                    tuple(np.flatnonzero(theta[row] == on_init).tolist())
+                    for row in range(singleton_count, cursor)
+                }
+                while cursor < terms:
+                    pair = tuple(sorted(
+                        rng.choice(n_bits, 2, replace=False).tolist()
+                    ))
+                    if pair in seen_pairs:
+                        continue
+                    seen_pairs.add(pair)
+                    theta[cursor, list(pair)] = on_init
+                    cursor += 1
+        else:
+            for row in range(covered, terms):
+                lower = max(2, min_degree) if covered else min_degree
+                degree = int(rng.integers(lower, max_degree + 1))
+                if (initialization == "fixed_context"
+                        and row < covered + target_focused):
+                    pool = np.arange(0, min(n_bits, 16 * bits_per_token))
+                elif (initialization == "fixed_context"
+                      and row < covered + target_focused + context_focused):
+                    pool = np.arange(0, min(n_bits, 24 * bits_per_token))
+                else:
+                    pool = (np.arange(focus_start, focus_stop)
+                            if row < covered + focused else np.arange(n_bits))
+                degree = min(degree, len(pool))
+                theta[row, rng.choice(pool, degree, replace=False)] = on_init
+        coefficient = (
+            np.zeros(terms, dtype=np.float32)
+            if initialization == "structured_cross" else
+            rng.normal(0.0, coefficient_std, terms).astype(np.float32)
+        )
         p = float(np.clip(initial_probability, 1e-4, 1 - 1e-4))
         self.theta = nn.Parameter(torch.from_numpy(theta))
         self.register_buffer(
             "mask_degree", torch.from_numpy((theta > 0).sum(1).astype(np.int64))
+        )
+        if initialization == "structured_cross":
+            degree = (theta > 0).sum(1).astype(np.int64)
+            fixed_width = int(degree.max(initial=0))
+            fixed_indices = np.zeros((terms, fixed_width), dtype=np.int64)
+            rows, columns = np.nonzero(theta > 0)
+            positions = np.arange(len(columns)) - np.repeat(
+                np.cumsum(degree) - degree, degree
+            )
+            fixed_indices[rows, positions] = columns
+        else:
+            fixed_indices = np.empty((0, 0), dtype=np.int64)
+        self.register_buffer(
+            "fixed_indices", torch.from_numpy(fixed_indices), persistent=False
         )
         self.coefficient = nn.Parameter(torch.from_numpy(coefficient))
         self.bias = nn.Parameter(torch.tensor(math.log(p / (1 - p)), dtype=torch.float32))
@@ -582,12 +684,24 @@ class HardWalshStudent(nn.Module):
         for lo in range(0, self.terms, self.char_chunk):
             hi = min(lo + self.char_chunk, self.terms)
             theta = self.theta[lo:hi]
-            hard = self._harden_chunk(theta, self.mask_degree[lo:hi])
-            phi = (product_ste_characters(
-                       bits, theta, self.ste_scale, hard=hard,
-                   )
-                   if self.ste_variant == "product"
-                   else logspace_ste_characters(bits, theta))
+            degree = self.mask_degree[lo:hi]
+            if not theta.requires_grad and self.fixed_indices.numel():
+                indices = self.fixed_indices[lo:hi]
+                active = (
+                    torch.arange(indices.shape[1], device=bits.device)[None, :]
+                    < degree[:, None]
+                )
+                selected = bits[:, indices]
+                selected.mul_(active[None, :, :])
+                parity = selected.sum(dim=2, dtype=torch.int32).bitwise_and_(1)
+                phi = 1.0 - 2.0 * parity
+            else:
+                hard = self._harden_chunk(theta, degree)
+                phi = (product_ste_characters(
+                           bits, theta, self.ste_scale, hard=hard,
+                       )
+                       if self.ste_variant == "product"
+                       else logspace_ste_characters(bits, theta))
             output = output + self.output_scale * (phi @ self.coefficient[lo:hi])
         return output
 
@@ -878,7 +992,11 @@ def calibrate_agreement_threshold(logits: torch.Tensor | np.ndarray,
     positives = int(sorted_y.sum())
     correct = positives
     positive_correct = positives
-    best_correct, best_threshold = correct, float("-inf")
+    # Predict-all-positive is a legitimate constrained operating point, but a
+    # literal ``-inf`` threshold breaks strict JSON/W&B artifact metadata.
+    # The predecessor of the smallest finite score has identical decisions.
+    best_correct = correct
+    best_threshold = float(np.nextafter(np.min(z), -np.inf))
     for index in range(len(sorted_z)):
         if sorted_y[index]:
             correct -= 1

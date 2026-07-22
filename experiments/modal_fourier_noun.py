@@ -1337,7 +1337,8 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
                   teacher_sharpness: float = 1.0,
                   minimum_positive_recall: float = 0.70,
                   checkpoint_enabled: bool = True,
-                  lexical_prior_count: float = -1.0):
+                  lexical_prior_count: float = -1.0,
+                  initialization: str = "fixed_context"):
     """Train from the cached labels and save a standalone sparse artifact."""
     import dataclasses
     import json
@@ -1433,6 +1434,7 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
     config = TrainConfig(
         terms=m, steps=steps, batch_size=batch_size,
         char_chunk=min(m, char_chunk), bits_per_token=int(meta["lsh_bits"]), seed=seed,
+        initialization=initialization,
         balance_teacher_classes=balance_teacher_classes,
         repair_duplicate_masks=repair_duplicate_masks,
         mask_lr=mask_lr, coefficient_lr=coefficient_lr,
@@ -1697,6 +1699,457 @@ def train_fourier(labeled_path: str, m: int = 131072, steps: int = 1000,
     }
 
 
+@app.function(image=image, gpu="H100", volumes={"/cache": volume}, timeout=10800,
+              memory=49152, secrets=WANDB_SECRET)
+def train_field_student(prepared_path: str, labeled_path: str,
+                        extra_prepared_path: str, extra_labeled_path: str,
+                        steps: int = 2000, batch_size: int = 16384,
+                        seed: int = 0, embedding_dim: int = 24,
+                        hard_target_mix: float = 0.0,
+                        minimum_positive_recall: float = 0.85,
+                        balance_teacher_classes: bool = False,
+                        loss_scale: float = 40.0):
+    """Train a <=16 MB contextual ceiling model on the exact student input.
+
+    This is a diagnostic for representation sufficiency, not a replacement for
+    the Walsh artifact.  A target query attends over independently-tokenized
+    four-token fields, exposing a compact low-rank target/context interaction
+    that can subsequently be factorized back into structured characters.
+    """
+    import json
+    import math
+    import os
+    import time
+    from pathlib import Path
+
+    import numpy as np
+    import torch
+    from torch import nn
+
+    from fda_exp.fourier_noun import (
+        binary_metrics, calibrate_agreement_threshold,
+        fit_probability_logit_stack, unpack_bits, warmup_cosine_factor,
+    )
+
+    if steps <= 0 or batch_size <= 0 or embedding_dim <= 0 or loss_scale <= 0:
+        raise ValueError("invalid field-student training dimensions")
+    if not 0.0 <= hard_target_mix <= 1.0:
+        raise ValueError("hard_target_mix must lie in [0,1]")
+    volume.reload()
+    prepared = torch.load(prepared_path, map_location="cpu", weights_only=False)
+    labeled = torch.load(labeled_path, map_location="cpu", weights_only=False)
+    extra_prepared = torch.load(
+        extra_prepared_path, map_location="cpu", weights_only=False
+    )
+    extra_labeled = torch.load(
+        extra_labeled_path, map_location="cpu", weights_only=False
+    )
+    sequence_length = int(prepared["splits"]["train"]["student_ids"].shape[1])
+    if sequence_length % 4:
+        raise ValueError("field student requires four-token fixed-width fields")
+    if int(extra_prepared["splits"]["train"]["student_ids"].shape[1]) != sequence_length:
+        raise ValueError("extra training layout has a different sequence length")
+    vocab_size = int(len(labeled["lsh_codes_packed"]))
+    lsh_bits = int(labeled["metadata"]["lsh_bits"])
+    token_codes = unpack_bits(
+        labeled["lsh_codes_packed"].numpy(), lsh_bits
+    )
+    if token_codes.shape != (vocab_size, lsh_bits):
+        raise ValueError("packed LSH table has an incompatible shape")
+
+    def source(split: str, data=prepared, labels=labeled):
+        item = data["splits"][split]
+        target = labels["splits"][split]
+        if len(item["student_ids"]) != len(target["teacher_probability"]):
+            raise ValueError("prepared and labeled rows do not align")
+        return (
+            item["student_ids"].to(dtype=torch.int32),
+            item["student_attention"].to(dtype=torch.bool),
+            target["teacher_probability"].float(),
+            target["gold"].bool(),
+        )
+
+    web_train = source("train")
+    extra_train = source("train", extra_prepared, extra_labeled)
+    # Match the Fourier recipe's tenfold in-domain replay exactly.
+    train_ids = torch.cat((web_train[0],) + (extra_train[0],) * 10)
+    train_attention = torch.cat((web_train[1],) + (extra_train[1],) * 10)
+    train_probability = torch.cat((web_train[2],) + (extra_train[2],) * 10)
+    val_cpu = source("val")
+    test_cpu = source("test")
+
+    class FieldStudent(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.token = nn.Embedding(vocab_size, embedding_dim)
+            self.position = nn.Parameter(torch.zeros(
+                sequence_length, embedding_dim
+            ))
+            self.field = nn.Parameter(torch.zeros(
+                sequence_length // 4, embedding_dim
+            ))
+            self.field_token = nn.Linear(
+                4 * embedding_dim, embedding_dim, bias=False
+            )
+            self.query = nn.Linear(embedding_dim, embedding_dim, bias=False)
+            self.key = nn.Linear(embedding_dim, embedding_dim, bias=False)
+            self.value = nn.Linear(embedding_dim, embedding_dim, bias=False)
+            self.heads = 4 if embedding_dim % 4 == 0 else 1
+            local_fields = min(8, sequence_length // 4)
+            input_dim = embedding_dim * (3 + local_fields)
+            self.mlp = nn.Sequential(
+                nn.Linear(input_dim, 4 * embedding_dim),
+                nn.GELU(),
+                nn.Linear(4 * embedding_dim, 2 * embedding_dim),
+                nn.GELU(),
+                nn.Linear(2 * embedding_dim, 1),
+            )
+            nn.init.normal_(self.token.weight, std=0.02)
+            nn.init.normal_(self.position, std=0.01)
+            nn.init.normal_(self.field, std=0.01)
+
+        def forward(self, ids: torch.Tensor, attention: torch.Tensor):
+            token = self.token(ids) + self.position[None, :, :]
+            token = token * attention[:, :, None]
+            batch = len(ids)
+            field_count = sequence_length // 4
+            token = token.reshape(batch, field_count, 4, embedding_dim)
+            mask = attention.reshape(batch, field_count, 4)
+            count = mask.sum(dim=2, keepdim=True).clamp_min(1)
+            fields = token.sum(dim=2) / count
+            # The previous mean pool was a bag of subword ids: position
+            # embeddings collapsed to a count-dependent constant and token
+            # order disappeared.  A shared four-slot projection retains the
+            # exact independently-tokenized field order while the mean
+            # residual keeps the easy lexical signal well conditioned.
+            fields = fields + torch.nn.functional.gelu(
+                self.field_token(token.reshape(
+                    batch, field_count, 4 * embedding_dim
+                ))
+            )
+            fields = fields + self.field[None, :, :]
+            live = mask.any(dim=2)
+            target = fields[:, 0]
+            head_dim = embedding_dim // self.heads
+            query = self.query(target).reshape(batch, self.heads, head_dim)
+            key = self.key(fields).reshape(
+                batch, field_count, self.heads, head_dim
+            ).transpose(1, 2)
+            value = self.value(fields).reshape(
+                batch, field_count, self.heads, head_dim
+            ).transpose(1, 2)
+            score = (key * query[:, :, None, :]).sum(dim=3)
+            score = score / math.sqrt(head_dim)
+            score = score.masked_fill(~live[:, None, :], -1e4)
+            score[:, :, 0] = -1e4
+            context = (
+                score.softmax(dim=2)[:, :, :, None] * value
+            ).sum(dim=2).reshape(batch, embedding_dim)
+            local = fields[:, :min(8, field_count)].reshape(batch, -1)
+            features = torch.cat(
+                (target, context, target * context, local), dim=1
+            )
+            return self.mlp(features).squeeze(1)
+
+    device = torch.device("cuda")
+    torch.manual_seed(seed)
+    model = FieldStudent().to(device)
+    # Initialize every vocabulary row from its collision-free Qwen embedding
+    # sign-LSH code.  Fine-tuning retains exact lexical capacity, while rare or
+    # unseen rows now inherit Qwen geometry instead of remaining random.
+    with torch.no_grad():
+        signed_codes = torch.from_numpy(token_codes).to(
+            device=device, dtype=torch.float32
+        ).mul_(2).sub_(1)
+        projection = torch.randn(
+            lsh_bits, embedding_dim, device=device, dtype=torch.float32
+        ) * (0.02 / math.sqrt(lsh_bits))
+        model.token.weight.copy_(signed_codes @ projection)
+        del signed_codes, projection
+    train_ids = train_ids.to(device)
+    train_attention = train_attention.to(device)
+    train_probability = train_probability.to(device)
+    val = tuple(value.to(device) for value in val_cpu)
+    test = tuple(value.to(device) for value in test_cpu)
+    optimizer = torch.optim.AdamW([
+        {"params": [model.token.weight], "lr": 1e-2, "weight_decay": 1e-5},
+        {"params": [parameter for name, parameter in model.named_parameters()
+                    if name != "token.weight"],
+         "lr": 3e-3, "weight_decay": 1e-4},
+    ], betas=(0.9, 0.999), eps=1e-8, fused=True)
+    warmup = max(1, round(steps * 0.03))
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        [lambda step: warmup_cosine_factor(step, steps, warmup, 0.1)] * 2,
+    )
+    compiled = torch.compile(
+        model, mode="reduce-overhead", fullgraph=True, dynamic=False
+    )
+    generator = torch.Generator(device=device).manual_seed(seed + 1)
+    run = _wandb_run(
+        f"field-ceiling-d{embedding_dim}-s{seed}",
+        {
+            "prepared_path": prepared_path, "labeled_path": labeled_path,
+            "extra_prepared_path": extra_prepared_path,
+            "extra_labeled_path": extra_labeled_path,
+            "steps": steps, "batch_size": batch_size, "seed": seed,
+            "embedding_dim": embedding_dim,
+            "hard_target_mix": hard_target_mix,
+            "minimum_positive_recall": minimum_positive_recall,
+            "balance_teacher_classes": balance_teacher_classes,
+            "loss_scale": loss_scale,
+            "token_initialization": "qwen_sign_lsh_projection",
+            "field_pooling": "ordered_residual_multihead_v2",
+            "train_examples_with_replay": len(train_ids),
+        }, "representation-ceiling",
+    )
+    logger = run.log if run is not None else lambda row: print(row, flush=True)
+    best_kl = math.inf
+    best_step = 0
+    best_state = None
+    best_scale = 1.0
+    best_bias = 0.0
+    best_threshold = 0.0
+    started = time.perf_counter()
+    last_log = started
+
+    @torch.no_grad()
+    def predict(values):
+        ids, attention, _, _ = values
+        output = []
+        for lo in range(0, len(ids), batch_size):
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                output.append(compiled(
+                    ids[lo:lo + batch_size], attention[lo:lo + batch_size]
+                ).float())
+        return torch.cat(output)
+
+    def evaluate_validation(values):
+        raw_logits = predict(values)
+        _, _, probability, gold = values
+        affine_weight, affine_bias = fit_probability_logit_stack(
+            raw_logits.float().cpu().numpy()[None, :],
+            probability.float().cpu().numpy(), l2=0.0,
+        )
+        scale = float(affine_weight[0])
+        bias = float(affine_bias)
+        logits = scale * raw_logits + bias
+        raw_metrics = binary_metrics(
+            raw_logits.cpu(), probability.cpu(), gold.cpu()
+        )
+        metrics = binary_metrics(
+            logits.cpu(), probability.cpu(), gold.cpu()
+        )
+        threshold, _ = calibrate_agreement_threshold(
+            logits.cpu(), probability.cpu(), minimum_positive_recall
+        )
+        constrained = binary_metrics(
+            logits.cpu(), probability.cpu(), gold.cpu(),
+            decision_threshold=threshold,
+        )
+        return (logits, raw_metrics, metrics, constrained, float(threshold),
+                scale, bias)
+
+    (initial_logits, initial_raw, initial, initial_constrained, _,
+     initial_scale, initial_bias) = evaluate_validation(val)
+    logger({
+        "global_step": 0,
+        **{f"val_raw/{key}": value for key, value in initial_raw.items()},
+        **{f"val/{key}": value for key, value in initial.items()},
+        **{f"val_constrained/{key}": value
+           for key, value in initial_constrained.items()},
+        "calibration/scale": initial_scale,
+        "calibration/bias": initial_bias,
+    })
+    positive_indices = torch.nonzero(
+        train_probability >= 0.5, as_tuple=False
+    ).squeeze(1)
+    negative_indices = torch.nonzero(
+        train_probability < 0.5, as_tuple=False
+    ).squeeze(1)
+    if not len(positive_indices) or not len(negative_indices):
+        raise RuntimeError("field training requires both teacher classes")
+
+    # Compile forward and backward before starting the utilization sampler.
+    # Max-autotune took minutes for a loop that runs in seconds; reduce-overhead
+    # keeps the fixed-shape graph compiled while preserving fast feedback.
+    compile_selection = torch.arange(batch_size, device=device) % len(train_ids)
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        compile_logits = compiled(
+            train_ids[compile_selection], train_attention[compile_selection]
+        )
+    torch.nn.functional.binary_cross_entropy_with_logits(
+        compile_logits.float(), train_probability[compile_selection]
+    ).mul(loss_scale).backward()
+    optimizer.zero_grad(set_to_none=True)
+    torch.cuda.synchronize()
+    monitor = _GpuSampler()
+    monitor.start()
+    last_log = time.perf_counter()
+    for step in range(steps):
+        if balance_teacher_classes:
+            positive_count = batch_size // 2
+            negative_count = batch_size - positive_count
+            selection = torch.cat((
+                positive_indices[torch.randint(
+                    0, len(positive_indices), (positive_count,),
+                    generator=generator, device=device,
+                )],
+                negative_indices[torch.randint(
+                    0, len(negative_indices), (negative_count,),
+                    generator=generator, device=device,
+                )],
+            ))
+        else:
+            selection = torch.randint(
+                0, len(train_ids), (batch_size,), generator=generator,
+                device=device,
+            )
+        optimizer.zero_grad(set_to_none=True)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            logits = compiled(train_ids[selection], train_attention[selection])
+        probability = train_probability[selection]
+        target = torch.lerp(
+            probability, (probability >= 0.5).to(probability.dtype),
+            hard_target_mix,
+        )
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            logits.float(), target
+        )
+        (loss * loss_scale).backward()
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        scheduler.step()
+        current = step + 1
+        if current % 10 == 0:
+            torch.cuda.synchronize()
+            now = time.perf_counter()
+            logger({
+                "global_step": current,
+                "train/ce": float(loss.detach()),
+                "grad/global_preclip": float(grad_norm),
+                "grad/clipped": float(grad_norm > 1.0),
+                "optim/lr_embedding": optimizer.param_groups[0]["lr"],
+                "optim/lr_network": optimizer.param_groups[1]["lr"],
+                "perf/examples_per_second": (
+                    10 * batch_size / max(1e-9, now - last_log)
+                ),
+            })
+            last_log = now
+        if current % 50 == 0 or current == steps:
+            (_, raw_metrics, metrics, constrained, threshold, scale,
+             calibration_bias) = evaluate_validation(val)
+            logger({
+                "global_step": current,
+                **{f"val_raw/{key}": value
+                   for key, value in raw_metrics.items()},
+                **{f"val/{key}": value for key, value in metrics.items()},
+                **{f"val_constrained/{key}": value
+                   for key, value in constrained.items()},
+                "val_constrained/threshold": threshold,
+                "calibration/scale": scale,
+                "calibration/bias": calibration_bias,
+            })
+            if metrics["kl"] < best_kl - 1e-8:
+                best_kl = metrics["kl"]
+                best_step = current
+                best_scale = scale
+                best_bias = calibration_bias
+                best_threshold = threshold
+                best_state = {
+                    key: value.detach().cpu().clone()
+                    for key, value in model.state_dict().items()
+                }
+    gpu_samples = monitor.finish()
+    if best_state is None:
+        raise RuntimeError("field student never produced a checkpoint")
+    model.load_state_dict(best_state)
+    val_logits = best_scale * predict(val) + best_bias
+    test_logits = best_scale * predict(test) + best_bias
+    val_metrics = binary_metrics(
+        val_logits.cpu(), val[2].cpu(), val[3].cpu()
+    )
+    val_constrained = binary_metrics(
+        val_logits.cpu(), val[2].cpu(), val[3].cpu(),
+        decision_threshold=best_threshold,
+    )
+    test_metrics = binary_metrics(
+        test_logits.cpu(), test[2].cpu(), test[3].cpu()
+    )
+    # Apply only validation-fitted scale, bias, and threshold to held-out test.
+    test_constrained = binary_metrics(
+        test_logits.cpu(), test[2].cpu(), test[3].cpu(),
+        decision_threshold=best_threshold,
+    )
+    state_fp16 = {
+        key: value.half().cpu() if value.is_floating_point() else value.cpu()
+        for key, value in best_state.items()
+    }
+    run_id = run.id if run is not None else f"offline-{seed}"
+    output = f"{ROOT}/models/field-student-{run_id}.pt"
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    artifact = {
+        "metadata": {
+            **prepared["metadata"], "artifact": "field_student",
+            "embedding_dim": embedding_dim, "vocab_size": vocab_size,
+            "sequence_length": sequence_length,
+            "decision_threshold": best_threshold,
+            "calibration_scale": best_scale,
+            "calibration_bias": best_bias,
+            "token_initialization": "qwen_sign_lsh_projection",
+            "field_pooling": "ordered_residual_multihead_v2",
+        },
+        "state_dict": state_fp16,
+        "summary": {
+            "best_step": best_step, "val": val_metrics,
+            "val_constrained": val_constrained, "test": test_metrics,
+            "test_constrained": test_constrained,
+        },
+    }
+    temporary = output + ".tmp"
+    torch.save(artifact, temporary)
+    os.replace(temporary, output)
+    artifact_bytes = os.path.getsize(output)
+    if artifact_bytes > 16_000_000:
+        raise RuntimeError(
+            f"field ceiling artifact is {artifact_bytes} bytes, above 16 MB"
+        )
+    summary = {
+        **artifact["summary"],
+        "artifact_bytes": artifact_bytes,
+        "compression_vs_1_6gb": 1_600_000_000 / artifact_bytes,
+        "seconds": time.perf_counter() - started,
+        "median_active_gpu_utilization": (
+            float(np.median([value for value in gpu_samples if value > 0]))
+            if any(value > 0 for value in gpu_samples) else None
+        ),
+        "model_path": output,
+    }
+    volume.commit()
+    print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
+    if run is not None:
+        run.log({
+            "global_step": best_step,
+            **{f"test/{key}": value for key, value in test_metrics.items()},
+            **{f"test_constrained/{key}": value
+               for key, value in test_constrained.items()},
+            "export/artifact_bytes": artifact_bytes,
+            "export/compression_vs_1_6gb": summary["compression_vs_1_6gb"],
+            "perf/median_active_gpu_utilization": (
+                summary["median_active_gpu_utilization"]
+            ),
+        })
+        import wandb
+        saved = wandb.Artifact(
+            f"field-student-{run.id}", type="diagnostic-model", metadata=summary
+        )
+        saved.add_file(output)
+        run.log_artifact(saved)
+        run.finish()
+        summary["wandb_url"] = run.url
+    return summary
+
+
 @app.function(image=image, timeout=1800, memory=4096, secrets=WANDB_SECRET)
 def compare_sharpness_runs(results):
     """Log the screening Pareto frontier and return a compact comparison."""
@@ -1923,6 +2376,7 @@ def inspect_wandb_runs(run_ids: str):
     train_keys = [
         "global_step", "train/ce", "grad/global_preclip",
         "optim/lr_mask", "optim/lr_coefficient_raw",
+        "optim/lr_embedding", "optim/lr_network",
         "perf/examples_per_second",
     ]
     validation_keys = [
@@ -1930,6 +2384,11 @@ def inspect_wandb_runs(run_ids: str):
         "val/calibrated_agreement", "val/teacher_positive_recall",
         "val/calibrated_teacher_positive_recall",
         "val/balanced_agreement", "val/calibrated_balanced_agreement",
+        "val_raw/kl", "val_constrained/agreement",
+        "val_constrained/teacher_positive_recall",
+        "val_constrained/teacher_negative_recall",
+        "val_constrained/balanced_agreement",
+        "calibration/scale", "calibration/bias",
     ]
     diversity_keys = [
         "global_step", "mask/changed_fraction",
@@ -1958,8 +2417,15 @@ def inspect_wandb_runs(run_ids: str):
         best_validation = max(
             validation_rows,
             key=lambda row: (
-                row["val/calibrated_agreement"],
-                row.get("val/calibrated_balanced_agreement", -1.0),
+                row.get(
+                    "val/calibrated_agreement",
+                    row.get("val_constrained/agreement",
+                            row.get("val/agreement", -1.0)),
+                ),
+                row.get(
+                    "val/calibrated_balanced_agreement",
+                    row.get("val_constrained/balanced_agreement", -1.0),
+                ),
             ),
             default={},
         )
@@ -2018,6 +2484,38 @@ def validate_duplicate_repair():
         raise RuntimeError("repair smoke test left duplicate characters")
     if result["max_logit_delta"] > 1e-5:
         raise RuntimeError("repair smoke test changed represented logits")
+    structured = HardWalshStudent(
+        256, 8192, seed=11, char_chunk=2048, bits_per_token=32,
+        initialization="structured_cross", off_init=-1.0, on_init=1.0,
+        ste_variant="product", ste_scale=0.01,
+        mask_parameterization="topk",
+    ).to(device)
+    structured.theta.requires_grad_(False)
+    structured_bits = torch.randint(
+        0, 2, (64, 256), device=device, dtype=torch.uint8
+    )
+    with torch.no_grad():
+        sparse_logits = structured(structured_bits)
+        fixed_indices = structured.fixed_indices
+        structured.fixed_indices = torch.empty(
+            (0, 0), dtype=torch.long, device=device
+        )
+        dense_logits = structured(structured_bits)
+        structured.fixed_indices = fixed_indices
+        supports = structured.hardened_index_rows()[
+            :, :structured.max_mask_degree
+        ].cpu().numpy()
+    result.update({
+        "structured_terms": structured.terms,
+        "structured_unique": int(len(np.unique(supports, axis=0))),
+        "structured_sparse_dense_max_delta": float(
+            (sparse_logits - dense_logits).abs().max()
+        ),
+    })
+    if result["structured_unique"] != structured.terms:
+        raise RuntimeError("structured bank contains duplicate characters")
+    if result["structured_sparse_dense_max_delta"] > 1e-5:
+        raise RuntimeError("structured sparse inference differs from dense inference")
     return result
 
 
@@ -2215,6 +2713,390 @@ def lexical_fourier_probe(labeled_path: str, extra_labeled_path: str,
                 for key, value in values["test"].items()
             })
         run.log(flat)
+        run.summary.update(result)
+        run.finish()
+        result["wandb_url"] = run.url
+    print(json.dumps(result, indent=2, sort_keys=True), flush=True)
+    return result
+
+
+@app.function(image=image, gpu="H100", volumes={"/cache": volume}, timeout=10800,
+              memory=49152, secrets=WANDB_SECRET)
+def contextual_backoff_probe(prepared_path: str, labeled_path: str,
+                             extra_prepared_path: str,
+                             extra_labeled_path: str,
+                             model_path: str = "", extra_repeat: int = 10):
+    """Measure compact target-conditioned context tables with exact backoff.
+
+    A joint ``(target,left,right)`` lookup has poor held-out coverage.  This
+    probe instead learns separate ``(target,context-field)`` probability
+    tables and shrinks each conditional estimate toward the target-only
+    estimate.  Unseen or pruned conditionals therefore fall back to the target
+    estimate rather than to the global negative majority.  Small validation-
+    fitted stack weights combine morphology, conditional residuals, and an
+    optional frozen Fourier bank.  Test is used only once per frozen candidate.
+    """
+    import json
+    import math
+    import os
+
+    import numpy as np
+    import torch
+
+    from fda_exp.fourier_noun import (
+        binary_metrics, calibrate_agreement_threshold,
+        load_compact_student, unpack_bits,
+    )
+
+    volume.reload()
+    prepared = torch.load(prepared_path, map_location="cpu", weights_only=False)
+    labeled = torch.load(labeled_path, map_location="cpu", weights_only=False)
+    extra_prepared = torch.load(
+        extra_prepared_path, map_location="cpu", weights_only=False
+    )
+    extra_labeled = torch.load(
+        extra_labeled_path, map_location="cpu", weights_only=False
+    )
+    if extra_repeat <= 0:
+        raise ValueError("extra_repeat must be positive")
+    for data, labels in ((prepared, labeled), (extra_prepared, extra_labeled)):
+        if len(data["splits"]["train"]["student_ids"]) != len(
+            labels["splits"]["train"]["teacher_probability"]
+        ):
+            raise ValueError("prepared and labeled rows do not align")
+
+    field_columns = {
+        "target": np.arange(0, 4),
+        "lower": np.arange(4, 8),
+        "prefix": np.arange(8, 12),
+        "suffix": np.arange(12, 16),
+        "left1": np.arange(16, 20),
+        "right1": np.arange(20, 24),
+        "left2": np.arange(24, 28),
+        "right2": np.arange(28, 32),
+        "position": np.arange(56, 60),
+        "shape": np.arange(60, 64),
+    }
+    standalone_names = ("target", "lower", "prefix", "suffix", "shape")
+    conditional_names = ("left1", "right1", "left2", "right2", "position")
+    train_fields = {}
+    for name, columns in field_columns.items():
+        train_fields[name] = np.ascontiguousarray(np.concatenate((
+            prepared["splits"]["train"]["student_ids"][:, columns].numpy(),
+            extra_prepared["splits"]["train"]["student_ids"][:, columns].numpy(),
+        )), dtype=np.int32)
+    train_probability = np.concatenate((
+        labeled["splits"]["train"]["teacher_probability"].float().numpy(),
+        extra_labeled["splits"]["train"]["teacher_probability"].float().numpy(),
+    )).astype(np.float64, copy=False)
+    train_weight = np.concatenate((
+        np.ones(len(prepared["splits"]["train"]["student_ids"]), dtype=np.float64),
+        np.full(len(extra_prepared["splits"]["train"]["student_ids"]),
+                extra_repeat, dtype=np.float64),
+    ))
+    global_probability = float(np.average(train_probability, weights=train_weight))
+
+    def group(keys: np.ndarray):
+        keys = np.ascontiguousarray(keys, dtype=np.int32)
+        key_type = np.dtype((np.void, keys.shape[1] * keys.dtype.itemsize))
+        view = keys.view(key_type).reshape(-1)
+        unique, inverse = np.unique(view, return_inverse=True)
+        counts = np.bincount(inverse, weights=train_weight)
+        sums = np.bincount(
+            inverse, weights=train_weight * train_probability
+        )
+        first = np.full(len(unique), len(inverse), dtype=np.int64)
+        np.minimum.at(first, inverse, np.arange(len(inverse), dtype=np.int64))
+        return {
+            "keys": unique,
+            "key_type": key_type,
+            "inverse": inverse,
+            "counts": counts,
+            "sums": sums,
+            "first": first,
+            "key_bytes": keys.shape[1] * keys.dtype.itemsize,
+        }
+
+    tables = {name: group(train_fields[name]) for name in standalone_names}
+    target_inverse = tables["target"]["inverse"]
+    for name in conditional_names:
+        table = group(np.concatenate(
+            (train_fields["target"], train_fields[name]), axis=1
+        ))
+        table["parent"] = target_inverse[table["first"]]
+        tables[name] = table
+
+    split_fields = {}
+    split_probability = {}
+    split_gold = {}
+    for split in ("val", "test"):
+        split_fields[split] = {
+            name: np.ascontiguousarray(
+                prepared["splits"][split]["student_ids"][:, columns].numpy(),
+                dtype=np.int32,
+            )
+            for name, columns in field_columns.items()
+        }
+        split_probability[split] = labeled["splits"][split][
+            "teacher_probability"
+        ].float().numpy()
+        split_gold[split] = labeled["splits"][split]["gold"].numpy()
+
+    def query(table, values: np.ndarray):
+        values = np.ascontiguousarray(values, dtype=np.int32)
+        keys = values.view(table["key_type"]).reshape(-1)
+        positions = np.searchsorted(table["keys"], keys)
+        found = positions < len(table["keys"])
+        found[found] &= table["keys"][positions[found]] == keys[found]
+        return positions, found
+
+    queries = {split: {} for split in ("val", "test")}
+    for split in ("val", "test"):
+        for name in standalone_names:
+            queries[split][name] = query(tables[name], split_fields[split][name])
+        for name in conditional_names:
+            values = np.concatenate((
+                split_fields[split]["target"], split_fields[split][name]
+            ), axis=1)
+            queries[split][name] = query(tables[name], values)
+
+    fourier_logits = {}
+    source_artifact_bytes = 0
+    if model_path:
+        compact = load_compact_student(model_path)
+        student = compact["student"]
+        source_artifact_bytes = os.path.getsize(model_path)
+        n_bits = int(student["n_bits"])
+        offsets = np.asarray(student["offsets"], dtype=np.int64)
+        indices = np.asarray(student["indices"], dtype=np.int64)
+        coefficient = torch.as_tensor(
+            student["coefficient"], dtype=torch.float32, device="cuda"
+        )
+        counts = np.diff(offsets)
+        max_degree = int(counts.max(initial=0))
+        padded = np.zeros((len(counts), max_degree), dtype=np.int64)
+        active = np.arange(max_degree)[None, :] < counts[:, None]
+        rows = np.repeat(np.arange(len(counts)), counts)
+        columns = np.arange(len(indices)) - np.repeat(offsets[:-1], counts)
+        padded[rows, columns] = indices
+        padded = torch.as_tensor(padded, dtype=torch.long, device="cuda")
+        active = torch.as_tensor(active, dtype=torch.uint8, device="cuda")
+        for split in ("val", "test"):
+            packed = labeled["splits"][split]["packed_bits"].numpy()
+            bits = torch.as_tensor(
+                unpack_bits(packed, n_bits), dtype=torch.uint8, device="cuda"
+            )
+            output = torch.full(
+                (len(bits),), float(student["bias"]), device="cuda"
+            )
+            for lo in range(0, len(counts), 2048):
+                hi = min(lo + 2048, len(counts))
+                selected = bits[:, padded[lo:hi]]
+                selected.mul_(active[None, lo:hi])
+                parity = selected.sum(dim=2, dtype=torch.int32).bitwise_and_(1)
+                output.add_((1.0 - 2.0 * parity.float()) @ coefficient[lo:hi])
+            fourier_logits[split] = output.cpu().numpy()
+
+    def logit(probability):
+        value = np.clip(probability, 1e-5, 1.0 - 1e-5)
+        return np.log(value / (1.0 - value))
+
+    def fit_stack(features: np.ndarray, target: np.ndarray):
+        x = torch.as_tensor(features, dtype=torch.float32, device="cuda")
+        y = torch.as_tensor(target, dtype=torch.float32, device="cuda")
+        weight = torch.zeros(x.shape[1], dtype=torch.float32, device="cuda",
+                             requires_grad=True)
+        weight.data[0] = 1.0
+        bias = torch.zeros((), dtype=torch.float32, device="cuda",
+                           requires_grad=True)
+        optimizer = torch.optim.LBFGS(
+            [weight, bias], lr=0.5, max_iter=150,
+            tolerance_grad=1e-9, tolerance_change=1e-11,
+            line_search_fn="strong_wolfe",
+        )
+
+        def closure():
+            optimizer.zero_grad(set_to_none=True)
+            prediction = x @ weight + bias
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                prediction, y
+            ) + 1e-4 * weight.square().mean()
+            loss.backward()
+            return loss
+
+        optimizer.step(closure)
+        return weight.detach().cpu().numpy(), float(bias.detach())
+
+    candidates = []
+    for prior_count in (1.0, 3.0, 10.0, 30.0, 100.0):
+        standalone_probability = {}
+        for name in standalone_names:
+            table = tables[name]
+            standalone_probability[name] = (
+                table["sums"] + prior_count * global_probability
+            ) / (table["counts"] + prior_count)
+        parent_probability = standalone_probability["target"]
+        conditional_probability = {}
+        for name in conditional_names:
+            table = tables[name]
+            conditional_probability[name] = (
+                table["sums"] + prior_count * parent_probability[table["parent"]]
+            ) / (table["counts"] + prior_count)
+
+        for minimum_count in (1, 2, 4, 8, 16):
+            features = {}
+            feature_names = ["target", "lower", "prefix", "suffix", "shape"]
+            feature_names.extend(f"{name}_residual" for name in conditional_names)
+            if model_path:
+                feature_names.append("fourier")
+            coverage = {}
+            for split in ("val", "test"):
+                values = []
+                target_positions, target_found = queries[split]["target"]
+                target_p = np.full(
+                    len(target_positions), global_probability, dtype=np.float64
+                )
+                target_p[target_found] = parent_probability[
+                    target_positions[target_found]
+                ]
+                target_logit = logit(target_p)
+                values.append(target_logit)
+                for name in ("lower", "prefix", "suffix", "shape"):
+                    positions, found = queries[split][name]
+                    probability = np.full(
+                        len(positions), global_probability, dtype=np.float64
+                    )
+                    eligible = found.copy()
+                    eligible[found] &= tables[name]["counts"][positions[found]] >= minimum_count
+                    probability[eligible] = standalone_probability[name][
+                        positions[eligible]
+                    ]
+                    values.append(logit(probability))
+                for name in conditional_names:
+                    positions, found = queries[split][name]
+                    eligible = found.copy()
+                    eligible[found] &= tables[name]["counts"][positions[found]] >= minimum_count
+                    probability = target_p.copy()
+                    probability[eligible] = conditional_probability[name][
+                        positions[eligible]
+                    ]
+                    values.append(logit(probability) - target_logit)
+                    coverage[f"{split}_{name}"] = float(eligible.mean())
+                if model_path:
+                    values.append(fourier_logits[split])
+                features[split] = np.stack(values, axis=1).astype(np.float32)
+            retained_entries = {
+                name: int((table["counts"] >= minimum_count).sum())
+                for name, table in tables.items()
+            }
+            # Exact deployment stores collision-free packed token ids and one
+            # FP16 value per entry.  This deliberately avoids optimistic hash-
+            # collision assumptions in the 100x compression accounting.
+            table_bytes = sum(
+                retained_entries[name] * (tables[name]["key_bytes"] + 2)
+                for name in tables
+            )
+            combined_bytes = source_artifact_bytes + table_bytes
+            hard_validation = (split_probability["val"] >= 0.5).astype(np.float32)
+            for hard_target_mix in (0.0, 0.25, 0.5, 0.75, 1.0):
+                stack_target = (
+                    (1.0 - hard_target_mix) * split_probability["val"]
+                    + hard_target_mix * hard_validation
+                )
+                weight, bias = fit_stack(features["val"], stack_target)
+                logits = {
+                    split: features[split] @ weight + bias
+                    for split in ("val", "test")
+                }
+                threshold, _ = calibrate_agreement_threshold(
+                    torch.from_numpy(logits["val"]),
+                    torch.from_numpy(split_probability["val"]), 0.85,
+                )
+                candidates.append({
+                    "prior_count": prior_count,
+                    "minimum_count": minimum_count,
+                    "hard_target_mix": hard_target_mix,
+                    "feature_names": feature_names,
+                    "weights": weight.tolist(),
+                    "bias": bias,
+                    "coverage": coverage,
+                    "retained_entries": retained_entries,
+                    "table_bytes": table_bytes,
+                    "combined_bytes": combined_bytes,
+                    "compression_vs_1_6gb": (
+                        1_600_000_000 / max(1, combined_bytes)
+                    ),
+                    "raw_val": binary_metrics(
+                        logits["val"], split_probability["val"],
+                        split_gold["val"],
+                    ),
+                    "raw_test": binary_metrics(
+                        logits["test"], split_probability["test"],
+                        split_gold["test"],
+                    ),
+                    "val": binary_metrics(
+                        logits["val"], split_probability["val"],
+                        split_gold["val"], decision_threshold=threshold,
+                    ),
+                    "test": binary_metrics(
+                        logits["test"], split_probability["test"],
+                        split_gold["test"], decision_threshold=threshold,
+                    ),
+                    "decision_threshold": float(threshold),
+                })
+
+    feasible = [row for row in candidates if row["combined_bytes"] <= 16_000_000]
+    if not feasible:
+        raise RuntimeError("no contextual table candidate meets the 16 MB budget")
+    best = min(feasible, key=lambda row: (
+        row["val"]["kl"], -row["val"]["agreement"]
+    ))
+    best_agreement = max(feasible, key=lambda row: (
+        row["val"]["agreement"], -row["val"]["kl"]
+    ))
+    compact_candidates = [{
+        "prior_count": row["prior_count"],
+        "minimum_count": row["minimum_count"],
+        "hard_target_mix": row["hard_target_mix"],
+        "combined_bytes": row["combined_bytes"],
+        "compression_vs_1_6gb": row["compression_vs_1_6gb"],
+        "raw_val_agreement": row["raw_val"]["agreement"],
+        "raw_test_agreement": row["raw_test"]["agreement"],
+        "val_kl": row["val"]["kl"],
+        "val_agreement": row["val"]["agreement"],
+        "val_positive_recall": row["val"]["teacher_positive_recall"],
+        "test_kl": row["test"]["kl"],
+        "test_agreement": row["test"]["agreement"],
+        "test_positive_recall": row["test"]["teacher_positive_recall"],
+    } for row in candidates]
+    result = {
+        "model_path": model_path,
+        "source_artifact_bytes": source_artifact_bytes,
+        "global_probability": global_probability,
+        "best_distribution": best,
+        "best_agreement": best_agreement,
+        "candidates": compact_candidates,
+    }
+    run = _wandb_run("contextual-backoff-feasibility", {
+        "prepared_path": prepared_path, "labeled_path": labeled_path,
+        "extra_prepared_path": extra_prepared_path,
+        "extra_labeled_path": extra_labeled_path,
+        "extra_repeat": extra_repeat, "model_path": model_path,
+    }, "diagnostic")
+    if run is not None:
+        run.log({
+            "global_step": 0,
+            **{f"best_distribution/val/{key}": value
+               for key, value in best["val"].items()},
+            **{f"best_distribution/test/{key}": value
+               for key, value in best["test"].items()},
+            **{f"best_agreement/val/{key}": value
+               for key, value in best_agreement["val"].items()},
+            **{f"best_agreement/test/{key}": value
+               for key, value in best_agreement["test"].items()},
+            "export/combined_bytes": best["combined_bytes"],
+            "export/compression_vs_1_6gb": best["compression_vs_1_6gb"],
+        })
         run.summary.update(result)
         run.finish()
         result["wandb_url"] = run.url
@@ -2754,7 +3636,8 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
          warmup_fraction: float = 0.02,
          mask_warmup_fraction: float = 0.20,
          eval_every: int = 25, patience: int = 12,
-         lexical_prior_count: float = 0.3):
+         lexical_prior_count: float = 0.3,
+         initialization: str = "fixed_context"):
     run_seed = seed if training_seed < 0 else training_seed
     if stage == "inspect":
         if not run_id:
@@ -2780,6 +3663,113 @@ def main(stage: str = "pilot", m: int = 131072, steps: int = 1000,
         )
         print(lexical_fourier_probe.remote(
             labeled, extra_labeled, model_path, extra_train_repeat,
+        ))
+        return
+    if stage == "contextual-probe":
+        if (train_n, val_n, test_n, student_length, lsh_bits) != (
+            1_000_000, 8192, 8192, 128, 32
+        ):
+            raise ValueError(
+                "contextual-probe requires the cached 1M/8192/8192/128/32 layout"
+            )
+        web_prepared = _web_prepared_name(
+            train_n, val_n, test_n, student_length, seed, schema=HYBRID_SCHEMA
+        )
+        web_labeled = _labeled_name(
+            train_n, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        ewt_prepared = _prepared_name(
+            90000, val_n, test_n, student_length, seed, schema=HYBRID_SCHEMA
+        )
+        ewt_labeled = _labeled_name(
+            90000, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        baseline_model = model_path or (
+            f"{ROOT}/models/fourier-ensemble-lsaq5q3o.npz"
+        )
+        print(contextual_backoff_probe.remote(
+            web_prepared, web_labeled, ewt_prepared, ewt_labeled,
+            baseline_model, extra_train_repeat,
+        ))
+        return
+    if stage == "structured-pilot":
+        if (train_n, val_n, test_n, student_length, lsh_bits) != (
+            1_000_000, 8192, 8192, 128, 32
+        ):
+            raise ValueError(
+                "structured-pilot requires the cached 1M/8192/8192/128/32 layout"
+            )
+        web_labeled = _labeled_name(
+            train_n, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        ewt_labeled = _labeled_name(
+            90000, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        print(train_fourier.remote(
+            labeled_path=web_labeled,
+            m=m,
+            steps=steps,
+            batch_size=batch_size,
+            seed=run_seed,
+            resume=resume,
+            balance_teacher_classes=False,
+            repair_duplicate_masks=True,
+            extra_train_path=ewt_labeled,
+            extra_train_repeat=extra_train_repeat,
+            mask_lr=0.0,
+            coefficient_lr=coefficient_lr,
+            mask_beta2=mask_beta2,
+            coefficient_beta2=coefficient_beta2,
+            ste_variant="product",
+            ste_scale=ste_scale,
+            mask_parameterization="topk",
+            mask_init_magnitude=mask_init_magnitude,
+            mask_discovery_fraction=0.0,
+            mask_delay_fraction=0.0,
+            mask_schedule="discovery_cosine",
+            loss_scale=loss_scale,
+            char_chunk=char_chunk,
+            hard_target_mix=hard_target_mix,
+            warmup_fraction=warmup_fraction,
+            mask_warmup_fraction=mask_warmup_fraction,
+            eval_every=eval_every,
+            patience=patience,
+            teacher_sharpness=teacher_sharpness,
+            minimum_positive_recall=minimum_positive_recall,
+            checkpoint_enabled=True,
+            lexical_prior_count=lexical_prior_count,
+            initialization="structured_cross",
+        ))
+        return
+    if stage == "field-probe":
+        if (train_n, val_n, test_n, student_length, lsh_bits) != (
+            1_000_000, 8192, 8192, 128, 32
+        ):
+            raise ValueError(
+                "field-probe requires the cached 1M/8192/8192/128/32 layout"
+            )
+        web_prepared = _web_prepared_name(
+            train_n, val_n, test_n, student_length, seed, schema=HYBRID_SCHEMA
+        )
+        web_labeled = _labeled_name(
+            train_n, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        ewt_prepared = _prepared_name(
+            90000, val_n, test_n, student_length, seed, schema=HYBRID_SCHEMA
+        )
+        ewt_labeled = _labeled_name(
+            90000, val_n, test_n, student_length, lsh_bits, seed,
+            schema=HYBRID_SCHEMA,
+        )
+        print(train_field_student.remote(
+            web_prepared, web_labeled, ewt_prepared, ewt_labeled,
+            steps, batch_size, run_seed, 24, hard_target_mix,
+            minimum_positive_recall, balance_teacher_classes, loss_scale,
         ))
         return
     if stage == "upload":
