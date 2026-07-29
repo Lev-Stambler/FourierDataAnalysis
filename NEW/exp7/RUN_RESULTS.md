@@ -1,9 +1,10 @@
 # Experiment 7: dense-free tied vocabulary
 
 Exp V7 replaces Exp V6's multiplicative `485 × 512` vocabulary factors with
-one unconstrained tied BF16 matrix of shape `248320 × 64`. Every token owns a
+one unconstrained tied matrix of shape `248320 × 64`. Every token owns a
 different trainable row. The width-64, depth-32, rank-8 residual body and
-per-token RMS normalization are unchanged.
+per-token RMS normalization are unchanged. Trainable weights now remain FP32
+while matrix compute uses BF16 autocast.
 
 The model has exactly 17,006,592 trainable parameters. It is initialized by
 materializing the best Exp V6 vocabulary row `i*512+j` as `A[i] * B[j]` and
@@ -171,3 +172,65 @@ to `0.0001`, with no KL early stop and no wall-clock limit.
 - Global input tokens/update: `1,048,576`
 - Physical contexts/GPU: `131,072`
 - Gradient accumulation: none
+
+## 2026-07-29 flatline investigation and corrections
+
+Longer observation invalidated the early conclusion that the LR `3e-4`
+AdamW8bit continuation was learning at a useful rate. It reached held-out KL
+`2.16863435` after about `6.7B` AdamW input tokens: only `0.00163` below its
+`2.17026095` baseline. A fresh-optimizer LR `0.003` continuation initially
+helped, then flattened again:
+
+| Run | Start KL | KL after 268,435,456 tokens | Next KL |
+|---|---:|---:|---:|
+| AdamW8bit LR `0.003` ([bbd01ba1](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/bbd01ba1)) | 2.16863435 | 2.16542403 | 2.16530887 |
+| 2,097,152 tokens/update ([8a53c165](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/8a53c165)) | 2.16530887 | 2.16311755 | — |
+
+The doubled optimizer batch was healthy from a systems perspective:
+
+- Global contexts/update: `131,072`
+- Global input tokens/update: `2,097,152`
+- Physical contexts/GPU: `114,688`
+- Steady throughput: about `1.60–1.63M` input tok/s
+- Peak allocated/reserved VRAM: `72.543 / 72.791 GiB` per GPU
+- Observed device memory: `76,450 / 81,559 MiB` per GPU
+- Observed utilization: normally `99–100%` on all eight H100s
+- Mean pre-clip gradient norm: about `0.014`; clipping never activated
+
+The new update diagnostics found the principal optimizer bug. The materialized
+weights had RMS `2.876` for the vocabulary and `4.878` for the body, while an
+LR `0.003` Adam step changed them by only about `0.0002` RMS. Because the
+parameters themselves were BF16, only about `4.1%` of vocabulary elements and
+`2.8%` of body elements changed in a step. The remaining updates were rounded
+away; Adam had no FP32 master copy.
+
+Commit `b105da7` changed the trainable parameters to FP32 while retaining BF16
+autocast compute. In a seven-update control, `99.9990%` of vocabulary weights
+and `99.9954%` of body weights changed. Held-out KL moved from `2.16300042` to
+`2.16186758` in only `14,680,064` input tokens.
+
+Commit `3fbdab2` made the optimized scalar literally the mean exact per-token
+KL, fixed fresh optimizer restarts so they do not inherit a checkpoint's W&B
+run ID, guaranteed a first-session metric, and added:
+
+- vocabulary/body gradient norm and gradient RMS
+- vocabulary/body update RMS, relative update, and changed fraction
+- per-rank training-KL minimum, maximum, and standard deviation
+- teacher probability row-sum mean and maximum error
+- session-local optimizer update count
+
+The fresh one-update control is
+[7s0teqis](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/7s0teqis).
+At a full LR `0.003` and `2,097,152` input tokens/update, held-out KL changed
+from `2.16300042` to `2.16210902`. The total gradient norm was `0.01646`
+(`0.01497` vocabulary, `0.00685` body), no clipping occurred, and more than
+`99.998%` of both parameter groups changed.
+
+That control also exposed a second correctness issue: the materialized teacher
+probabilities were stored as BF16. Probability row sums had mean absolute error
+`5.58e-4` and maximum error `3.16e-3`, so the nominal training KL was not exact
+enough for this experiment. Commit `b1b8ba6` restores FP32 teacher
+probabilities. The physical batch is correspondingly `49,152` contexts/GPU;
+the optimizer batch remains `16,384` contexts/GPU, or `2,097,152` global input
+tokens/update. This keeps the teacher frozen and computed once per physical
+pass while removing the probability approximation.
