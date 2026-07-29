@@ -42,6 +42,7 @@ CONFIG = {
     "train_contexts": 16_777_216,
     "train_tokens": 1_000_000_000_000,
     "optimizer": "adamw8bit",
+    "loss": "exact_per_token_kl",
     "reset_optimizer": False,
     "long_lr": 0.003,
     "long_output_dir": "",
@@ -150,10 +151,13 @@ class Student(nn.Module):
         return F.linear(self.hidden(token_ids), self.vocabulary)
 
     def forward(
-        self, token_ids: torch.Tensor, teacher_probability: torch.Tensor
+        self,
+        token_ids: torch.Tensor,
+        teacher_probability: torch.Tensor,
+        teacher_entropy: torch.Tensor,
     ) -> torch.Tensor:
         logits = self.logits(token_ids)
-        return -(teacher_probability * F.log_softmax(logits.float(), -1)).sum(-1).mean()
+        return exact_kl_rows(logits, teacher_probability, teacher_entropy).mean()
 
 
 def parameter_count() -> int:
@@ -182,6 +186,22 @@ def update_diagnostics(
             torch.sqrt(delta_square / parameter_square.clamp_min(1e-30))
         )
         result[f"{name}_changed_fraction"] = float(changed / count)
+    return result
+
+
+@torch.no_grad()
+def gradient_diagnostics(student: Student) -> dict[str, float]:
+    groups = ((student.vocabulary,), tuple(student.blocks.parameters()))
+    result = {}
+    for name, parameters in zip(("vocabulary", "body"), groups):
+        square = sum(
+            parameter.grad.detach().float().square().sum()
+            for parameter in parameters
+            if parameter.grad is not None
+        )
+        count = sum(parameter.numel() for parameter in parameters)
+        result[f"{name}_grad_norm"] = float(torch.sqrt(square))
+        result[f"{name}_grad_rms"] = float(torch.sqrt(square / count))
     return result
 
 
@@ -607,6 +627,7 @@ def train() -> None:
     run_contexts = 0
     total_contexts = 0
     optimizer_updates = 0
+    session_optimizer_updates = 0
     current_lr = float(CONFIG["lr"])
     best_kl = math.inf
     plateau_reference = math.inf
@@ -631,7 +652,7 @@ def train() -> None:
         physical_batches = int(saved.get("physical_batches", 0))
         long_input_tokens_seen = int(saved.get("long_input_tokens_seen", 0))
         stream_states = saved.get("stream_states")
-        if not wandb_id:
+        if not wandb_id and not CONFIG["reset_optimizer"]:
             wandb_id = str(saved.get("wandb_id", ""))
         for group in optimizer.param_groups:
             group["lr"] = current_lr
@@ -772,10 +793,14 @@ def train() -> None:
             previous_contexts = run_contexts
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                cross_entropy = model(token_ids[start:stop], probability[start:stop])
-            cross_entropy.backward()
+                kl_loss = model(
+                    token_ids[start:stop],
+                    probability[start:stop],
+                    entropy[start:stop],
+                )
+            kl_loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(student.parameters(), 1.0)
-            if not torch.isfinite(cross_entropy) or not torch.isfinite(grad_norm):
+            if not torch.isfinite(kl_loss) or not torch.isfinite(grad_norm):
                 raise RuntimeError("non-finite loss or gradient")
             if long_run:
                 step_lr = cosine_lr(
@@ -794,11 +819,22 @@ def train() -> None:
                 group["lr"] = step_lr
             next_run_contexts = run_contexts + step_global_contexts
             next_long_tokens = long_input_tokens_seen + step_tokens
+            first_session_update = session_optimizer_updates == 0
             measure_update = (
                 due(last_log_tokens, next_long_tokens, CONFIG["log_tokens"])
                 if long_run
                 else due(last_log_contexts, next_run_contexts, CONFIG["log_contexts"])
-            )
+            ) or first_session_update
+            gradient_metrics = gradient_diagnostics(student) if measure_update else {}
+            if measure_update:
+                probability_sum_error = (
+                    probability[start:stop].sum(-1, dtype=torch.float32) - 1
+                ).abs()
+                probability_metrics = torch.stack(
+                    (probability_sum_error.mean(), probability_sum_error.max())
+                )
+            else:
+                probability_metrics = None
             before_update = (
                 [parameter.detach().clone() for parameter in student.parameters()]
                 if measure_update
@@ -809,12 +845,13 @@ def train() -> None:
                 update_diagnostics(student, before_update) if before_update is not None else {}
             )
             optimizer_updates += 1
+            session_optimizer_updates += 1
             run_contexts += step_global_contexts
             total_contexts += step_global_contexts
             if long_run:
                 long_input_tokens_seen += step_tokens
-            last_loss = float(cross_entropy.detach())
-            last_kl = last_loss - float(entropy[start:stop].mean())
+            last_kl = float(kl_loss.detach())
+            last_loss = last_kl + float(entropy[start:stop].mean())
             interval_loss += last_loss
             interval_kl += last_kl
             interval_grad_norm += float(grad_norm)
@@ -825,7 +862,19 @@ def train() -> None:
                 if long_run
                 else due(last_log_contexts, run_contexts, CONFIG["log_contexts"])
             )
-            if log_due or (long_input_tokens_seen == step_tokens if long_run else optimizer_updates == 1):
+            if log_due or session_optimizer_updates == 1:
+                local_interval_kl = interval_kl / interval_steps
+                rank_kls = [torch.empty((), device=device) for _ in range(world)]
+                dist.all_gather(
+                    rank_kls,
+                    torch.tensor(local_interval_kl, device=device),
+                )
+                stacked_rank_kls = torch.stack(rank_kls)
+                probability_values = [
+                    torch.empty_like(probability_metrics) for _ in range(world)
+                ]
+                dist.all_gather(probability_values, probability_metrics)
+                stacked_probability = torch.stack(probability_values)
                 values = torch.tensor(
                     [
                         interval_loss / interval_steps,
@@ -857,11 +906,21 @@ def train() -> None:
                     "train_kl": float(values[1]),
                     "train_cross_entropy_last": last_loss,
                     "train_kl_last": last_kl,
+                    "train_kl_rank_std": float(stacked_rank_kls.std(unbiased=False)),
+                    "train_kl_rank_min": float(stacked_rank_kls.min()),
+                    "train_kl_rank_max": float(stacked_rank_kls.max()),
                     "grad_norm_pre_clip": float(values[2]),
                     "grad_norm_pre_clip_last": float(grad_norm),
                     "gradient_clipped": float(values[2] > 1.0),
+                    "teacher_probability_sum_abs_error": float(
+                        stacked_probability[:, 0].mean()
+                    ),
+                    "teacher_probability_sum_max_error": float(
+                        stacked_probability[:, 1].max()
+                    ),
                     "lr": step_lr,
                     "optimizer_updates": optimizer_updates,
+                    "session_optimizer_updates": session_optimizer_updates,
                     "run_contexts": run_contexts,
                     "contexts_seen": total_contexts,
                     "input_tokens_seen": total_contexts * CONFIG["context_length"],
@@ -889,6 +948,7 @@ def train() -> None:
                     ),
                     "per_gpu_peak_allocated_gib": [float(value[0]) for value in memories],
                     "per_gpu_peak_reserved_gib": [float(value[1]) for value in memories],
+                    **gradient_metrics,
                     **diagnostics,
                 }
                 if primary:

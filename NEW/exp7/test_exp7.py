@@ -9,6 +9,8 @@ from exp7 import (
     cosine_lr,
     document_contexts,
     exact_local_contexts,
+    exact_kl_rows,
+    gradient_diagnostics,
     parameter_count,
     per_token_rms,
     update_diagnostics,
@@ -35,6 +37,19 @@ def test_tied_dense_embedding_and_unembedding():
     token_ids = torch.randint(0, CONFIG["vocab_size"], (2, 16))
     hidden = student.hidden(token_ids)
     torch.testing.assert_close(student.logits(token_ids), hidden @ student.vocabulary.T)
+
+
+def test_forward_is_exact_mean_per_token_kl():
+    torch.manual_seed(8)
+    student = Student()
+    token_ids = torch.randint(0, CONFIG["vocab_size"], (2, 16))
+    logits = student.logits(token_ids)
+    teacher_probability = torch.softmax(torch.randn_like(logits), -1)
+    teacher_entropy = -(teacher_probability * teacher_probability.log()).sum(-1)
+    torch.testing.assert_close(
+        student(token_ids, teacher_probability, teacher_entropy),
+        exact_kl_rows(logits, teacher_probability, teacher_entropy).mean(),
+    )
 
 
 def test_rms_is_independent_per_token():
@@ -102,3 +117,14 @@ def test_update_diagnostics_detect_weight_changes():
     assert metrics["vocabulary_changed_fraction"] > 0
     assert metrics["body_update_rms"] > 0
     assert metrics["body_changed_fraction"] > 0
+
+
+def test_gradient_diagnostics_split_vocabulary_and_body():
+    student = Student()
+    for parameter in student.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    metrics = gradient_diagnostics(student)
+    assert metrics["vocabulary_grad_norm"] > 0
+    assert metrics["vocabulary_grad_rms"] == 1
+    assert metrics["body_grad_norm"] > 0
+    assert metrics["body_grad_rms"] == 1
