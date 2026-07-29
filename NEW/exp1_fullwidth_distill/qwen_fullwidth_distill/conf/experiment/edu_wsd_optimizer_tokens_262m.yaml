@@ -1,0 +1,42 @@
+name: edu_wsd_optimizer_tokens_262m
+stage: tensor_kron_edu_wsd_tokens262m
+seed: 0
+# Consume every remaining unique train context after the 393,216-context
+# warm-start cursor: 16,384,000 contexts * 16 tokens = 262,144,000 tokens.
+fresh_contexts: 16384000
+audit_every_contexts: 65536
+checkpoint_every_contexts: 327680
+dispatch_mode: detached
+reporting_target_validation_kl: 1.0
+learning_rates: [3.0e-6, 6.0e-6]
+batches:
+  - effective_batch: 256
+    warmup_steps: 32
+    stable_steps: 57568
+    decay_steps: 6400
+  - effective_batch: 512
+    warmup_steps: 16
+    stable_steps: 28784
+    decay_steps: 3200
+  - effective_batch: 1024
+    warmup_steps: 8
+    stable_steps: 14392
+    decay_steps: 1600
+  - effective_batch: 2048
+    warmup_steps: 4
+    stable_steps: 7196
+    decay_steps: 800
+warm_start:
+  mode: weights_only
+  optimizer: fresh_adam
+  source:
+    selector: completed_validation_winner
+    stage: tensor_kron_edu_lr
+    dataset_tag: fwedu350bt-v1p4
+    architecture_label: kronecker-c3-r2407-residual_ffn-d4-x4
+    metric: validation.kl
+    direction: min
+    require_status: complete
+    require_exact_steps: true
+    require_full_validation: true
+    require_checkpoint: true

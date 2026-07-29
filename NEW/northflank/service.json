@@ -1,0 +1,28 @@
+{
+  "name": "__SERVICE_ID__",
+  "description": "FDA 8xH100 SSH test node (managed by NEW/northflank/nf.sh)",
+  "billing": { "deploymentPlan": "__PLAN__" },
+  "deployment": {
+    "instances": 1,
+    "external": { "imagePath": "__IMAGE__" },
+    "docker": {
+      "configType": "customCommand",
+      "customCommand": "sleep infinity"
+    },
+    "gpu": {
+      "enabled": true,
+      "configuration": { "gpuType": "__GPU_TYPE__", "gpuCount": __GPU_COUNT__ }
+    },
+    "ssh": { "enabled": true },
+    "storage": {
+      "ephemeralStorage": { "storageSize": __EPHEMERAL_MB__ },
+      "shmSize": 16384
+    }
+  },
+  "runtimeEnvironment": {
+    "HF_HOME": "/cache/hf",
+    "HF_XET_HIGH_PERFORMANCE": "1",
+    "PYTORCH_ALLOC_CONF": "expandable_segments:True",
+    "TORCHINDUCTOR_CACHE_DIR": "/cache/torchinductor/qwen_fullwidth16"
+  }
+}

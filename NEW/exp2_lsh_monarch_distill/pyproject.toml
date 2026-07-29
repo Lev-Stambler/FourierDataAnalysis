@@ -1,0 +1,26 @@
+[project]
+name = "qwen-lsh18-monarch"
+version = "0.1.0"
+description = "Eighteen-bit tied-LSH Monarch distillation from Qwen3.5-0.8B-Base"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "torch==2.10.0",
+    "transformers==5.13.1",
+    "datasets>=5.0",
+    "wandb>=0.18",
+    "modal>=1.5.1",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["qwen_lsh_monarch"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

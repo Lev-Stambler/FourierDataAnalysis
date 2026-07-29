@@ -1,0 +1,30 @@
+[project]
+name = "qwen-kronecker-distill"
+version = "0.1.0"
+description = "Tensor-native small-width Kronecker distillation from Qwen3.5-0.8B-Base"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "torch==2.10.0",
+    "transformers==5.13.1",
+    "accelerate==1.14.0",
+    "causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.2.post1/causal_conv1d-1.6.2.post1%2Bcu12torch2.10cxx11abiTRUE-cp311-cp311-linux_x86_64.whl",
+    "liger-kernel==0.8.1",
+    "safetensors>=0.7",
+    "datasets>=5.0",
+    "wandb>=0.18",
+    "qwen-normuon-pretrain",
+]
+
+[tool.uv.sources]
+qwen-normuon-pretrain = { workspace = true }
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["qwen_kron_distill"]

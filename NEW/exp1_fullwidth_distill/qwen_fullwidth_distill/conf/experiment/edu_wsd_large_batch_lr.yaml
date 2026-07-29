@@ -1,0 +1,29 @@
+name: edu_wsd_large_batch_lr
+stage: tensor_kron_edu_scale_wsd_large_batch_lr
+seed: 0
+fresh_contexts: 811008
+reporting_target_validation_kl: 1.0
+learning_rates: [5.0e-6, 1.0e-5, 1.5e-5, 2.0e-5]
+batches:
+  - effective_batch: 3168
+    warmup_steps: 16
+    stable_steps: 216
+    decay_steps: 24
+  - effective_batch: 6336
+    warmup_steps: 8
+    stable_steps: 108
+    decay_steps: 12
+warm_start:
+  mode: weights_only
+  optimizer: fresh_adam
+  source:
+    selector: completed_validation_winner
+    stage: tensor_kron_edu_lr
+    dataset_tag: fwedu350bt-v1p4
+    architecture_label: kronecker-c3-r2407-residual_ffn-d4-x4
+    metric: validation.kl
+    direction: min
+    require_status: complete
+    require_exact_steps: true
+    require_full_validation: true
+    require_checkpoint: true

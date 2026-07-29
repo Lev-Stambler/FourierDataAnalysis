@@ -1,0 +1,16 @@
+platform: modal
+accelerator: H100
+gpu_count: 1
+max_parallel: 8
+precision: bfloat16
+matmul_tf32: true
+kronecker_backend: cutensor
+rank_chunk: 512
+microbatch:
+  mode: auto
+  require_effective_batch_divisor: false
+  maximum: 1024
+  minimum: 1
+  target_memory_fraction: 0.88
+  hard_memory_fraction: 0.92
+  oom_backoff: true

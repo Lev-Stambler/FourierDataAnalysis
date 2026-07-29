@@ -1,0 +1,57 @@
+{
+  "schema": "qwen-selected-normuon-default-v1",
+  "status": "selected",
+  "selected_at": "2026-07-28",
+  "factor_optimizer": {
+    "name": "normuon",
+    "update_granularity": "independent_rank_slice_matrix",
+    "matrix_count_in_selected_model": 57768,
+    "shape_batched_newton_schulz": true,
+    "shape_bucket_count_in_selected_model": 3,
+    "learning_rate": 0.003,
+    "beta1": 0.95,
+    "beta2": 0.95,
+    "nesterov": true,
+    "newton_schulz_steps": 5,
+    "newton_schulz_coefficients": [
+      3.4445,
+      -4.775,
+      2.0315
+    ],
+    "epsilon": 1e-10,
+    "weight_decay": 0.01
+  },
+  "auxiliary_optimizer": {
+    "name": "fused_adamw",
+    "parameters": [
+      "tied_embedding_and_head",
+      "rmsnorm_weights",
+      "factor_gains",
+      "rank_mixing",
+      "biases"
+    ],
+    "learning_rate": 0.0003,
+    "betas": [
+      0.9,
+      0.95
+    ],
+    "epsilon": 1e-10,
+    "weight_decay": 0.01
+  },
+  "shared": {
+    "schedule": "wsd",
+    "gradient_clip_norm": 1.0
+  },
+  "selection_evidence": {
+    "comparison_schema": "qwen-normuon-vs-adamw-matched-step64-v1",
+    "optimizer_steps": 64,
+    "training_examples": 131072,
+    "validation_examples": 2048,
+    "normuon_validation_cross_entropy": 7.261263132095337,
+    "adamw_validation_cross_entropy": 7.351603388786316,
+    "adamw_minus_normuon_validation_cross_entropy": 0.090340256690979,
+    "winner": "normuon_factors_plus_adamw_aux",
+    "comparison_file": "normuon_adamw_step64_comparison.json",
+    "wandb_summary_run_id": "33cd3da882d47571"
+  }
+}

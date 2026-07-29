@@ -1,0 +1,50 @@
+[project]
+name = "fourier-data-analysis-experiments"
+version = "0.1.0"
+description = "Workspace for the Qwen distillation and Kronecker experiments"
+requires-python = ">=3.11"
+dependencies = [
+    "qwen-fullwidth-distill",
+    "qwen-lsh18-monarch",
+    "qwen-normuon-pretrain",
+    "qwen-adamw-control",
+    "qwen-kronecker-distill",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "exp1_fullwidth_distill",
+    "exp2_lsh_monarch_distill",
+    "exp3_normuon_pretrain",
+    "exp4_adamw_control",
+    "exp5_kronecker_distill",
+]
+
+[tool.uv.sources]
+qwen-fullwidth-distill = { workspace = true }
+qwen-lsh18-monarch = { workspace = true }
+qwen-normuon-pretrain = { workspace = true }
+qwen-adamw-control = { workspace = true }
+qwen-kronecker-distill = { workspace = true }
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "exp1_fullwidth_distill",
+    "exp2_lsh_monarch_distill",
+    "exp3_normuon_pretrain",
+    "exp4_adamw_control",
+    "exp5_kronecker_distill",
+]
+testpaths = [
+    "exp1_fullwidth_distill/tests",
+    "exp2_lsh_monarch_distill/tests",
+    "exp3_normuon_pretrain/tests",
+    "exp4_adamw_control/tests",
+    "exp5_kronecker_distill/tests",
+]

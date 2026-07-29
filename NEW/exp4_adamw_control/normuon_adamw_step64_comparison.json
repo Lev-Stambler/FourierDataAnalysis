@@ -1,0 +1,54 @@
+{
+  "schema": "qwen-normuon-vs-adamw-matched-step64-v1",
+  "status": "complete_early_stop",
+  "endpoint": {
+    "optimizer_steps": 64,
+    "training_examples": 131072,
+    "effective_batch": 2048,
+    "validation_examples": 2048,
+    "seed": 0,
+    "schedule_phase": "stable",
+    "matched": [
+      "architecture",
+      "initialization_hashes",
+      "training_order",
+      "training_examples",
+      "effective_batch",
+      "wsd_schedule",
+      "gradient_clipping",
+      "validation_rows"
+    ]
+  },
+  "rows": [
+    {
+      "optimizer": "normuon_factors_plus_adamw_aux",
+      "factor_lr": 0.003,
+      "train_cross_entropy": 7.336783766746521,
+      "validation_cross_entropy": 7.261263132095337,
+      "validation_perplexity": 1424.0541701660575,
+      "validation_target_accuracy": 0.09423828125,
+      "wandb_run_id": "14dbd05acb0ce475"
+    },
+    {
+      "optimizer": "adamw_all_parameters",
+      "factor_lr": 0.0003,
+      "train_cross_entropy": 7.453971564769745,
+      "validation_cross_entropy": 7.351603388786316,
+      "validation_perplexity": 1558.6937173470276,
+      "validation_target_accuracy": 0.09326171875,
+      "wandb_run_id": "229ab46380384406"
+    }
+  ],
+  "adamw_minus_normuon": {
+    "train_cross_entropy": 0.117187798023224,
+    "validation_cross_entropy": 0.090340256690979,
+    "validation_perplexity": 134.6395471809701,
+    "validation_target_accuracy": -0.0009765625
+  },
+  "winner": "normuon_factors_plus_adamw_aux",
+  "notes": [
+    "Lower cross-entropy and perplexity are better.",
+    "The AdamW run continued to step 84 before the stop request, but only its matched step-64 metrics and checkpoint are used.",
+    "This early-stop comparison uses the shared 2048-example validation audit, not the full 8192-example validation split."
+  ]
+}
