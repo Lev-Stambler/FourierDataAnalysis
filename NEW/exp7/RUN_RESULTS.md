@@ -60,3 +60,36 @@ is deliberately left running after completion.
   <https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/4gvvm5x4>
 - Final machine-readable study artifact:
   `/cache/expv7-dense-free/study.json`
+
+## H100 recovery study
+
+The failed Central deployment was replaced by the reusable capacity racer,
+which selected the first healthy eight-GPU Hopper node across all Northflank
+regions and paused every losing candidate. The winner is eight H100 80 GB GPUs
+in Asia Northeast. The exact dataset and source checkpoint were copied to its
+persistent `/cache`; the source SHA-256 was rechecked before launch. W&B
+authentication, all eight requested GPUs, seven unit tests, and the Exp V7
+self-test passed before the paid run started.
+
+- W&B:
+  <https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/ol3rar01>
+- Coordinator log:
+  `/cache/expv7-dense-free/logs/coordinator-recovery.log`
+- Physical contexts/GPU: `131,072`
+- Optimizer contexts/GPU: `8,192`
+- Global contexts/update: `65,536`
+- Global input tokens/update: `1,048,576`
+- Gradient accumulation: none
+- First finite update: train KL `2.59271455`, gradient norm `0.01977539`
+- At 5,242,880 contexts: train KL `2.51389980`, gradient norm `0.01446533`
+- Peak allocated VRAM/GPU: `71.254 GiB`
+- Peak reserved VRAM/GPU: `71.992 GiB`
+- Observed device memory: `75,634 / 81,559 MiB` (`92.7%`) on every GPU
+- Observed GPU utilization: `99–100%` on all eight GPUs
+- Compiled training throughput: `1,617,775` input tokens/s
+- Cumulative end-to-end throughput after 5,242,880 contexts:
+  `330,571` input tokens/s, still amortizing the one-time compile
+
+The recovery study first screens learning rates `0.003`, `0.006`, `0.0125`,
+and `0.025` for 16,777,216 contexts each. It then resumes the lowest-validation
+KL checkpoint for up to two hours or until the target KL of `1.0` is reached.
