@@ -2,7 +2,16 @@ import math
 
 import torch
 
-from exp7 import CONFIG, Student, clean_state_dict, parameter_count, per_token_rms
+from exp7 import (
+    CONFIG,
+    Student,
+    clean_state_dict,
+    cosine_lr,
+    document_contexts,
+    exact_local_contexts,
+    parameter_count,
+    per_token_rms,
+)
 
 
 def test_dense_free_shape_and_parameter_count():
@@ -54,3 +63,27 @@ def test_checkpoint_prefix_cleanup():
 
 def test_residual_scale_matches_depth():
     assert math.isclose(1 / math.sqrt(CONFIG["depth"]), 1 / math.sqrt(32))
+
+
+def test_stream_uses_all_nonoverlapping_next_token_windows():
+    contexts = document_contexts(list(range(36)))
+    assert contexts.shape == (2, 16)
+    assert contexts[0].tolist() == list(range(16))
+    assert contexts[1].tolist() == list(range(17, 33))
+
+
+def test_one_trillion_token_tail_is_exact_across_eight_ranks():
+    full_step = 8 * 8_192 * 16
+    full_updates, tail = divmod(1_000_000_000_000, full_step)
+    assert full_updates == 953_674
+    assert tail == 331_776
+    assert exact_local_contexts(tail, 8) == 2_592
+    assert full_updates * full_step + 8 * 2_592 * 16 == 1_000_000_000_000
+
+
+def test_cosine_lr_is_token_based_and_ends_at_one_percent():
+    start = 0.025
+    budget = 1_000_000_000_000
+    assert cosine_lr(start, 0, budget) == start
+    assert math.isclose(cosine_lr(start, budget, budget), start * 0.01)
+    assert start * 0.01 < cosine_lr(start, budget // 2, budget) < start

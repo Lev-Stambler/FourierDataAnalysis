@@ -93,3 +93,44 @@ self-test passed before the paid run started.
 The recovery study first screens learning rates `0.003`, `0.006`, `0.0125`,
 and `0.025` for 16,777,216 contexts each. It then resumes the lowest-validation
 KL checkpoint for up to two hours or until the target KL of `1.0` is reached.
+
+## FineWeb-Edu 1T-token run
+
+The four H100 learning-rate screens completed as follows:
+
+| Peak LR | Validation KL | End-to-end tok/s | W&B |
+|---:|---:|---:|---|
+| 0.003 | 2.58197210 | 728,968 | [ol3rar01](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/ol3rar01) |
+| 0.006 | 2.52063298 | 938,009 | [8n2ht5r5](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/8n2ht5r5) |
+| 0.0125 | 2.43912730 | 940,459 | [ymu0bghp](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/ymu0bghp) |
+| 0.025 | 2.34095590 | 947,670 | [xag2wast](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/xag2wast) |
+
+Training now streams the pinned FineWeb-Edu revision, keeps only score-3+
+examples supplied by that dataset configuration, excludes the static
+train/validation/test documents on the first epoch, and only repeats after
+stream exhaustion. Each document contributes all non-overlapping 17-token
+windows, with 16 input tokens per exact per-token KL target. Stream state and
+pending contexts are saved in every checkpoint.
+
+The paid streaming preflight processed 268,435,456 input tokens and ended at
+validation KL `2.19282032`. Steady intervals reached `1.37–1.40M` input tok/s,
+the producer queue stayed at depth 3, and all eight H100s sustained `99–100%`
+utilization with `75,652 / 81,559 MiB` device memory. Peak allocated and
+reserved memory were `71.254` and `72.012 GiB` per GPU. The first-batch
+compile/data warm-up is included in its cumulative `668,617` tok/s result.
+
+The production job resumes that validated stream/model state and targets
+exactly `1,000,000,000,000` input tokens, including the preflight tokens. It
+uses a user-selected peak LR of `0.01`, cosine-decayed by input-token progress
+to `0.0001`, with no KL early stop and no wall-clock limit.
+
+- Fresh production W&B:
+  <https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/4290cc67>
+- Supervisor log:
+  `/cache/expv7-dense-free/logs/long-1t-supervisor.log`
+- Checkpoint/result directory:
+  `/cache/expv7-dense-free/long-1t`
+- Global contexts/update: `65,536`
+- Global input tokens/update: `1,048,576`
+- Physical contexts/GPU: `131,072`
+- Gradient accumulation: none
