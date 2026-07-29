@@ -41,7 +41,9 @@ CONFIG = {
     "train_contexts": 16_777_216,
     "train_tokens": 1_000_000_000_000,
     "optimizer": "adamw8bit",
-    "long_lr": 0.0003,
+    "reset_optimizer": False,
+    "long_lr": 0.003,
+    "long_output_dir": "",
     "max_hours": 2.0,
     "lr": 0.006,
     "min_lr": 0.00075,
@@ -587,7 +589,7 @@ def train() -> None:
     resume = Path(CONFIG["resume"])
     if resume.is_file() and saved:
         saved_optimizer = str(saved.get("optimizer_name", "normuon"))
-        if saved_optimizer == CONFIG["optimizer"]:
+        if saved_optimizer == CONFIG["optimizer"] and not CONFIG["reset_optimizer"]:
             optimizer.load_state_dict(saved["optimizer"])
         total_contexts = int(saved.get("contexts_seen", 0))
         optimizer_updates = int(saved.get("optimizer_updates", saved.get("step", 0)))
@@ -1147,7 +1149,11 @@ def long_supervisor() -> None:
     winner_lr, winner_output, winner = screen_winner()
     long_lr = float(CONFIG["long_lr"])
     wandb_id = uuid.uuid4().hex[:8]
-    output = Path(CONFIG["study_root"]) / "long-1t"
+    output = (
+        Path(CONFIG["long_output_dir"])
+        if CONFIG["long_output_dir"]
+        else Path(CONFIG["study_root"]) / "long-1t"
+    )
     output.mkdir(parents=True, exist_ok=True)
     gpu_memory_gib = torch.cuda.get_device_properties(0).total_memory / 2**30
     physical_local = 245_760 if gpu_memory_gib >= 100 else 131_072
@@ -1163,7 +1169,14 @@ def long_supervisor() -> None:
     failures = 0
     while True:
         checkpoint = output / "checkpoint.pt"
-        resume = checkpoint if checkpoint.is_file() else winner_output / "best.pt"
+        resume = (
+            checkpoint
+            if checkpoint.is_file()
+            else Path(CONFIG["resume"])
+            if CONFIG["resume"]
+            else winner_output / "best.pt"
+        )
+        reset_optimizer = not checkpoint.is_file()
         arguments = [
             "--mode=long",
             f"--optimizer_local_batch={optimizer_local}",
@@ -1176,6 +1189,7 @@ def long_supervisor() -> None:
             f"--output_dir={output}",
             f"--run_name=exp7-dense-free-1t-lr-{str(long_lr).replace('.', 'p')}",
             f"--wandb_id={wandb_id}",
+            f"--reset_optimizer={str(reset_optimizer).lower()}",
         ]
         print(json.dumps({"long_launch": arguments, "screen_winner": winner}), flush=True)
         completed = subprocess.run(base + arguments, check=False)
