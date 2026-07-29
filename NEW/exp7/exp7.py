@@ -40,11 +40,12 @@ CONFIG = {
     "teacher_microbatch": 2_048,
     "train_contexts": 16_777_216,
     "train_tokens": 1_000_000_000_000,
-    "long_lr": 0.01,
+    "optimizer": "adamw8bit",
+    "long_lr": 0.0003,
     "max_hours": 2.0,
     "lr": 0.006,
     "min_lr": 0.00075,
-    "weight_decay": 0.01,
+    "weight_decay": 0.1,
     "warmup_contexts": 2_097_152,
     "log_contexts": 1_048_576,
     "eval_contexts": 16_777_216,
@@ -547,16 +548,29 @@ def train() -> None:
     teacher = load_teacher(str(device))
     student = Student().to(device)
     saved, metadata = load_initial(student, device)
-    optimizer = SingleDeviceNorMuon(
-        student.parameters(),
-        lr=CONFIG["lr"],
-        weight_decay=CONFIG["weight_decay"],
-        beta1=0.95,
-        beta2=0.95,
-        ns_steps=5,
-        nesterov=True,
-        eps=1e-8,
-    )
+    if CONFIG["optimizer"] == "adamw8bit":
+        from bitsandbytes.optim import AdamW8bit
+
+        optimizer = AdamW8bit(
+            student.parameters(),
+            lr=CONFIG["lr"],
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=CONFIG["weight_decay"],
+        )
+    elif CONFIG["optimizer"] == "normuon":
+        optimizer = SingleDeviceNorMuon(
+            student.parameters(),
+            lr=CONFIG["lr"],
+            weight_decay=CONFIG["weight_decay"],
+            beta1=0.95,
+            beta2=0.95,
+            ns_steps=5,
+            nesterov=True,
+            eps=1e-8,
+        )
+    else:
+        raise ValueError(f"unknown optimizer: {CONFIG['optimizer']}")
 
     run_contexts = 0
     total_contexts = 0
@@ -572,7 +586,9 @@ def train() -> None:
     wandb_id = CONFIG["wandb_id"]
     resume = Path(CONFIG["resume"])
     if resume.is_file() and saved:
-        optimizer.load_state_dict(saved["optimizer"])
+        saved_optimizer = str(saved.get("optimizer_name", "normuon"))
+        if saved_optimizer == CONFIG["optimizer"]:
+            optimizer.load_state_dict(saved["optimizer"])
         total_contexts = int(saved.get("contexts_seen", 0))
         optimizer_updates = int(saved.get("optimizer_updates", saved.get("step", 0)))
         current_lr = float(saved.get("current_lr", CONFIG["lr"]))
@@ -848,6 +864,7 @@ def train() -> None:
 
             state = {
                 "optimizer_updates": optimizer_updates,
+                "optimizer_name": CONFIG["optimizer"],
                 "contexts_seen": total_contexts,
                 "run_contexts": run_contexts,
                 "physical_batches": physical_batches,
@@ -915,6 +932,7 @@ def train() -> None:
                 stream_states = gathered_states
                 state = {
                     "optimizer_updates": optimizer_updates,
+                    "optimizer_name": CONFIG["optimizer"],
                     "contexts_seen": total_contexts,
                     "run_contexts": run_contexts,
                     "physical_batches": physical_batches,
@@ -958,6 +976,7 @@ def train() -> None:
     best_kl = min(best_kl, final["validation_kl"])
     state = {
         "optimizer_updates": optimizer_updates,
+        "optimizer_name": CONFIG["optimizer"],
         "contexts_seen": total_contexts,
         "run_contexts": run_contexts,
         "physical_batches": physical_batches,

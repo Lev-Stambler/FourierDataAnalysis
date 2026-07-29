@@ -80,6 +80,26 @@ self-test passed before the paid run started.
 - Global contexts/update: `65,536`
 - Global input tokens/update: `1,048,576`
 - Gradient accumulation: none
+
+## AdamW8bit continuation
+
+The NorMuon continuation was stopped by request after its checkpoint at
+`1,073,741,824` long-run input tokens. Its best held-out KL was `2.17026095`.
+The model and exact FineWeb-Edu stream state were retained, while the NorMuon
+optimizer state was intentionally discarded.
+
+Training restarted with bitsandbytes `AdamW8bit` using conventional
+transformer AdamW settings: peak LR `3e-4`, betas `(0.9, 0.95)`, epsilon
+`1e-8`, weight decay `0.1`, and token-based cosine decay to `3e-6`. A direct
+H100 preflight verified finite BF16 parameter updates and confirmed that both
+moment buffers are stored as `uint8`.
+
+- Fresh AdamW8bit W&B:
+  <https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/15974db0>
+- Supervisor log:
+  `/cache/expv7-dense-free/logs/long-1t-adamw8bit-supervisor.log`
+- Preserved NorMuon checkpoint:
+  `/cache/expv7-dense-free/long-1t/normuon-final-checkpoint.pt`
 - First finite update: train KL `2.59271455`, gradient norm `0.01977539`
 - At 5,242,880 contexts: train KL `2.51389980`, gradient norm `0.01446533`
 - Peak allocated VRAM/GPU: `71.254 GiB`
