@@ -29,6 +29,15 @@ EXP5_WANDB_MODE="${EXP5_WANDB_MODE:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NEW_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Local credentials stay out of rsync/git, but paid launches need them copied
+# into the node environment during bootstrap.
+if [[ -f "$NEW_DIR/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$NEW_DIR/.env"
+  set +a
+fi
+
 NF=(northflank)
 NF_SCOPE=(--teamId "$TEAM_ID")
 NF_SVC=(--projectId "$PROJECT_ID" --serviceId "$SERVICE_ID" "${NF_SCOPE[@]}")
