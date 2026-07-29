@@ -100,6 +100,23 @@ moment buffers are stored as `uint8`.
   `/cache/expv7-dense-free/logs/long-1t-adamw8bit-supervisor.log`
 - Preserved NorMuon checkpoint:
   `/cache/expv7-dense-free/long-1t/normuon-final-checkpoint.pt`
+
+The production gate passed after two full AdamW validation intervals:
+
+| AdamW tokens | Held-out KL |
+|---:|---:|
+| 0 | 2.17026095 |
+| 268,435,456 | 2.16915405 |
+| 536,870,912 | 2.16894817 |
+
+The improvement is modest but monotonic. Steady throughput is approximately
+`1.41–1.43M` input tok/s, the producer queue remains at depth 3, gradients are
+finite and unclipped (typically `0.015–0.021`), and all eight H100s sustain
+`99–100%` utilization at roughly `75,632 / 81,559 MiB` each. No process or
+supervisor restart occurred. The first durable AdamW checkpoint is labeled
+`adamw8bit`, contains two full-size `uint8` moment tensors for the tied
+embedding plus quantized body moments, and reloads successfully with all 65
+optimizer parameter states.
 - First finite update: train KL `2.59271455`, gradient norm `0.01977539`
 - At 5,242,880 contexts: train KL `2.51389980`, gradient norm `0.01446533`
 - Peak allocated VRAM/GPU: `71.254 GiB`
