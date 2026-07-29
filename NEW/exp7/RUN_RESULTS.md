@@ -46,3 +46,17 @@ updates:
 
 Corrected benchmark W&B:
 <https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/ux1jghg3>
+
+## Active study
+
+The detached batch/LR study was launched on the existing eight-H200 Central
+service. It runs the remaining 12,288 and 16,384 context/GPU batch benchmarks,
+selects the highest end-to-end-throughput stable batch, screens all four
+learning rates, and continues the best checkpoint for two hours. The service
+is deliberately left running after completion.
+
+- Coordinator log: `/cache/expv7-dense-free/logs/coordinator.log`
+- First active sweep run:
+  <https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/4gvvm5x4>
+- Final machine-readable study artifact:
+  `/cache/expv7-dense-free/study.json`
