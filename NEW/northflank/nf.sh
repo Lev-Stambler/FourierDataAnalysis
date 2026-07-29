@@ -502,7 +502,10 @@ print("plan:    ", (d.get("billing") or {}).get("deploymentPlan"))
 
 # --- lifecycle ------------------------------------------------------------
 cmd_pause()  { "${NF[@]}" pause service "${NF_SVC[@]}"; echo "==> paused (billing stopped; /cache volume persists)"; }
-cmd_resume() { "${NF[@]}" resume service "${NF_SVC[@]}"; echo "==> resuming; ./nf.sh status to watch"; }
+cmd_resume() {
+  "${NF[@]}" resume service "${NF_SVC[@]}" -i '{"instances":1}'
+  echo "==> resuming; ./nf.sh status to watch"
+}
 
 cmd_down() {
   read -r -p "Delete service $SERVICE_ID? (volume $VOLUME_NAME is kept) [y/N] " ans
