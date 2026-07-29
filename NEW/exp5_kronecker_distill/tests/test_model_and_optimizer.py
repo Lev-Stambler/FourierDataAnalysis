@@ -6,6 +6,7 @@ from qwen_kron_distill.config import (
     Architecture,
 )
 from qwen_kron_distill.model import TensorKroneckerStudent
+from qwen_kron_distill.objective import exact_kl_rows
 from qwen_kron_distill.train import make_optimizers
 from qwen_normuon_pretrain.normuon import SingleDeviceNorMuon
 
@@ -61,6 +62,58 @@ def test_student_uses_architecture_width_for_tied_vocabulary():
     ]
     assert student.hidden(token_ids).shape == (2, 128)
     assert student(token_ids).shape == (2, 31)
+
+
+def test_dense_tied_vocabulary_decouples_head_and_body_width():
+    architecture = Architecture(
+        factor_order=2,
+        depth=2,
+        rank=2,
+        embedding_width=64,
+        vocabulary_width=128,
+    )
+    student = TensorKroneckerStudent(
+        architecture,
+        vocab_size=31,
+        dtype=torch.float32,
+        seed=7,
+    )
+    token_ids = torch.randint(0, 31, (3, 16))
+
+    assert student.dense_vocabulary
+    assert student.vocab_modes == (31,)
+    assert [tuple(value.shape) for value in student.vocabulary_factors] == [
+        (31, 128),
+    ]
+    assert student.input_projection.shape == (64, 128)
+    assert student.output_projection.shape == (128, 64)
+    assert student.hidden(token_ids).shape == (3, 64)
+    assert student.head_hidden(token_ids).shape == (3, 128)
+    logits = student(token_ids)
+    assert logits.shape == (3, 31)
+    torch.testing.assert_close(
+        logits,
+        torch.nn.functional.linear(
+            student.head_hidden(token_ids),
+            student.vocabulary_factors[0],
+        ),
+    )
+    teacher_probability = torch.softmax(torch.randn_like(logits), dim=-1)
+    teacher_entropy = -(
+        teacher_probability * teacher_probability.log()
+    ).sum(dim=-1)
+    torch.testing.assert_close(
+        student(
+            token_ids,
+            teacher_probability,
+            teacher_entropy,
+        ),
+        exact_kl_rows(
+            logits,
+            teacher_probability,
+            teacher_entropy,
+        ).mean(),
+    )
 
 
 def test_factor_and_auxiliary_parameter_routes_are_exact():
@@ -155,3 +208,36 @@ def test_normuon_only_routes_every_trainable_tensor(monkeypatch):
     assert all(value.ndim >= 2 for value in student.parameters())
     assert factor_optimizer.param_groups[0]["lr"] == 0.5
     assert auxiliary_optimizer.param_groups[0]["lr"] == 0.5
+
+
+def test_dense_tied_variant_routes_every_trainable_tensor_to_normuon(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        train_module,
+        "STUDY_VARIANT",
+        "v6-dense-tied",
+    )
+    student = TensorKroneckerStudent(
+        Architecture(
+            factor_order=2,
+            depth=2,
+            rank=2,
+            vocabulary_width=128,
+        ),
+        vocab_size=37,
+        dtype=torch.float32,
+    )
+
+    factor_optimizer, auxiliary_optimizer = make_optimizers(
+        student,
+        device=torch.device("cpu"),
+        factor_lr=0.2,
+        auxiliary_lr=0.2,
+    )
+
+    assert isinstance(factor_optimizer, SingleDeviceNorMuon)
+    assert isinstance(auxiliary_optimizer, SingleDeviceNorMuon)
+    assert all(value.ndim >= 2 for value in student.parameters())
+    assert factor_optimizer.param_groups[0]["lr"] == 0.2
+    assert auxiliary_optimizer.param_groups[0]["lr"] == 0.2

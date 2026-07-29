@@ -15,6 +15,7 @@ from .config import (
     LOCAL_BATCH,
     MID_EXAMPLES,
     MINIMUM_ACCEPTED_THROUGHPUT_MULTIPLIER,
+    NORMUON_ONLY_VARIANTS,
     PLAN_SCHEMA,
     PREFLIGHT_MICROBATCHES,
     STUDY_VARIANT,
@@ -25,6 +26,7 @@ from .config import (
     WORLD_SIZE,
     Cell,
     canonical_hash,
+    push_dense_vocabulary_cells,
     push_lr_cells,
     push_normuon_lr_cells,
     push_wide_cells,
@@ -295,14 +297,14 @@ def run_preflight(
             ):
                 failures.append(f"{label} optimizer state was not initialized")
             if (
-                STUDY_VARIANT == "v5-normuon-lr"
+                STUDY_VARIANT in NORMUON_ONLY_VARIANTS
                 and not value.get("auxiliary_state_initialized")
             ):
                 failures.append(
                     f"{label} auxiliary NorMuon state was not initialized"
                 )
             if (
-                STUDY_VARIANT == "v5-normuon-lr"
+                STUDY_VARIANT in NORMUON_ONLY_VARIANTS
                 and (
                     not value.get("full_base_lr_exercised")
                     or not value.get("optimizer_states_finite")
@@ -426,6 +428,7 @@ def launch_study(
             "v4-wide",
             "v4-isolated",
             "v5-normuon-lr",
+            "v6-dense-tied",
         )
         and not os.environ.get("WANDB_API_KEY")
         and os.environ.get("WANDB_MODE") != "offline"
@@ -453,15 +456,26 @@ def launch_study(
 
     wide = STUDY_VARIANT in ("v4-wide", "v4-isolated")
     normuon_only = STUDY_VARIANT == "v5-normuon-lr"
+    dense_vocabulary = STUDY_VARIANT == "v6-dense-tied"
     screen_cells = (
         push_normuon_lr_cells()
         if normuon_only
+        else push_dense_vocabulary_cells()
+        if dense_vocabulary
         else push_wide_cells()
         if wide
         else push_lr_cells()
     )
     screen_results = _run_stage(
-        "normuon_lr" if normuon_only else "width_lr" if wide else "lr",
+        (
+            "normuon_lr"
+            if normuon_only
+            else "dense_vocabulary_width"
+            if dense_vocabulary
+            else "width_lr"
+            if wide
+            else "lr"
+        ),
         screen_cells,
         sources=None,
         evaluate_test=False,
@@ -476,7 +490,7 @@ def launch_study(
             float(value["cell"]["factor_lr"]),
         ),
     )
-    isolated = STUDY_VARIANT == "v4-isolated"
+    isolated = STUDY_VARIANT in ("v4-isolated", "v6-dense-tied")
     mid_sources = (
         [
             value
@@ -560,7 +574,7 @@ def launch_study(
             <= TARGET_VALIDATION_KL
         ),
     }
-    if not wide:
+    if not wide and not dense_vocabulary:
         summary["lr_results"] = screen_results
         summary["lr_winner"] = screen_winner
     summary["summary_sha256"] = canonical_hash(summary)

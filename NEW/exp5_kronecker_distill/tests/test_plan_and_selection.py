@@ -10,6 +10,7 @@ from qwen_kron_distill.config import (
     Architecture,
     Cell,
     depth_cells,
+    push_dense_vocabulary_cells,
     push_wide_cells,
     rank_cells,
     study_plan,
@@ -70,6 +71,21 @@ def test_wide_screen_crosses_width_and_learning_rate():
         384,
     }
     assert {cell.factor_lr for cell in cells} == {3e-2, 1e-1}
+    assert all(cell.stage == "width" for cell in cells)
+
+
+def test_dense_vocabulary_screen_isolates_head_width_at_fixed_lr():
+    cells = push_dense_vocabulary_cells()
+
+    assert len(cells) == 3
+    assert {
+        cell.architecture.vocabulary_width for cell in cells
+    } == {64, 128, 256}
+    assert {
+        cell.architecture.embedding_width for cell in cells
+    } == {64}
+    assert {cell.factor_lr for cell in cells} == {0.2}
+    assert {cell.auxiliary_lr for cell in cells} == {0.2}
     assert all(cell.stage == "width" for cell in cells)
 
 

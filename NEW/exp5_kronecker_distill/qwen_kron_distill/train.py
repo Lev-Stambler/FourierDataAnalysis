@@ -35,6 +35,7 @@ from .config import (
     DATASET_TRAIN_EXAMPLES,
     DEFAULT_DATA_ROOT,
     DEFAULT_OUTPUT_ROOT,
+    DENSE_VOCABULARY_LR,
     EVALUATION_BATCH,
     FINAL_EXAMPLES,
     GLOBAL_BATCH,
@@ -45,6 +46,7 @@ from .config import (
     MODEL_REVISION,
     NORMUON_LR,
     NORMUON_ONLY_LRS,
+    NORMUON_ONLY_VARIANTS,
     PLAN_SCHEMA,
     RESULT_SCHEMA,
     SCREEN_EXAMPLES,
@@ -221,7 +223,7 @@ def make_optimizers(
         nesterov=True,
         eps=OPTIMIZER_EPS,
     )
-    if STUDY_VARIANT == "v5-normuon-lr":
+    if STUDY_VARIANT in NORMUON_ONLY_VARIANTS:
         if any(value.ndim < 2 for value in auxiliary):
             raise RuntimeError(
                 "NorMuon-only routing requires every trainable tensor "
@@ -603,7 +605,7 @@ def _write_results(
                 "normuon_source_commit": NORMUON_SOURCE_COMMIT,
                 "auxiliary": (
                     "normuon"
-                    if STUDY_VARIANT == "v5-normuon-lr"
+                    if STUDY_VARIANT in NORMUON_ONLY_VARIANTS
                     else "fused_adamw"
                 ),
                 "auxiliary_lr": active.cell.auxiliary_lr,
@@ -940,7 +942,10 @@ def run_preflight_worker(
                 "lr"
                 if STUDY_VARIANT == "v5-normuon-lr"
                 else "width"
-                if architecture.embedding_width > 64
+                if (
+                    architecture.embedding_width > 64
+                    or architecture.vocabulary_width is not None
+                )
                 else "depth"
             ),
             architecture=architecture,
@@ -948,6 +953,8 @@ def run_preflight_worker(
             factor_lr=(
                 max(NORMUON_ONLY_LRS)
                 if STUDY_VARIANT == "v5-normuon-lr"
+                else DENSE_VOCABULARY_LR
+                if STUDY_VARIANT == "v6-dense-tied"
                 else max(value[0] for value in WIDE_LR_PAIRS)
                 if STUDY_VARIANT in ("v4-wide", "v4-isolated")
                 else NORMUON_LR
@@ -955,6 +962,8 @@ def run_preflight_worker(
             auxiliary_lr=(
                 max(NORMUON_ONLY_LRS)
                 if STUDY_VARIANT == "v5-normuon-lr"
+                else DENSE_VOCABULARY_LR
+                if STUDY_VARIANT == "v6-dense-tied"
                 else max(value[1] for value in WIDE_LR_PAIRS)
                 if STUDY_VARIANT in ("v4-wide", "v4-isolated")
                 else AUX_ADAMW_LR
@@ -971,7 +980,7 @@ def run_preflight_worker(
         )
         preflight_examples = (
             WARMUP_EXAMPLES
-            if STUDY_VARIANT == "v5-normuon-lr"
+            if STUDY_VARIANT in NORMUON_ONLY_VARIANTS
             else 2 * LOCAL_BATCH * context.world_size
         )
         order = deterministic_order(
@@ -1010,23 +1019,35 @@ def run_preflight_worker(
                 agreement_probability,
                 agreement_entropy,
             ).mean()
-            explicit_logits = (
-                agreement_hidden[:, None, None, :]
-                * agreement_student.vocabulary_factors[0][None, :, None, :]
-                * agreement_student.vocabulary_factors[1][None, None, :, :]
-            ).sum(dim=-1).reshape_as(agreement_probability)
-            optimized_agreement = khatri_rao_forward_kl(
-                agreement_hidden,
-                agreement_student.vocabulary_factors[0],
-                agreement_student.vocabulary_factors[1],
-                agreement_probability,
-                agreement_entropy,
-            )
-            explicit_agreement = exact_kl_rows(
-                explicit_logits,
-                agreement_probability,
-                agreement_entropy,
-            ).mean()
+            if agreement_student.dense_vocabulary:
+                optimized_agreement = agreement_student(
+                    agreement_tokens,
+                    agreement_probability,
+                    agreement_entropy,
+                )
+                explicit_agreement = dense_agreement
+            else:
+                explicit_logits = (
+                    agreement_hidden[:, None, None, :]
+                    * agreement_student.vocabulary_factors[0][
+                        None, :, None, :
+                    ]
+                    * agreement_student.vocabulary_factors[1][
+                        None, None, :, :
+                    ]
+                ).sum(dim=-1).reshape_as(agreement_probability)
+                optimized_agreement = khatri_rao_forward_kl(
+                    agreement_hidden,
+                    agreement_student.vocabulary_factors[0],
+                    agreement_student.vocabulary_factors[1],
+                    agreement_probability,
+                    agreement_entropy,
+                )
+                explicit_agreement = exact_kl_rows(
+                    explicit_logits,
+                    agreement_probability,
+                    agreement_entropy,
+                ).mean()
         dense_optimized_loss_error = float(
             torch.maximum(
                 (dense_agreement - optimized_agreement).abs(),
@@ -1119,7 +1140,7 @@ def run_preflight_worker(
         full_learning_rates = learning_rates
         cursor = 2 * LOCAL_BATCH * context.world_size
         while (
-            STUDY_VARIANT == "v5-normuon-lr"
+            STUDY_VARIANT in NORMUON_ONLY_VARIANTS
             and cursor < WARMUP_EXAMPLES
         ):
             full_lr_losses, full_learning_rates = step(cursor)
@@ -1207,7 +1228,7 @@ def run_preflight_worker(
             "learning_rates": learning_rates,
             "full_learning_rates": full_learning_rates,
             "full_base_lr_exercised": (
-                STUDY_VARIANT != "v5-normuon-lr"
+                STUDY_VARIANT not in NORMUON_ONLY_VARIANTS
                 or full_learning_rates["multiplier"] == 1.0
             ),
             "optimizer_states_finite": optimizer_states_finite,

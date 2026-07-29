@@ -100,6 +100,12 @@ select_exp5_normuon_lr() {
   EXP5_WANDB_MODE="${EXP5_WANDB_MODE:-offline}"
 }
 
+select_exp5_dense_tied() {
+  EXP5_STUDY_VARIANT="v6-dense-tied"
+  EXP5_ROOT="/cache/exp5_kronecker_distill/v6-dense-tied"
+  EXP5_WANDB_MODE="${EXP5_WANDB_MODE:-offline}"
+}
+
 require_remote_idle() {
   echo "==> refusing to proceed unless all GPUs and study coordinators are idle"
   remote '
@@ -581,6 +587,18 @@ case "$cmd" in
   exp5-normuon-audit)         select_exp5_normuon_lr; cmd_exp5_audit ;;
   exp5-normuon-summary)       select_exp5_normuon_lr; cmd_exp5_summary ;;
   exp5-normuon-stop)          select_exp5_normuon_lr; cmd_exp5_stop ;;
+  exp5-dense-plan)          select_exp5_dense_tied; cmd_exp5_plan ;;
+  exp5-dense-preflight)     select_exp5_dense_tied; cmd_exp5_preflight ;;
+  exp5-dense-preflight-report) select_exp5_dense_tied; cmd_exp5_preflight_report ;;
+  exp5-dense-preflight-logs) select_exp5_dense_tied; cmd_exp5_preflight_logs ;;
+  exp5-dense-launch)        select_exp5_dense_tied; cmd_exp5_launch ;;
+  exp5-dense-status)        select_exp5_dense_tied; cmd_exp5_status ;;
+  exp5-dense-logs)          select_exp5_dense_tied; cmd_exp5_logs ;;
+  exp5-dense-checkpoints)   select_exp5_dense_tied; cmd_exp5_checkpoints ;;
+  exp5-dense-progress)      select_exp5_dense_tied; cmd_exp5_progress ;;
+  exp5-dense-audit)         select_exp5_dense_tied; cmd_exp5_audit ;;
+  exp5-dense-summary)       select_exp5_dense_tied; cmd_exp5_summary ;;
+  exp5-dense-stop)          select_exp5_dense_tied; cmd_exp5_stop ;;
   wandb-status)       cmd_wandb_status ;;
   *) die "usage: ./nf.sh {up|bootstrap|sync|test|run <cmd>|ssh|proxy|status|pause|resume|down|wandb-status|pretrain-plan|pretrain-prepare|pretrain-preflight|pretrain-launch|pretrain-status|pretrain-logs|normuon-plan|normuon-prepare|normuon-preflight|normuon-launch|normuon-status|normuon-logs|adamw-queue|adamw-status|adamw-logs|exp5-plan|exp5-preflight|exp5-preflight-report|exp5-preflight-logs|exp5-launch|exp5-status|exp5-logs|exp5-checkpoints|exp5-progress|exp5-audit|exp5-summary|exp5-data-status|exp5-wide-plan|exp5-wide-preflight|exp5-wide-preflight-report|exp5-wide-preflight-logs|exp5-wide-launch|exp5-wide-status|exp5-wide-logs|exp5-wide-checkpoints|exp5-wide-progress|exp5-wide-audit|exp5-wide-summary|exp5-wide-stop}" ;;
 esac

@@ -34,6 +34,7 @@ SUPPORTED_STUDY_VARIANTS = (
     "v4-wide",
     "v4-isolated",
     "v5-normuon-lr",
+    "v6-dense-tied",
 )
 if STUDY_VARIANT not in SUPPORTED_STUDY_VARIANTS:
     raise RuntimeError(
@@ -46,6 +47,9 @@ WIDE_LR_PAIRS = (
     (1e-1, 1e-2),
 )
 NORMUON_ONLY_LRS = (1e-1, 2e-1, 3e-1, 5e-1)
+DENSE_VOCABULARY_WIDTHS = (64, 128, 256)
+DENSE_VOCABULARY_LR = 2e-1
+NORMUON_ONLY_VARIANTS = ("v5-normuon-lr", "v6-dense-tied")
 # Eight H200s each process LOCAL_BATCH contexts. At 16 input tokens this is an
 # exact 1 Mi-token global optimizer batch with no gradient accumulation.
 WORLD_SIZE = 8
@@ -125,6 +129,7 @@ class Architecture:
     rank: int = 1
     context_length: int = CONTEXT_LENGTH
     embedding_width: int = EMBEDDING_WIDTH
+    vocabulary_width: int | None = None
 
     @property
     def input_modes(self) -> tuple[int, ...]:
@@ -140,8 +145,14 @@ class Architecture:
             if self.embedding_width == EMBEDDING_WIDTH
             else f"-w{self.embedding_width}"
         )
+        vocabulary = (
+            ""
+            if self.vocabulary_width is None
+            else f"-v{self.vocabulary_width}"
+        )
         return (
-            f"kron-o{self.factor_order}-r{self.rank}-d{self.depth}{width}"
+            f"kron-o{self.factor_order}-r{self.rank}-d{self.depth}"
+            f"{width}{vocabulary}"
         )
 
     @property
@@ -166,9 +177,22 @@ class Architecture:
             side = math.isqrt(self.embedding_width)
             if side * side != self.embedding_width:
                 raise ValueError("order three needs a square embedding width")
+        if (
+            self.vocabulary_width is not None
+            and (
+                self.vocabulary_width < EMBEDDING_WIDTH
+                or self.vocabulary_width % EMBEDDING_WIDTH
+            )
+        ):
+            raise ValueError(
+                "vocabulary width must be a positive multiple of 64"
+            )
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        value = asdict(self)
+        if self.vocabulary_width is None:
+            value.pop("vocabulary_width")
+        return value
 
 
 @dataclass(frozen=True)
@@ -336,7 +360,39 @@ def push_normuon_lr_cells() -> list[Cell]:
     return cells
 
 
+def push_dense_vocabulary_cells() -> list[Cell]:
+    cells = [
+        Cell(
+            stage="width",
+            architecture=Architecture(
+                factor_order=2,
+                depth=32,
+                rank=8,
+                embedding_width=64,
+                vocabulary_width=width,
+            ),
+            target_examples=SCREEN_EXAMPLES,
+            factor_lr=DENSE_VOCABULARY_LR,
+            auxiliary_lr=DENSE_VOCABULARY_LR,
+        )
+        for width in DENSE_VOCABULARY_WIDTHS
+    ]
+    for cell in cells:
+        cell.validate()
+    return cells
+
+
 def preflight_architecture() -> Architecture:
+    if STUDY_VARIANT == "v6-dense-tied":
+        architecture = Architecture(
+            factor_order=2,
+            depth=32,
+            rank=8,
+            embedding_width=64,
+            vocabulary_width=max(DENSE_VOCABULARY_WIDTHS),
+        )
+        architecture.validate()
+        return architecture
     architecture = Architecture(
         factor_order=2,
         depth=32,
@@ -363,6 +419,82 @@ def wsd_multiplier(examples_seen: int) -> float:
 
 
 def study_plan() -> dict:
+    if STUDY_VARIANT == "v6-dense-tied":
+        value = {
+            "schema": PLAN_SCHEMA,
+            "status": "planned",
+            "study_variant": STUDY_VARIANT,
+            "teacher": {
+                "model_id": MODEL_ID,
+                "model_revision": MODEL_REVISION,
+                "live": True,
+                "temperature": 1.0,
+                "objective": "exact_full_vocabulary_forward_kl",
+            },
+            "data": {
+                "dataset_id": FINEWEB_EDU_ID,
+                "dataset_config": FINEWEB_EDU_CONFIG,
+                "dataset_revision": FINEWEB_EDU_REVISION,
+                "context_length": CONTEXT_LENGTH,
+                "dataset_train_examples": DATASET_TRAIN_EXAMPLES,
+                "optimization_examples": FINAL_EXAMPLES,
+                "validation_examples": VALIDATION_EXAMPLES,
+                "test_examples": TEST_EXAMPLES,
+            },
+            "student": {
+                "body_embedding_width": EMBEDDING_WIDTH,
+                "vocabulary_widths": list(DENSE_VOCABULARY_WIDTHS),
+                "depth": 32,
+                "rank": 8,
+                "factor_order": 2,
+                "vocab_size": VOCAB_SIZE,
+                "tied_embedding": True,
+                "vocabulary_distribution": "dense_tied_low_dimension",
+                "vocabulary_bridge": (
+                    "learned_input_compression_and_output_expansion"
+                ),
+                "tensor_native_body": True,
+            },
+            "optimizer": {
+                "all_trainable_parameters": "normuon",
+                "adamw": False,
+                "learning_rate": DENSE_VOCABULARY_LR,
+                "factor_betas": [NORMUON_BETA1, NORMUON_BETA2],
+                "factor_state": "independent_matrix_or_matrix_batch",
+                "epsilon": OPTIMIZER_EPS,
+                "weight_decay": WEIGHT_DECAY,
+                "gradient_clip_norm": GRADIENT_CLIP_NORM,
+                "schedule": {
+                    "kind": "wsd_by_examples",
+                    "warmup": WARMUP_EXAMPLES,
+                    "stable": STABLE_EXAMPLES,
+                    "cooldown": COOLDOWN_EXAMPLES,
+                },
+            },
+            "runtime": {
+                "world_size": WORLD_SIZE,
+                "global_batch": GLOBAL_BATCH,
+                "global_token_batch": GLOBAL_TOKEN_BATCH,
+                "local_batch": LOCAL_BATCH,
+                "preflight_microbatches": list(PREFLIGHT_MICROBATCHES),
+                "minimum_token_batch": MINIMUM_TOKEN_BATCH,
+                "student_loss_implementation": (
+                    "exact_materialized_dense_tied_full_vocab"
+                ),
+            },
+            "dense_vocabulary_cells": [
+                cell.to_dict() for cell in push_dense_vocabulary_cells()
+            ],
+            "selection": {
+                "screen": "lowest_validation_kl",
+                "mid": "smallest_model_within_0.1_kl_of_best",
+                "minimum_continuation_improvement": (
+                    MIN_CONTINUATION_IMPROVEMENT
+                ),
+            },
+        }
+        value["plan_sha256"] = canonical_hash(value)
+        return value
     if STUDY_VARIANT == "v5-normuon-lr":
         value = {
             "schema": PLAN_SCHEMA,
