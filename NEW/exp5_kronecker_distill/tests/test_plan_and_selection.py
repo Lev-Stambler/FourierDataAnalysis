@@ -2,6 +2,8 @@ import copy
 
 import pytest
 from qwen_kron_distill.config import (
+    EXTENSION_2X_EXAMPLES,
+    EXTENSION_4X_EXAMPLES,
     FINAL_EXAMPLES,
     MID_EXAMPLES,
     PLAN_SCHEMA,
@@ -22,6 +24,7 @@ from qwen_kron_distill.study import (
     select_depths,
     select_overall,
     select_ranks,
+    should_extend,
 )
 
 
@@ -143,6 +146,47 @@ def test_continuation_gate_and_overall_selection():
     insufficient = copy.deepcopy(mids[0])
     insufficient["validation"]["kl"] = sources[0]["validation"]["kl"] - 0.0009
     assert not continuation_improved(sources[0], insufficient)
+
+
+def test_extension_cells_and_plateau_gate():
+    mid_cell = Cell(
+        stage="mid",
+        architecture=Architecture(
+            factor_order=2,
+            depth=32,
+            rank=8,
+            vocabulary_width=64,
+        ),
+        target_examples=MID_EXAMPLES,
+        factor_lr=0.2,
+        auxiliary_lr=0.2,
+    )
+    mid = result(mid_cell, 2.3, 17_070_016)
+    final_cell = continuation_cell(
+        mid,
+        stage="final",
+        target_examples=FINAL_EXAMPLES,
+    )
+    final = result(final_cell, 2.1, 17_070_016)
+    assert should_extend(mid, final)
+
+    extension_cell = continuation_cell(
+        final,
+        stage="extend2x",
+        target_examples=EXTENSION_2X_EXAMPLES,
+    )
+    extension = result(extension_cell, 2.05, 17_070_016)
+    assert not should_extend(final, extension)
+
+    target = result(extension_cell, 0.99, 17_070_016)
+    assert not should_extend(final, target)
+
+    max_cell = continuation_cell(
+        extension,
+        stage="extend4x",
+        target_examples=EXTENSION_4X_EXAMPLES,
+    )
+    assert max_cell.target_examples == EXTENSION_4X_EXAMPLES
 
 
 def test_rank_grid_requires_selected_depth_for_each_order():

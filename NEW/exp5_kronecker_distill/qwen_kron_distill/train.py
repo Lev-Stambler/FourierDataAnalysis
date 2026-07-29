@@ -61,6 +61,7 @@ from .config import (
     Cell,
     canonical_hash,
     preflight_architecture,
+    push_dense_vocabulary_cells,
     study_plan,
     wsd_multiplier,
 )
@@ -969,7 +970,14 @@ def run_preflight_worker(
                 else AUX_ADAMW_LR
             ),
         )
-        entries = [{"cell": preflight_cell.to_dict()}]
+        entries = [
+            {"cell": cell.to_dict()}
+            for cell in (
+                push_dense_vocabulary_cells()
+                if STUDY_VARIANT == "v6-dense-tied"
+                else [preflight_cell]
+            )
+        ]
         # A preflight-only root prevents an existing production checkpoint from
         # changing the graph or cursor exercised here.
         preflight_root = f"/tmp/qwen-kron-preflight-r{context.rank}-{os.getpid()}"
@@ -1007,7 +1015,7 @@ def run_preflight_worker(
             teacher,
             agreement_tokens,
         )
-        agreement_student = unwrap_model(active_cells[0].model)
+        agreement_student = unwrap_model(active_cells[-1].model)
         with torch.no_grad(), torch.autocast(
             device_type="cuda",
             dtype=torch.bfloat16,

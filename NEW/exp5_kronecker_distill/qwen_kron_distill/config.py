@@ -74,10 +74,20 @@ RANKS = (1, 2, 4, 8)
 SCREEN_EXAMPLES = 2_097_152
 MID_EXAMPLES = 16_777_216
 FINAL_EXAMPLES = 67_108_864
+EXTENSION_2X_EXAMPLES = 134_217_728
+EXTENSION_4X_EXAMPLES = 268_435_456
+EXTENSION_EXAMPLES = (EXTENSION_2X_EXAMPLES, EXTENSION_4X_EXAMPLES)
+MAX_OPTIMIZATION_EXAMPLES = (
+    EXTENSION_4X_EXAMPLES
+    if STUDY_VARIANT == "v6-dense-tied"
+    else FINAL_EXAMPLES
+)
 CHECKPOINT_EVERY_EXAMPLES = 1_048_576
 WARMUP_EXAMPLES = 262_144
 COOLDOWN_EXAMPLES = 8_388_608
-STABLE_EXAMPLES = FINAL_EXAMPLES - WARMUP_EXAMPLES - COOLDOWN_EXAMPLES
+STABLE_EXAMPLES = (
+    MAX_OPTIMIZATION_EXAMPLES - WARMUP_EXAMPLES - COOLDOWN_EXAMPLES
+)
 NORMUON_LR = float(os.environ.get("QWEN_KRON_NORMUON_LR", "0.01"))
 AUX_ADAMW_LR = float(os.environ.get("QWEN_KRON_AUX_LR", "0.001"))
 LR_PAIRS = (
@@ -87,6 +97,7 @@ LR_PAIRS = (
 )
 GRADIENT_CLIP_NORM = 1.0
 MIN_CONTINUATION_IMPROVEMENT = 1e-3
+MIN_EXTENSION_IMPROVEMENT = 0.1
 INITIALIZER_RANGE = 0.02
 VOCABULARY_FACTOR_INITIALIZER_STD = math.sqrt(INITIALIZER_RANGE)
 TARGET_VALIDATION_KL = 1.0
@@ -104,7 +115,16 @@ CHECKPOINT_SCHEMA = "qwen-kron-distill-checkpoint-v1"
 SUMMARY_SCHEMA = "qwen-kron-distill-summary-v1"
 
 FactorOrder = Literal[2, 3]
-Stage = Literal["depth", "rank", "width", "lr", "mid", "final"]
+Stage = Literal[
+    "depth",
+    "rank",
+    "width",
+    "lr",
+    "mid",
+    "final",
+    "extend2x",
+    "extend4x",
+]
 
 
 def learning_rate_tag(value: float) -> str:
@@ -222,14 +242,26 @@ class Cell:
             "lr",
             "mid",
             "final",
+            "extend2x",
+            "extend4x",
         ):
             raise ValueError(f"unsupported stage {self.stage}")
         if self.target_examples not in (
             SCREEN_EXAMPLES,
             MID_EXAMPLES,
             FINAL_EXAMPLES,
+            *EXTENSION_EXAMPLES,
         ):
             raise ValueError("cell target is not a committed study milestone")
+        extension_targets = {
+            "extend2x": EXTENSION_2X_EXAMPLES,
+            "extend4x": EXTENSION_4X_EXAMPLES,
+        }
+        if (
+            self.stage in extension_targets
+            and self.target_examples != extension_targets[self.stage]
+        ):
+            raise ValueError("extension stage and target do not match")
         if self.seed != 0:
             raise ValueError("the first study is pinned to seed zero")
         if self.factor_lr <= 0 or self.auxiliary_lr <= 0:
@@ -408,14 +440,16 @@ def preflight_architecture() -> Architecture:
 
 
 def wsd_multiplier(examples_seen: int) -> float:
-    if not 0 < examples_seen <= FINAL_EXAMPLES:
+    if not 0 < examples_seen <= MAX_OPTIMIZATION_EXAMPLES:
         raise ValueError("examples_seen must be in the training budget")
     if examples_seen <= WARMUP_EXAMPLES:
         return examples_seen / WARMUP_EXAMPLES
     stable_end = WARMUP_EXAMPLES + STABLE_EXAMPLES
     if examples_seen <= stable_end:
         return 1.0
-    return (FINAL_EXAMPLES - examples_seen) / COOLDOWN_EXAMPLES
+    return (
+        MAX_OPTIMIZATION_EXAMPLES - examples_seen
+    ) / COOLDOWN_EXAMPLES
 
 
 def study_plan() -> dict:
@@ -437,7 +471,13 @@ def study_plan() -> dict:
                 "dataset_revision": FINEWEB_EDU_REVISION,
                 "context_length": CONTEXT_LENGTH,
                 "dataset_train_examples": DATASET_TRAIN_EXAMPLES,
-                "optimization_examples": FINAL_EXAMPLES,
+                "optimization_examples": MAX_OPTIMIZATION_EXAMPLES,
+                "milestone_examples": [
+                    SCREEN_EXAMPLES,
+                    MID_EXAMPLES,
+                    FINAL_EXAMPLES,
+                    *EXTENSION_EXAMPLES,
+                ],
                 "validation_examples": VALIDATION_EXAMPLES,
                 "test_examples": TEST_EXAMPLES,
             },
@@ -488,6 +528,15 @@ def study_plan() -> dict:
             "selection": {
                 "screen": "lowest_validation_kl",
                 "mid": "smallest_model_within_0.1_kl_of_best",
+                "extensions": (
+                    "continue_while_above_target_and_validation_kl_improves_"
+                    "by_at_least_0.1"
+                ),
+                "extension_examples": list(EXTENSION_EXAMPLES),
+                "minimum_extension_improvement": (
+                    MIN_EXTENSION_IMPROVEMENT
+                ),
+                "target_validation_kl": TARGET_VALIDATION_KL,
                 "minimum_continuation_improvement": (
                     MIN_CONTINUATION_IMPROVEMENT
                 ),

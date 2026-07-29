@@ -23,6 +23,12 @@ The v6 trainable parameter counts are 17,070,016 / 32,978,880 / 64,780,224.
 Thus the screen changes vocabulary expressivity without paying the quadratic
 body-width cost seen in v4.
 
+The selected v6 model trains first through 67,108,864 contexts (1.074B input
+tokens). If validation KL remains above 1.0 and improves by at least 0.1 over
+the preceding milestone, it continues through 134,217,728 and then 268,435,456
+contexts (2.147B and 4.295B input tokens). The WSD schedule remains at full LR
+through the intermediate milestones and cools down only at the maximum budget.
+
 ## Recorded results
 
 All KL values are exact full-vocabulary `KL(P_teacher || P_student)` on the

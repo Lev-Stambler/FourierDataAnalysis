@@ -9,6 +9,8 @@ from pathlib import Path
 from .config import (
     DEFAULT_DATA_ROOT,
     DEFAULT_OUTPUT_ROOT,
+    EXTENSION_2X_EXAMPLES,
+    EXTENSION_4X_EXAMPLES,
     FINAL_EXAMPLES,
     GLOBAL_BATCH,
     GLOBAL_TOKEN_BATCH,
@@ -35,6 +37,7 @@ from .config import (
 from .study import (
     continuation_cell,
     continuation_improved,
+    should_extend,
 )
 from .train import (
     atomic_json,
@@ -552,6 +555,49 @@ def launch_study(
         output_root=output_root,
     )
     final_result = final_results[0]
+    extension_results = []
+    winner = final_result
+    stopped_reason = "final_budget"
+    if dense_vocabulary:
+        stopped_reason = (
+            "target_met"
+            if float(winner["validation"]["kl"])
+            <= TARGET_VALIDATION_KL
+            else "plateau"
+        )
+        previous = mid_winner
+        for extension_stage, extension_target in (
+            ("extend2x", EXTENSION_2X_EXAMPLES),
+            ("extend4x", EXTENSION_4X_EXAMPLES),
+        ):
+            if not should_extend(previous, winner):
+                break
+            extension_cell = continuation_cell(
+                winner,
+                stage=extension_stage,
+                target_examples=extension_target,
+            )
+            extension_result = _run_stage(
+                extension_stage,
+                [extension_cell],
+                sources={extension_cell.label: winner},
+                evaluate_test=True,
+                data_root=data_root,
+                output_root=output_root,
+            )[0]
+            extension_results.append(extension_result)
+            previous, winner = winner, extension_result
+            if (
+                float(winner["validation"]["kl"])
+                <= TARGET_VALIDATION_KL
+            ):
+                stopped_reason = "target_met"
+                break
+            stopped_reason = (
+                "max_budget"
+                if extension_target == EXTENSION_4X_EXAMPLES
+                else "plateau"
+            )
     summary = {
         "schema": SUMMARY_SCHEMA,
         "status": "complete",
@@ -568,9 +614,11 @@ def launch_study(
             mid_winner,
             final_result,
         ),
-        "winner": final_result,
+        "extensions": extension_results,
+        "stopped_reason": stopped_reason,
+        "winner": winner,
         "target_met": (
-            float(final_result["validation"]["kl"])
+            float(winner["validation"]["kl"])
             <= TARGET_VALIDATION_KL
         ),
     }
@@ -599,7 +647,16 @@ def status(output_root: str = DEFAULT_OUTPUT_ROOT) -> dict:
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         coordinator = {"status": "not_started"}
     cells = []
-    for stage in ("depth", "rank", "width", "lr", "mid", "final"):
+    for stage in (
+        "depth",
+        "rank",
+        "width",
+        "lr",
+        "mid",
+        "final",
+        "extend2x",
+        "extend4x",
+    ):
         stage_root = root / stage
         if not stage_root.is_dir():
             continue
@@ -656,6 +713,7 @@ def audit(output_root: str = DEFAULT_OUTPUT_ROOT) -> dict:
     embedded_results.extend(summary.get("lr_results", []))
     embedded_results.extend(summary.get("screen_results", []))
     embedded_results.extend(summary.get("mid_results", []))
+    embedded_results.extend(summary.get("extensions", []))
     for name in (
         "lr_winner",
         "screen_winner",

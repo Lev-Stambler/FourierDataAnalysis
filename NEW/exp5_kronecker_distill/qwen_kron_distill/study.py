@@ -4,11 +4,15 @@ import math
 from collections.abc import Iterable
 
 from .config import (
+    EXTENSION_2X_EXAMPLES,
+    EXTENSION_4X_EXAMPLES,
     FINAL_EXAMPLES,
     MID_EXAMPLES,
     MIN_CONTINUATION_IMPROVEMENT,
+    MIN_EXTENSION_IMPROVEMENT,
     RESULT_SCHEMA,
     SCREEN_EXAMPLES,
+    TARGET_VALIDATION_KL,
     Architecture,
     Cell,
 )
@@ -111,9 +115,15 @@ def continuation_cell(
     stage: str,
     target_examples: int,
 ) -> Cell:
-    if stage not in ("mid", "final"):
-        raise ValueError("continuation stage must be mid or final")
-    if target_examples not in (MID_EXAMPLES, FINAL_EXAMPLES):
+    stage_targets = {
+        "mid": MID_EXAMPLES,
+        "final": FINAL_EXAMPLES,
+        "extend2x": EXTENSION_2X_EXAMPLES,
+        "extend4x": EXTENSION_4X_EXAMPLES,
+    }
+    if stage not in stage_targets:
+        raise ValueError("invalid continuation stage")
+    if target_examples != stage_targets[stage]:
         raise ValueError("invalid continuation target")
     architecture = _architecture(source)
     cell = Cell(
@@ -155,4 +165,15 @@ def continuation_improved(source: dict, continuation: dict) -> bool:
         math.isfinite(before)
         and math.isfinite(after)
         and before - after >= MIN_CONTINUATION_IMPROVEMENT
+    )
+
+
+def should_extend(source: dict, continuation: dict) -> bool:
+    before = float(source["validation"]["kl"])
+    after = float(continuation["validation"]["kl"])
+    return (
+        math.isfinite(before)
+        and math.isfinite(after)
+        and after > TARGET_VALIDATION_KL
+        and before - after >= MIN_EXTENSION_IMPROVEMENT
     )
