@@ -44,6 +44,8 @@ CONFIG = {
     "reset_optimizer": False,
     "long_lr": 0.003,
     "long_output_dir": "",
+    "long_physical_local_batch": 0,
+    "long_optimizer_local_batch": 0,
     "max_hours": 2.0,
     "lr": 0.006,
     "min_lr": 0.00075,
@@ -153,6 +155,31 @@ class Student(nn.Module):
 
 def parameter_count() -> int:
     return sum(parameter.numel() for parameter in Student().parameters())
+
+
+@torch.no_grad()
+def update_diagnostics(
+    student: Student, before: list[torch.Tensor]
+) -> dict[str, float]:
+    """Measure whether an optimizer step survives BF16 weight quantization."""
+    groups = ((student.vocabulary,), tuple(student.blocks.parameters()))
+    offsets = (0, 1)
+    result = {}
+    for name, parameters, offset in zip(("vocabulary", "body"), groups, offsets):
+        old = before[offset : offset + len(parameters)]
+        delta_square = sum(
+            (parameter.detach().float() - previous.float()).square().sum()
+            for parameter, previous in zip(parameters, old)
+        )
+        parameter_square = sum(parameter.detach().float().square().sum() for parameter in parameters)
+        changed = sum((parameter.detach() != previous).sum() for parameter, previous in zip(parameters, old))
+        count = sum(parameter.numel() for parameter in parameters)
+        result[f"{name}_update_rms"] = float(torch.sqrt(delta_square / count))
+        result[f"{name}_relative_update"] = float(
+            torch.sqrt(delta_square / parameter_square.clamp_min(1e-30))
+        )
+        result[f"{name}_changed_fraction"] = float(changed / count)
+    return result
 
 
 def clean_state_dict(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
@@ -688,6 +715,10 @@ def train() -> None:
     stream_queue_depth = 0
     last_loss = math.nan
     last_kl = math.nan
+    interval_loss = 0.0
+    interval_kl = 0.0
+    interval_grad_norm = 0.0
+    interval_steps = 0
     train_budget = int(CONFIG["train_contexts"])
     if CONFIG["mode"] == "benchmark":
         train_budget = physical_local * world
@@ -758,7 +789,22 @@ def train() -> None:
                 step_lr = current_lr * warmup
             for group in optimizer.param_groups:
                 group["lr"] = step_lr
+            next_run_contexts = run_contexts + step_global_contexts
+            next_long_tokens = long_input_tokens_seen + step_tokens
+            measure_update = (
+                due(last_log_tokens, next_long_tokens, CONFIG["log_tokens"])
+                if long_run
+                else due(last_log_contexts, next_run_contexts, CONFIG["log_contexts"])
+            )
+            before_update = (
+                [parameter.detach().clone() for parameter in student.parameters()]
+                if measure_update
+                else None
+            )
             optimizer.step()
+            diagnostics = (
+                update_diagnostics(student, before_update) if before_update is not None else {}
+            )
             optimizer_updates += 1
             run_contexts += step_global_contexts
             total_contexts += step_global_contexts
@@ -766,6 +812,10 @@ def train() -> None:
                 long_input_tokens_seen += step_tokens
             last_loss = float(cross_entropy.detach())
             last_kl = last_loss - float(entropy[start:stop].mean())
+            interval_loss += last_loss
+            interval_kl += last_kl
+            interval_grad_norm += float(grad_norm)
+            interval_steps += 1
 
             log_due = (
                 due(last_log_tokens, long_input_tokens_seen, CONFIG["log_tokens"])
@@ -773,7 +823,14 @@ def train() -> None:
                 else due(last_log_contexts, run_contexts, CONFIG["log_contexts"])
             )
             if log_due or (long_input_tokens_seen == step_tokens if long_run else optimizer_updates == 1):
-                values = torch.tensor([last_loss, last_kl, float(grad_norm)], device=device)
+                values = torch.tensor(
+                    [
+                        interval_loss / interval_steps,
+                        interval_kl / interval_steps,
+                        interval_grad_norm / interval_steps,
+                    ],
+                    device=device,
+                )
                 dist.all_reduce(values)
                 values /= world
                 now = time.perf_counter()
@@ -795,7 +852,10 @@ def train() -> None:
                 metrics = {
                     "train_cross_entropy": float(values[0]),
                     "train_kl": float(values[1]),
+                    "train_cross_entropy_last": last_loss,
+                    "train_kl_last": last_kl,
                     "grad_norm_pre_clip": float(values[2]),
+                    "grad_norm_pre_clip_last": float(grad_norm),
                     "gradient_clipped": float(values[2] > 1.0),
                     "lr": step_lr,
                     "optimizer_updates": optimizer_updates,
@@ -826,6 +886,7 @@ def train() -> None:
                     ),
                     "per_gpu_peak_allocated_gib": [float(value[0]) for value in memories],
                     "per_gpu_peak_reserved_gib": [float(value[1]) for value in memories],
+                    **diagnostics,
                 }
                 if primary:
                     print(json.dumps(metrics), flush=True)
@@ -833,6 +894,10 @@ def train() -> None:
                 last_log_contexts = run_contexts
                 last_log_tokens = long_input_tokens_seen
                 last_log_time = now
+                interval_loss = 0.0
+                interval_kl = 0.0
+                interval_grad_norm = 0.0
+                interval_steps = 0
 
             validation = None
             if not long_run and due(previous_contexts, run_contexts, CONFIG["eval_contexts"]):
@@ -1156,8 +1221,12 @@ def long_supervisor() -> None:
     )
     output.mkdir(parents=True, exist_ok=True)
     gpu_memory_gib = torch.cuda.get_device_properties(0).total_memory / 2**30
-    physical_local = 245_760 if gpu_memory_gib >= 100 else 131_072
-    optimizer_local = 16_384 if gpu_memory_gib >= 100 else 8_192
+    physical_local = int(CONFIG["long_physical_local_batch"]) or (
+        245_760 if gpu_memory_gib >= 100 else 131_072
+    )
+    optimizer_local = int(CONFIG["long_optimizer_local_batch"]) or (
+        16_384 if gpu_memory_gib >= 100 else 8_192
+    )
     base = [
         sys.executable,
         "-m",

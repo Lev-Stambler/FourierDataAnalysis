@@ -11,6 +11,7 @@ from exp7 import (
     exact_local_contexts,
     parameter_count,
     per_token_rms,
+    update_diagnostics,
 )
 
 
@@ -87,3 +88,16 @@ def test_cosine_lr_is_token_based_and_ends_at_one_percent():
     assert cosine_lr(start, 0, budget) == start
     assert math.isclose(cosine_lr(start, budget, budget), start * 0.01)
     assert start * 0.01 < cosine_lr(start, budget // 2, budget) < start
+
+
+def test_update_diagnostics_detect_bf16_weight_changes():
+    student = Student()
+    before = [parameter.detach().clone() for parameter in student.parameters()]
+    with torch.no_grad():
+        student.vocabulary[0, 0] += 0.125
+        student.blocks[0].a[0, 0, 0] += 0.125
+    metrics = update_diagnostics(student, before)
+    assert metrics["vocabulary_update_rms"] > 0
+    assert metrics["vocabulary_changed_fraction"] > 0
+    assert metrics["body_update_rms"] > 0
+    assert metrics["body_changed_fraction"] > 0
