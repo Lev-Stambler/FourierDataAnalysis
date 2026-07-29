@@ -36,7 +36,8 @@ CONFIG = {
     "depth": 32,
     "rank": 8,
     "parameter_dtype": "float32",  # FP32 master weights; autocast keeps compute BF16
-    "physical_local_batch": 245_760,
+    "teacher_probability_dtype": "float32",
+    "physical_local_batch": 49_152,
     "optimizer_local_batch": 16_384,
     "teacher_microbatch": 2_048,
     "train_contexts": 16_777_216,
@@ -286,7 +287,10 @@ def self_test() -> None:
 @torch.no_grad()
 def teacher_targets(teacher, token_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     probability = torch.empty(
-        token_ids.shape[0], CONFIG["vocab_size"], device=token_ids.device, dtype=torch.bfloat16
+        token_ids.shape[0],
+        CONFIG["vocab_size"],
+        device=token_ids.device,
+        dtype=getattr(torch, CONFIG["teacher_probability_dtype"]),
     )
     entropy = torch.empty(token_ids.shape[0], device=token_ids.device, dtype=torch.float32)
     weight = teacher.get_output_embeddings().weight[: CONFIG["vocab_size"]]
@@ -1175,7 +1179,7 @@ def study() -> None:
     root.mkdir(parents=True, exist_ok=True)
     gpu_memory_gib = torch.cuda.get_device_properties(0).total_memory / 2**30
     h200 = gpu_memory_gib >= 100
-    physical_local = 245_760 if h200 else 131_072
+    physical_local = 98_304 if h200 else 49_152
     base = [
         sys.executable,
         "-m",
@@ -1213,9 +1217,9 @@ def study() -> None:
             "optimizer_global_batch"
         ] // 8
     else:
-        # 131,072 target contexts occupy about 61 GiB; with the teacher and
-        # dense student this keeps an 80-GiB H100 full without accumulation.
-        winner_batch = 8_192
+        # FP32 teacher probabilities make the objective exact while this
+        # two-million-token update keeps an 80-GiB H100 full.
+        winner_batch = 16_384
         benchmarks = []
 
     screen_results = []
@@ -1285,11 +1289,9 @@ def long_supervisor() -> None:
     output.mkdir(parents=True, exist_ok=True)
     gpu_memory_gib = torch.cuda.get_device_properties(0).total_memory / 2**30
     physical_local = int(CONFIG["long_physical_local_batch"]) or (
-        245_760 if gpu_memory_gib >= 100 else 131_072
+        98_304 if gpu_memory_gib >= 100 else 49_152
     )
-    optimizer_local = int(CONFIG["long_optimizer_local_batch"]) or (
-        16_384 if gpu_memory_gib >= 100 else 8_192
-    )
+    optimizer_local = int(CONFIG["long_optimizer_local_batch"]) or 16_384
     base = [
         sys.executable,
         "-m",

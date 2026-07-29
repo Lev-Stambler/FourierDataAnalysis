@@ -21,6 +21,8 @@ def test_dense_free_shape_and_parameter_count():
     student = Student()
     assert student.vocabulary.shape == (248_320, 64)
     assert student.vocabulary.dtype == torch.float32
+    assert CONFIG["teacher_probability_dtype"] == "float32"
+    assert CONFIG["physical_local_batch"] == 49_152
     assert parameter_count() == 17_006_592
     assert all(parameter.ndim >= 2 for parameter in student.parameters())
 
