@@ -611,6 +611,9 @@ def study() -> None:
         raise RuntimeError("WANDB_API_KEY is required before the paid study")
     root = Path(CONFIG["study_root"])
     root.mkdir(parents=True, exist_ok=True)
+    gpu_memory_gib = torch.cuda.get_device_properties(0).total_memory / 2**30
+    h200 = gpu_memory_gib >= 100
+    physical_local = 245_760 if h200 else 131_072
     base = [
         sys.executable,
         "-m",
@@ -624,28 +627,34 @@ def study() -> None:
         print(json.dumps({"launch": arguments}), flush=True)
         subprocess.run(base + arguments, check=True)
 
-    # 8,192 was completed during the corrected paid preflight. Sweep upward.
-    benchmark_results = [root / "bench-8192-retry" / "result.json"]
-    for local in (12_288, 16_384):
-        output = root / f"bench-{local}"
-        launch(
-            [
-                "--mode=benchmark",
-                f"--optimizer_local_batch={local}",
-                "--physical_local_batch=245760",
-                "--max_hours=0.5",
-                "--log_contexts=524288",
-                "--eval_contexts=0",
-                "--checkpoint_contexts=0",
-                f"--output_dir={output}",
-                f"--run_name=exp7-dense-free-bench-{local}",
-            ]
-        )
-        benchmark_results.append(output / "result.json")
-    benchmarks = [json.loads(path.read_text()) for path in benchmark_results]
-    winner_batch = max(benchmarks, key=lambda value: value["tokens_per_second"])[
-        "optimizer_global_batch"
-    ] // 8
+    if h200:
+        # 8,192 was completed during the corrected paid preflight. Sweep upward.
+        benchmark_results = [root / "bench-8192-retry" / "result.json"]
+        for local in (12_288, 16_384):
+            output = root / f"bench-{local}"
+            launch(
+                [
+                    "--mode=benchmark",
+                    f"--optimizer_local_batch={local}",
+                    f"--physical_local_batch={physical_local}",
+                    "--max_hours=0.5",
+                    "--log_contexts=524288",
+                    "--eval_contexts=0",
+                    "--checkpoint_contexts=0",
+                    f"--output_dir={output}",
+                    f"--run_name=exp7-dense-free-bench-{local}",
+                ]
+            )
+            benchmark_results.append(output / "result.json")
+        benchmarks = [json.loads(path.read_text()) for path in benchmark_results]
+        winner_batch = max(benchmarks, key=lambda value: value["tokens_per_second"])[
+            "optimizer_global_batch"
+        ] // 8
+    else:
+        # 131,072 target contexts occupy about 61 GiB; with the teacher and
+        # dense student this keeps an 80-GiB H100 full without accumulation.
+        winner_batch = 8_192
+        benchmarks = []
 
     screen_results = []
     for lr in (0.003, 0.006, 0.0125, 0.025):
@@ -655,7 +664,7 @@ def study() -> None:
             [
                 "--mode=train",
                 f"--optimizer_local_batch={winner_batch}",
-                "--physical_local_batch=245760",
+                f"--physical_local_batch={physical_local}",
                 "--train_contexts=16777216",
                 "--max_hours=1.0",
                 f"--lr={lr}",
@@ -675,7 +684,7 @@ def study() -> None:
         [
             "--mode=train",
             f"--optimizer_local_batch={winner_batch}",
-            "--physical_local_batch=245760",
+            f"--physical_local_batch={physical_local}",
             "--train_contexts=268435456",
             "--max_hours=2.0",
             f"--lr={winner_lr}",
@@ -692,6 +701,8 @@ def study() -> None:
         "schema": "exp7-dense-free-study-v1",
         "status": "complete",
         "winner_optimizer_local_batch": winner_batch,
+        "gpu_memory_gib": gpu_memory_gib,
+        "physical_local_batch": physical_local,
         "winner_lr": winner_lr,
         "benchmarks": benchmarks,
         "screens": [value for _, _, value in screen_results],
