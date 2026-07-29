@@ -18,6 +18,7 @@ from exp7 import (
 def test_dense_free_shape_and_parameter_count():
     student = Student()
     assert student.vocabulary.shape == (248_320, 64)
+    assert student.vocabulary.dtype == torch.float32
     assert parameter_count() == 17_006_592
     assert all(parameter.ndim >= 2 for parameter in student.parameters())
 
@@ -25,7 +26,7 @@ def test_dense_free_shape_and_parameter_count():
 def test_every_token_has_an_independent_dense_row():
     student = Student()
     assert student.vocabulary.stride() == (64, 1)
-    assert student.vocabulary[1].data_ptr() - student.vocabulary[0].data_ptr() == 128
+    assert student.vocabulary[1].data_ptr() - student.vocabulary[0].data_ptr() == 256
 
 
 def test_tied_dense_embedding_and_unembedding():
@@ -90,7 +91,7 @@ def test_cosine_lr_is_token_based_and_ends_at_one_percent():
     assert start * 0.01 < cosine_lr(start, budget // 2, budget) < start
 
 
-def test_update_diagnostics_detect_bf16_weight_changes():
+def test_update_diagnostics_detect_weight_changes():
     student = Student()
     before = [parameter.detach().clone() for parameter in student.parameters()]
     with torch.no_grad():

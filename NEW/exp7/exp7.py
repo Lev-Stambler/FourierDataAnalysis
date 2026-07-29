@@ -35,6 +35,7 @@ CONFIG = {
     "width": 64,
     "depth": 32,
     "rank": 8,
+    "parameter_dtype": "float32",  # FP32 master weights; autocast keeps compute BF16
     "physical_local_batch": 245_760,
     "optimizer_local_batch": 16_384,
     "teacher_microbatch": 2_048,
@@ -116,11 +117,12 @@ class Block(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         rank, length, width = CONFIG["rank"], CONFIG["context_length"], CONFIG["width"]
+        dtype = getattr(torch, CONFIG["parameter_dtype"])
         self.a = nn.Parameter(
-            torch.randn(rank, length, length, dtype=torch.bfloat16) / math.sqrt(length)
+            torch.randn(rank, length, length, dtype=dtype) / math.sqrt(length)
         )
         self.b = nn.Parameter(
-            torch.randn(rank, width, width, dtype=torch.bfloat16) / math.sqrt(width)
+            torch.randn(rank, width, width, dtype=dtype) / math.sqrt(width)
         )
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
@@ -131,8 +133,9 @@ class Block(nn.Module):
 class Student(nn.Module):
     def __init__(self) -> None:
         super().__init__()
+        dtype = getattr(torch, CONFIG["parameter_dtype"])
         self.vocabulary = nn.Parameter(
-            torch.empty(CONFIG["vocab_size"], CONFIG["width"], dtype=torch.bfloat16)
+            torch.empty(CONFIG["vocab_size"], CONFIG["width"], dtype=dtype)
         )
         nn.init.normal_(self.vocabulary, std=0.02)
         self.blocks = nn.ModuleList(Block() for _ in range(CONFIG["depth"]))
@@ -161,7 +164,7 @@ def parameter_count() -> int:
 def update_diagnostics(
     student: Student, before: list[torch.Tensor]
 ) -> dict[str, float]:
-    """Measure whether an optimizer step survives BF16 weight quantization."""
+    """Measure the exact parameter change made by one optimizer step."""
     groups = ((student.vocabulary,), tuple(student.blocks.parameters()))
     offsets = (0, 1)
     result = {}
