@@ -39,7 +39,7 @@ die() { echo "nf.sh: $*" >&2; exit 1; }
 PROXY_PID=""
 PROXY_ADDR=""
 PROXY_PORT=""
-SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
+SSH_OPTS=(-i "$SSH_KEY" -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
 
 running_instance() {
   "${NF[@]}" get service containers "${NF_SVC[@]}" -o json | python3 -c '
