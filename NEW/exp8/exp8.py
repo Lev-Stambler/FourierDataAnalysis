@@ -43,6 +43,7 @@ CONFIG = {
     "optimizer": "adamw8bit",
     "loss": "exact_per_token_kl",
     "reset_optimizer": False,
+    "reset_stream": False,
     "long_lr": 0.0,  # zero selects the validated screen winner
     "long_output_dir": "",
     "long_physical_local_batch": 0,
@@ -766,7 +767,11 @@ def train() -> None:
         minimum_lr_bad_validations = int(saved.get("minimum_lr_bad_validations", 0))
         physical_batches = int(saved.get("physical_batches", 0))
         long_input_tokens_seen = int(saved.get("long_input_tokens_seen", 0))
-        stream_states = saved.get("stream_states")
+        # The shuffled HF stream state can reference many old parquet shards.
+        # Replaying it on a new node creates a burst of range requests and can
+        # rate-limit all ranks; model/optimizer continuity does not require
+        # exact sample-URL continuity for this stochastic trillion-token run.
+        stream_states = None if CONFIG["reset_stream"] else saved.get("stream_states")
         if not wandb_id and not CONFIG["reset_optimizer"]:
             wandb_id = str(saved.get("wandb_id", ""))
         for group in optimizer.param_groups:
@@ -1490,7 +1495,9 @@ def long_supervisor() -> None:
         long_lr = winner_lr
     else:
         raise RuntimeError("an explicit resume also requires --long_lr")
-    wandb_id = uuid.uuid4().hex[:8]
+    # An explicit ID lets an infrastructure-only restart continue the same
+    # W&B run; normal launches still get a fresh identity.
+    wandb_id = str(CONFIG["wandb_id"]) or uuid.uuid4().hex[:8]
     output = (
         Path(CONFIG["long_output_dir"])
         if CONFIG["long_output_dir"]
@@ -1541,6 +1548,7 @@ def long_supervisor() -> None:
             f"--run_name=exp8-scale-safe-1t-lr-{str(long_lr).replace('.', 'p')}",
             f"--wandb_id={wandb_id}",
             f"--reset_optimizer={str(reset_optimizer).lower()}",
+            "--reset_stream=true",
         ]
         print(json.dumps({"long_launch": arguments, "screen_winner": winner}), flush=True)
         completed = subprocess.run(base + arguments, check=False)

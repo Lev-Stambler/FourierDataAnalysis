@@ -39,7 +39,7 @@ functional vocabulary scale, while projected body factors use zero decay.
 
 The local and paid gates both passed:
 
-- 16 unit tests and the standalone self-test pass;
+- 243 unit tests and the standalone self-test pass;
 - all requested eight GPUs participate;
 - forward, backward, AdamW8bit state, gradients, and updates are finite;
 - exact teacher row-sum error is about `3.5e-7`;
@@ -101,9 +101,9 @@ additional interval.
 
 ## 1T-token continuation
 
-The exact 1,000,000,000,000-token continuation is live from the best `3e-3`
-checkpoint with preserved AdamW8bit state. Its LR follows a token-based cosine
-from `0.003` to `0.00003`; it retains the selected 2,097,152-token optimizer
+The exact 1,000,000,000,000-token continuation launched from the best `3e-3`
+checkpoint with preserved AdamW8bit state. Its LR followed a token-based cosine
+from `0.003` to `0.00003`; it retained the selected 2,097,152-token optimizer
 batch and exact per-token KL.
 
 Direct W&B:
@@ -118,3 +118,27 @@ tokenization startup caused the initial idle period; accumulated data wait
 then remained constant while the asynchronous queue stayed populated. Both
 `checkpoint.pt` and the improved `best.pt` were written before training
 continued.
+
+## Lower-LR continuation from the plateau
+
+The original `3e-3` continuation reached best held-out KL `1.3750449` after
+`56,912,510,976` long-run input tokens, then plateaued while its 1T-token cosine
+still held LR near `0.003`. It was stopped without releasing the 8x H100 node.
+
+Training resumed from that exact `best.pt` with the model and AdamW8bit moments
+preserved, but with a new cosine from `3e-4` to `3e-6`. Initial held-out KL
+reproduced at `1.3750220`. The first live updates used LR `2.9763e-4`, exact
+per-token KL, and a 131,072-context / 2,097,152-token global optimizer batch.
+After compilation, intervals measured `1.24–1.77M tok/s`; all GPUs held
+`69,812 / 81,559 MiB`, the prefetch queue stayed at depth 3, gradient norm
+settled near `0.09` without clipping, and factor RMS stayed exactly `0.25` /
+`0.125`.
+
+Checkpointed Hugging Face shuffle state fans restoration across many old
+parquet shards and triggered anonymous Hub rate limiting. The canonical
+supervisor restart now resets only that stochastic stream cursor while keeping
+model, optimizer, token schedule, and best-metric state continuous. The clean
+restart had zero 429s and zero tracebacks.
+
+Direct W&B:
+[5e52bbc7](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/5e52bbc7).
