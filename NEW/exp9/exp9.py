@@ -658,6 +658,11 @@ def exact_local_contexts(remaining_tokens: int, world: int) -> int:
     return remaining_tokens // denominator
 
 
+def benchmark_context_budget(run_contexts: int, physical_local: int, world: int) -> int:
+    """Absolute stop counter for three new batches, including after resume."""
+    return run_contexts + physical_local * world * 3
+
+
 def document_contexts(token_ids) -> np.ndarray:
     """All non-overlapping 16-input/one-target windows from one document."""
     length = CONFIG["context_length"] + 1
@@ -1086,7 +1091,8 @@ def train() -> None:
         # Three teacher passes expose steady end-to-end throughput after the
         # first pass pays compilation. A one-pass result measures compilation,
         # while per-optimizer-step timing can omit the frozen teacher entirely.
-        train_budget = physical_local * world * 3
+        # The stop is absolute because resumed runs retain run_contexts.
+        train_budget = benchmark_context_budget(run_contexts, physical_local, world)
 
     def unfinished() -> bool:
         return (

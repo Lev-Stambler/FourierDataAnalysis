@@ -9,6 +9,7 @@ from exp9 import (
     SplitOptimizer,
     Student,
     activation_scale_diagnostics,
+    benchmark_context_budget,
     clean_state_dict,
     cosine_lr,
     document_contexts,
@@ -192,6 +193,11 @@ def test_one_trillion_token_tail_is_exact_across_eight_ranks():
     assert tail == 331_776
     assert exact_local_contexts(tail, 8) == 2_592
     assert full_updates * full_step + 8 * 2_592 * 16 == 1_000_000_000_000
+
+
+def test_benchmark_budget_is_relative_to_the_resumed_counter():
+    resumed = 4_127_326_208
+    assert benchmark_context_budget(resumed, 49_152, 8) == resumed + 3 * 49_152 * 8
 
 
 def test_cosine_lr_is_token_based_and_ends_at_one_percent():
