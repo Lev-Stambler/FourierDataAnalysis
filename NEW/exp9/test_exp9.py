@@ -250,6 +250,16 @@ def test_gradient_diagnostics_split_vocabulary_and_body():
     assert metrics["body_grad_rms"] == 1
 
 
+def test_gradient_diagnostics_handles_a_frozen_vocabulary():
+    student = Student()
+    for parameter in student.blocks.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    metrics = gradient_diagnostics(student)
+    assert metrics["vocabulary_grad_norm"] == 0
+    assert metrics["vocabulary_grad_rms"] == 0
+    assert metrics["body_grad_norm"] > 0
+
+
 def test_batched_muon_matches_independent_torch_muon_matrices():
     torch.manual_seed(12)
     for size in (16, 64):
