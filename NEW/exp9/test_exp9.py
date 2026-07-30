@@ -228,34 +228,37 @@ def test_gradient_diagnostics_split_vocabulary_and_body():
 
 def test_batched_muon_matches_independent_torch_muon_matrices():
     torch.manual_seed(12)
-    batched = torch.nn.Parameter(torch.randn(3, 4, 4))
-    references = [
-        torch.nn.Parameter(matrix.detach().clone()) for matrix in batched
-    ]
-    ours = BatchedMuon([batched], lr=0.02, momentum=0.95, ns_steps=5)
-    standard = torch.optim.Muon(
-        references,
-        lr=0.02,
-        momentum=0.95,
-        nesterov=True,
-        ns_steps=5,
-        adjust_lr_fn="original",
-        weight_decay=0.0,
-    )
-    for _ in range(2):
-        gradient = torch.randn_like(batched)
-        batched.grad = gradient.clone()
-        for parameter, matrix_gradient in zip(references, gradient, strict=True):
-            parameter.grad = matrix_gradient.clone()
-        ours.step()
-        standard.step()
-    torch.testing.assert_close(
-        batched,
-        torch.stack(references),
-        atol=2e-3,
-        rtol=2e-2,
-    )
-    assert "second_momentum_buffer" not in ours.state[batched]
+    for size in (16, 64):
+        batched = torch.nn.Parameter(torch.randn(2, size, size))
+        references = [
+            torch.nn.Parameter(matrix.detach().clone()) for matrix in batched
+        ]
+        ours = BatchedMuon([batched], lr=0.02, momentum=0.95, ns_steps=5)
+        standard = torch.optim.Muon(
+            references,
+            lr=0.02,
+            momentum=0.95,
+            nesterov=True,
+            ns_steps=5,
+            adjust_lr_fn="original",
+            weight_decay=0.0,
+        )
+        for _ in range(2):
+            gradient = torch.randn_like(batched)
+            batched.grad = gradient.clone()
+            for parameter, matrix_gradient in zip(
+                references, gradient, strict=True
+            ):
+                parameter.grad = matrix_gradient.clone()
+            ours.step()
+            standard.step()
+        torch.testing.assert_close(
+            batched,
+            torch.stack(references),
+            atol=2e-3,
+            rtol=2e-2,
+        )
+        assert "second_momentum_buffer" not in ours.state[batched]
 
 
 def test_batched_muon_does_not_mix_rank_slices():

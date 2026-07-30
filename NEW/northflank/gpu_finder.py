@@ -276,21 +276,38 @@ def race(args: argparse.Namespace, candidates: list[Candidate]) -> None:
         ensure_service(candidate, args.team)
     deadline = time.monotonic() + args.timeout_minutes * 60
     winner = None
-    while time.monotonic() < deadline:
-        snapshot = {}
-        for candidate in candidates:
+    snapshot = {
+        f"{candidate.project_id}/{candidate.service_id}": "REQUESTED"
+        for candidate in candidates
+    }
+    poll_index = 0
+    try:
+        while time.monotonic() < deadline:
+            # Poll one candidate per tick. Polling every candidate per tick can
+            # exhaust Northflank's hourly API allowance before scarce GPU
+            # capacity arrives.
+            candidate = candidates[poll_index % len(candidates)]
+            key = f"{candidate.project_id}/{candidate.service_id}"
             try:
                 state = status(candidate, args.team)
             except Exception as error:
                 state = f"ERROR:{error}"
-            snapshot[f"{candidate.project_id}/{candidate.service_id}"] = state
-            if state == "TASK_RUNNING" and winner is None:
+            snapshot[key] = state
+            poll_index += 1
+            if state == "TASK_RUNNING":
                 winner = candidate
-        print(json.dumps({"status": snapshot}), flush=True)
-        if winner:
-            break
-        time.sleep(args.poll_seconds)
+            if winner or poll_index % len(candidates) == 0:
+                print(json.dumps({"status": snapshot}), flush=True)
+            if winner:
+                break
+            time.sleep(args.poll_seconds)
+    except BaseException:
+        for candidate in candidates:
+            pause(candidate, args.team)
+        raise
     if winner is None:
+        for candidate in candidates:
+            pause(candidate, args.team)
         raise RuntimeError("no H100/H200 candidate reached TASK_RUNNING before timeout")
     for candidate in candidates:
         if candidate != winner:
@@ -314,7 +331,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--existing", action="append", default=[])
     parser.add_argument("--prefer-spot", action="store_true")
     parser.add_argument("--spot-only", action="store_true")
-    parser.add_argument("--poll-seconds", type=int, default=15)
+    parser.add_argument("--poll-seconds", type=int, default=5)
     parser.add_argument("--timeout-minutes", type=float, default=30)
     parser.add_argument("--winner-file", default="/tmp/northflank-gpu-winner.json")
     return parser.parse_args()
