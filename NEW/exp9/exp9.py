@@ -2475,8 +2475,8 @@ def debug_numerical_preflight(
             f"loss_error={loss_error} gradient_cosine={gradient_cosine} finite={finite}"
         )
     return {
-        "preflight_eager_loss": float(eager_loss),
-        "preflight_compiled_loss": float(compiled_loss),
+        "preflight_eager_loss": float(eager_loss.detach()),
+        "preflight_compiled_loss": float(compiled_loss.detach()),
         "preflight_loss_abs_error": loss_error,
         "preflight_gradient_cosine": gradient_cosine,
         "preflight_grad_norm": float(grad_norm),
@@ -2734,12 +2734,16 @@ def debug_train(
         "debug_label": CONFIG["debug_label"],
         "stage_tokens": stage_tokens,
         "optimizer_updates": updates,
-        "best_train_kl": best_train_kl,
-        "last_train_kl": last_train_kl,
+        "best_train_kl": None if hidden_stage else best_train_kl,
+        "last_train_kl": None if hidden_stage else last_train_kl,
         "elapsed_seconds": time.perf_counter() - started,
+        "muon_lr": float(CONFIG["lr"]),
+        "vocabulary_lr": float(CONFIG["vocabulary_lr"]),
         "optimizer_local_batch": optimizer_batch,
         "optimizer_global_token_batch": token_batch,
         "physical_local_batch": physical,
+        "peak_allocated_gib": torch.cuda.max_memory_allocated() / 2**30,
+        "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30,
         "wandb_url": run.url,
         **metadata,
         **final,
@@ -2938,6 +2942,9 @@ def _run_debug_phase(root: Path, phase: str, specs: list[dict]) -> list[dict]:
                 **os.environ,
                 "CUDA_VISIBLE_DEVICES": str(gpu),
                 "PYTHONUNBUFFERED": "1",
+                # Eight simultaneous default 32-worker Inductor pools
+                # oversubscribe the node during first-shape compilation.
+                "TORCHINDUCTOR_COMPILE_THREADS": "4",
             },
         )
         processes.append((spec, output, log_path, log, process))
@@ -3043,26 +3050,6 @@ def debug_coordinator() -> None:
         atomic_json(plan_path, plan)
     ids = plan["wandb_ids"]
 
-    prepare_log_path = root / "logs" / "prepare-contexts.log"
-    prepare_log_path.parent.mkdir(parents=True, exist_ok=True)
-    prepare_log = prepare_log_path.open("ab")
-    prepare = None
-    if not context_cache.is_file():
-        prepare = subprocess.Popen(
-            [
-                sys.executable,
-                str(Path(__file__).resolve()),
-                "--mode=debug_prepare",
-                f"--debug_root={root}",
-                f"--debug_context_cache={context_cache}",
-                f"--debug_tokens={CONFIG['debug_tokens']}",
-                f"--physical_local_batch={CONFIG['physical_local_batch']}",
-            ],
-            stdout=prepare_log,
-            stderr=subprocess.STDOUT,
-            env={**os.environ, "CUDA_VISIBLE_DEVICES": ""},
-        )
-
     oracle_specs = [
         {
             "label": f"projection-{seed}",
@@ -3145,6 +3132,29 @@ def debug_coordinator() -> None:
         root / "warmup" / hidden_winner["debug_label"] / "student.pt"
     )
 
+    # Tokenization overlaps the fixed screen, after the one-time compile-heavy
+    # oracle/warm-start stages. Starting it earlier made the CPU producer fight
+    # eight Inductor pools and delayed first GPU work.
+    prepare_log_path = root / "logs" / "prepare-contexts.log"
+    prepare_log_path.parent.mkdir(parents=True, exist_ok=True)
+    prepare_log = prepare_log_path.open("ab")
+    prepare = None
+    if not context_cache.is_file():
+        prepare = subprocess.Popen(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--mode=debug_prepare",
+                f"--debug_root={root}",
+                f"--debug_context_cache={context_cache}",
+                f"--debug_tokens={CONFIG['debug_tokens']}",
+                f"--physical_local_batch={CONFIG['physical_local_batch']}",
+            ],
+            stdout=prepare_log,
+            stderr=subprocess.STDOUT,
+            env={**os.environ, "CUDA_VISIBLE_DEVICES": ""},
+        )
+
     fixed_specs = []
     for initialization in ("projection", "control"):
         for index, (optimizer_batch, lr, vocabulary_lr) in enumerate(fixed_grid):
@@ -3185,6 +3195,17 @@ def debug_coordinator() -> None:
             prepare.terminate()
             prepare.wait()
         prepare_log.close()
+        atomic_json(
+            root / "coordinator-status.json",
+            {
+                "schema": "exp9-debug-coordinator-v1",
+                "status": "fixed_failed",
+                "summary": str(root / "summary.json"),
+                "wandb_urls": sorted(
+                    {result["wandb_url"] for result in fixed_results}
+                ),
+            },
+        )
         print(json.dumps(summary, indent=2), flush=True)
         return
 

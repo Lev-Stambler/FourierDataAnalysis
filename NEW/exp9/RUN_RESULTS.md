@@ -51,3 +51,83 @@ Two resume-only accounting defects found by paid preflight were fixed and
 covered before launch: the three-batch benchmark now adds work relative to the
 restored context counter, and throughput intervals start from the restored
 session counter instead of zero.
+
+## 2026-07-30 random-projection diagnostic
+
+The production run was gracefully checkpointed and stopped at
+`83,726,696,448` long-run input tokens and optimizer update `37,411`. Its best
+validation KL was `1.333878764`; final validation KL was `1.334100747`. The
+immutable diagnostic source is
+`/cache/exp9-random-projection-debug-v1/source/production-82b.pt`, SHA-256
+`d74ebc008d3e4f92f8a34d7e623d99a31219028204f21626b701077cc84acdf6`.
+The sole eight-H100 Northflank node was retained, but all training processes
+were stopped after the diagnostic gate failed.
+The compiled-BF16 numerical preflight passed with absolute loss error
+`0.012223`, gradient cosine `0.997994`, and finite optimizer state:
+[W&B](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/mf2bkuva).
+
+The fresh initializer used a seeded Rademacher JL map
+`R ∈ {-1,+1}^{1024×64}/sqrt(64)`, copied Qwen's tied vocabulary as
+`E_student = E_Qwen R`, and matched the student's final hidden state to
+`RMSNorm(h_Qwen R)` before exact-KL training. The random-projected teacher
+itself was a poor 248k-way softmax approximation:
+
+| Projection seed | Oracle validation KL |
+|---:|---:|
+| 0 | 7.832379 |
+| 1 | **7.801428** |
+| 2 | 8.157643 |
+| 3 | 8.397881 |
+
+Seed 1 was used for the hidden warm-start. All four cells saw 25,165,824
+fixed token presentations with the vocabulary frozen:
+
+| Optimizer contexts | Muon LR | Held-out hidden MSE | Hidden cosine |
+|---:|---:|---:|---:|
+| 24,576 | 0.002 | 0.804685 | 0.597658 |
+| 8,192 | 0.002 | 0.660965 | 0.669517 |
+| 24,576 | 0.004 | 0.726872 | 0.636564 |
+| 8,192 | 0.004 | **0.613843** | **0.693079** |
+
+The winning hidden state was cloned into four fresh exact-KL cells. Each cell
+then saw 100,663,296 fixed-buffer token presentations; optimizers were reset,
+the tied vocabulary was unfrozen, and the control cells reloaded the immutable
+production checkpoint.
+
+| Initialization | Optimizer contexts | Muon LR | Vocabulary LR | Best train KL | Final validation KL |
+|---|---:|---:|---:|---:|---:|
+| projected fresh | 24,576 | 0.002 | 3e-4 | 3.125394 | 3.549179 |
+| projected fresh | 8,192 | 0.002 | 3e-4 | 1.711739 | 3.536515 |
+| projected fresh | 24,576 | 0.004 | 3e-4 | 2.966154 | 3.517097 |
+| projected fresh | 24,576 | 0.002 | 1e-3 | **1.656380** | **3.469671** |
+| trained control | 24,576 | 0.002 | 3e-4 | 0.596699 | **1.747373** |
+| trained control | 8,192 | 0.002 | 3e-4 | **0.457643** | 1.970253 |
+| trained control | 24,576 | 0.004 | 3e-4 | 0.583184 | 1.816883 |
+| trained control | 24,576 | 0.002 | 1e-3 | 0.474604 | 1.907639 |
+
+The control proves that the exact-KL model/optimizer path can drive the fixed
+buffer well below one quickly. The projected initialization cannot: its best
+cell stopped at `1.656380`, so the predeclared `<1` gate prevented the
+536,870,912-token fresh-data stage. Random projection preserves inner products
+only in expectation; at width 64, its logit variance is too damaging for a
+248,320-way softmax to serve as a useful direct output initialization.
+
+High-batch exact-KL cells peaked at `75.48/75.82 GiB`
+allocated/reserved (about 95% of H100 memory) and approximately `2.15M`
+cached-target token presentations/second. The 8,192-context diagnostic cells
+peaked near `56.9 GiB` reserved and approximately `1.59M` token
+presentations/second. W&B system sampling includes compilation, validation,
+and deep CPU-side diagnostics; GPU peaks reached `99%`, but the short
+diagnostic did not establish sustained `>=85%` utilization and must not be
+used as a production-utilization claim.
+
+Persistent W&B arms:
+[P0](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/22dc3517),
+[P1](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/df2eb9ff),
+[P2](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/f3996d89),
+[P3](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/824c6272),
+[C0](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/e05c5985),
+[C1](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/c3250af1),
+[C2](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/e99a6d3a),
+and
+[C3](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/b33b0f58).
