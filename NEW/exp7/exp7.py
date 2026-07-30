@@ -1278,7 +1278,12 @@ def long_supervisor() -> None:
     """Run and resume the exact 1T-token job after selecting the screen winner."""
     if not os.environ.get("WANDB_API_KEY"):
         raise RuntimeError("WANDB_API_KEY is required before the paid long run")
-    winner_lr, winner_output, winner = screen_winner()
+    if CONFIG["resume"]:
+        winner_lr = math.nan
+        winner_output = Path(CONFIG["resume"]).parent
+        winner = {"status": "explicit_resume", "checkpoint": CONFIG["resume"]}
+    else:
+        winner_lr, winner_output, winner = screen_winner()
     long_lr = float(CONFIG["long_lr"])
     wandb_id = uuid.uuid4().hex[:8]
     output = (
