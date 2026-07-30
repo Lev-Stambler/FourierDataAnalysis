@@ -234,3 +234,55 @@ probabilities. The physical batch is correspondingly `49,152` contexts/GPU;
 the optimizer batch remains `16,384` contexts/GPU, or `2,097,152` global input
 tokens/update. This keeps the teacher frozen and computed once per physical
 pass while removing the probability approximation.
+
+## Corrected FP32-exact production run
+
+The definitive one-update preflight used both FP32 master weights and FP32
+teacher probabilities:
+
+- W&B: [6rz2ujaf](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/6rz2ujaf)
+- Held-out KL: `2.1630004222` to `2.1618818227` after one `2,097,152`-token
+  optimizer update
+- Total/vocabulary/body gradient norm: `0.01679 / 0.01521 / 0.00712`
+- Teacher probability row-sum mean/max error: `3.52e-7 / 1.79e-6`
+- Changed fraction: greater than `99.998%` for both parameter groups
+- Peak allocated/reserved VRAM: `65.960 / 66.209 GiB` per GPU
+
+The portable recovery checkpoint has SHA-256
+`bd03d72827f9eb9eddfdd9bca2a2d9cb100c5bf376ade6e4fefcdc1ab29c7581`.
+An all-region eight-GPU capacity race selected the managed 8xH100 80 GB
+service `fda-node` in US Central and paused every losing candidate, leaving
+only the winning GPU service running. No configured BYOC spot pool was
+available.
+
+The corrected 1T-token production continuation is:
+
+- W&B: [e3e058f6](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/e3e058f6)
+- Supervisor log:
+  `/cache/expv7-dense-free/logs/long-1t-fp32-exact-supervisor.log`
+- Result directory: `/cache/expv7-dense-free/long-1t-fp32-exact`
+- Optimizer: fresh AdamW8bit
+- LR: `0.003`, cosine-decayed by input-token progress to `0.00003`
+- Global contexts/update: `131,072`
+- Global input tokens/update: `2,097,152`
+- Physical contexts/GPU: `49,152`
+- Gradient accumulation: none
+- Teacher: frozen, evaluated once per physical batch
+- Precision: FP32 trainable master weights and teacher probabilities, BF16
+  autocast compute, full `torch.compile`
+
+The first production validation is a clear learning result:
+
+| Fresh production tokens | Held-out KL |
+|---:|---:|
+| 0 | 2.16300042 |
+| approximately 258M | 2.14247150 |
+
+This is an absolute KL reduction of `0.02053`, decisively rejecting the prior
+flatline. Warming intervals reached `1.81M` input tok/s and end-to-end
+throughput reached `738k` tok/s while still amortizing compilation. All eight
+H100s were observed at `99–100%` utilization and `69,736 / 81,559 MiB`
+device memory (`85.5%`) each. Peak PyTorch allocated/reserved memory was
+`66.087 / 66.234 GiB` per GPU. Gradients remained finite and unclipped,
+teacher probability row-sum mean error remained approximately `3.5e-7`, and
+more than `99.99%` of both parameter groups changed on measured updates.
