@@ -1069,11 +1069,13 @@ def train() -> None:
         print(json.dumps({"initial_validation": initial, **metadata}), flush=True)
 
     output = Path(CONFIG["output_dir"])
+    session_start_contexts = run_contexts
     session_start_long_tokens = long_input_tokens_seen
     started = time.perf_counter()
     max_interval_tokens_per_second = 0.0
     status = "running"
-    last_log_contexts = 0
+    # Interval rates must start at the resumed counters, not at zero.
+    last_log_contexts = run_contexts
     last_log_tokens = long_input_tokens_seen
     last_log_time = started
     teacher_seconds = 0.0
@@ -1342,7 +1344,8 @@ def train() -> None:
                         (
                             long_input_tokens_seen - session_start_long_tokens
                             if long_run
-                            else run_contexts * CONFIG["context_length"]
+                            else (run_contexts - session_start_contexts)
+                            * CONFIG["context_length"]
                         )
                         / max(now - started, 1e-9)
                     ),
@@ -1560,7 +1563,8 @@ def train() -> None:
                 (
                     long_input_tokens_seen - session_start_long_tokens
                     if long_run
-                    else run_contexts * CONFIG["context_length"]
+                    else (run_contexts - session_start_contexts)
+                    * CONFIG["context_length"]
                 )
                 / max(elapsed, 1e-9)
             ),
