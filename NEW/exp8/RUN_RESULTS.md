@@ -109,9 +109,12 @@ batch and exact per-token KL.
 Direct W&B:
 [22995f91](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/22995f91).
 
-The launch reproduced held-out KL `2.5108328400` exactly. At the recorded live
-snapshot it had consumed `100,663,296` long-run tokens, reported streamed KL
-`2.4501`, grad norm `0.1476` with no clipping, interval throughput `1.808M
-tok/s`, and a prefetch queue depth of 3. The one-time FineWeb-Edu shuffle and
+The launch reproduced held-out KL `2.5108328400` exactly. Its first durable
+checkpoint at `268,435,456` long-run tokens improved held-out KL to `2.298864`
+and accuracy to 16.467%. The corresponding interval had streamed KL `2.3239`,
+finite grad norm `0.2071` with no clipping, and a prefetch queue depth of 3;
+nearby intervals reached `1.82M tok/s`. The one-time FineWeb-Edu shuffle and
 tokenization startup caused the initial idle period; accumulated data wait
-then remained constant while the asynchronous queue stayed populated.
+then remained constant while the asynchronous queue stayed populated. Both
+`checkpoint.pt` and the improved `best.pt` were written before training
+continued.
