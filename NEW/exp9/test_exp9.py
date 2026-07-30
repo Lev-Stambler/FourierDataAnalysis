@@ -20,8 +20,10 @@ from exp9 import (
     load_initial,
     parameter_count,
     per_token_rms,
+    rademacher_projection,
     save_checkpoint,
     scale_diagnostics,
+    tensor_sha256,
     update_diagnostics,
 )
 
@@ -71,6 +73,22 @@ def test_rms_is_independent_per_token():
         torch.ones(3, 16),
         atol=1e-2,
         rtol=1e-2,
+    )
+
+
+def test_random_projection_is_seeded_and_jl_scaled():
+    first = rademacher_projection(128, 16, 7)
+    same = rademacher_projection(128, 16, 7)
+    different = rademacher_projection(128, 16, 8)
+    torch.testing.assert_close(first, same, rtol=0, atol=0)
+    assert tensor_sha256(first) == tensor_sha256(same)
+    assert tensor_sha256(first) != tensor_sha256(different)
+    assert set(first.unique().tolist()) == {-0.25, 0.25}
+    torch.testing.assert_close(
+        first.square().sum(1),
+        torch.ones(128),
+        rtol=0,
+        atol=0,
     )
 
 

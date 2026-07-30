@@ -27,7 +27,9 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 CONFIG = {
-    "mode": "train",  # self_test | study | benchmark | train | long | long_supervisor
+    # self_test | study | benchmark | train | long | long_supervisor |
+    # debug_prepare | debug_arm | debug_coordinator
+    "mode": "train",
     "seed": 0,
     "context_length": 16,
     "vocab_size": 248_320,
@@ -89,6 +91,21 @@ CONFIG = {
     "run_name": "exp9-standard-muon",
     "target_kl": 1.0,
     "compile": True,
+    "debug_stage": "fixed_kl",  # preflight | oracle | hidden | fixed_kl | fresh_kl
+    "debug_init": "checkpoint",  # checkpoint | projection | model
+    "debug_label": "",
+    "debug_source": "",
+    "debug_root": "/cache/exp9-random-projection-debug-v1",
+    "debug_context_cache": "",
+    "debug_tokens": 536_870_912,
+    "debug_replays": 128,
+    "debug_warmup_replays": 32,
+    "debug_projection_seed": 0,
+    "debug_probe_examples": 64,
+    "debug_deep_every": 16,
+    "debug_wandb_id": "",
+    "debug_barrier": "",
+    "debug_ready": "",
 }
 
 
@@ -112,6 +129,56 @@ def overrides() -> None:
 def per_token_rms(value: torch.Tensor) -> torch.Tensor:
     scale = torch.rsqrt(value.float().square().mean(-1, keepdim=True) + 1e-6)
     return value * scale.to(value.dtype)
+
+
+def rademacher_projection(
+    input_width: int,
+    output_width: int,
+    seed: int,
+    *,
+    device: torch.device | str = "cpu",
+) -> torch.Tensor:
+    """Seeded JL map with E[R R^T] = I, stored in an auditable exact form."""
+    if input_width <= 0 or output_width <= 0:
+        raise ValueError("projection widths must be positive")
+    generator = torch.Generator(device="cpu").manual_seed(int(seed))
+    signs = torch.randint(
+        0,
+        2,
+        (input_width, output_width),
+        generator=generator,
+        dtype=torch.int8,
+    )
+    return (
+        signs.to(device=device, dtype=torch.float32).mul_(2).sub_(1)
+        / math.sqrt(output_width)
+    )
+
+
+def tensor_sha256(value: torch.Tensor) -> str:
+    contiguous = value.detach().to(device="cpu").contiguous()
+    return hashlib.sha256(contiguous.numpy().tobytes()).hexdigest()
+
+
+@torch.no_grad()
+def initialize_projected_vocabulary(
+    student: "Student",
+    teacher,
+    projection: torch.Tensor,
+    *,
+    rows_per_chunk: int = 16_384,
+) -> None:
+    """Copy Qwen's tied table through the same projection used for hidden states."""
+    source = teacher.get_input_embeddings().weight[: CONFIG["vocab_size"]]
+    if source.shape[1] != projection.shape[0]:
+        raise ValueError("teacher embedding and projection widths disagree")
+    if projection.shape[1] != CONFIG["width"]:
+        raise ValueError("projection output width must match the student")
+    for start in range(0, len(source), rows_per_chunk):
+        stop = min(start + rows_per_chunk, len(source))
+        student.vocabulary[start:stop].copy_(
+            (source[start:stop].float() @ projection).to(student.vocabulary.dtype)
+        )
 
 
 def fan_in_normalized(weight: torch.Tensor, fan_in: int) -> torch.Tensor:
@@ -476,6 +543,145 @@ def activation_scale_diagnostics(
     }
 
 
+def _cosine(left: torch.Tensor, right: torch.Tensor) -> float:
+    left = left.detach().float().flatten()
+    right = right.detach().float().flatten()
+    denominator = left.norm() * right.norm()
+    return float(torch.dot(left, right) / denominator.clamp_min(1e-30))
+
+
+@torch.no_grad()
+def deep_optimizer_diagnostics(
+    student: Student,
+    optimizer: SplitOptimizer,
+    before: list[torch.Tensor],
+    raw: list[torch.Tensor],
+) -> dict[str, float]:
+    """Layerwise evidence for where gradients or Muon updates disappear."""
+    metrics: dict[str, float] = {}
+    final = [parameter.detach() for parameter in student.parameters()]
+    for layer, block in enumerate(student.blocks):
+        for factor_name, parameter_index, parameter in (
+            ("a", 1 + 2 * layer, block.a),
+            ("b", 2 + 2 * layer, block.b),
+        ):
+            old = before[parameter_index].float()
+            raw_delta = raw[parameter_index].float() - old
+            final_delta = final[parameter_index].float() - old
+            gradient = parameter.grad
+            prefix = f"layer_{layer:02d}_{factor_name}_"
+            metrics[prefix + "grad_rms"] = (
+                float(gradient.detach().float().square().mean().sqrt())
+                if gradient is not None
+                else 0.0
+            )
+            metrics[prefix + "raw_update_rms"] = float(
+                raw_delta.square().mean().sqrt()
+            )
+            metrics[prefix + "final_update_rms"] = float(
+                final_delta.square().mean().sqrt()
+            )
+            metrics[prefix + "canonical_retained"] = float(
+                final_delta.norm() / raw_delta.norm().clamp_min(1e-30)
+            )
+            metrics[prefix + "raw_final_cosine"] = _cosine(
+                raw_delta, final_delta
+            )
+            if gradient is not None:
+                metrics[prefix + "gradient_final_update_cosine"] = _cosine(
+                    gradient, -final_delta
+                )
+            state = optimizer.body.state.get(parameter, {})
+            momentum = state.get("momentum_buffer")
+            if momentum is not None:
+                metrics[prefix + "momentum_rms"] = float(
+                    momentum.float().square().mean().sqrt()
+                )
+                if gradient is not None:
+                    metrics[prefix + "gradient_momentum_cosine"] = _cosine(
+                        gradient, momentum
+                    )
+
+    vocabulary = student.vocabulary.detach().float()
+    vocabulary_gradient = student.vocabulary.grad
+    vocabulary_delta = final[0].float() - before[0].float()
+    for name, rows in (
+        ("vocabulary_weight_row_rms", vocabulary.square().mean(-1).sqrt()),
+        (
+            "vocabulary_update_row_rms",
+            vocabulary_delta.square().mean(-1).sqrt(),
+        ),
+        (
+            "vocabulary_grad_row_rms",
+            vocabulary_gradient.detach().float().square().mean(-1).sqrt()
+            if vocabulary_gradient is not None
+            else torch.zeros(len(vocabulary), device=vocabulary.device),
+        ),
+    ):
+        quantiles = torch.quantile(
+            rows,
+            torch.tensor((0.0, 0.01, 0.1, 0.5, 0.9, 0.99, 1.0), device=rows.device),
+        )
+        for label, value in zip(
+            ("min", "p01", "p10", "p50", "p90", "p99", "max"),
+            quantiles,
+            strict=True,
+        ):
+            metrics[f"{name}_{label}"] = float(value)
+    return metrics
+
+
+@torch.no_grad()
+def probe_diagnostics(
+    student: Student,
+    token_ids: torch.Tensor,
+    probability: torch.Tensor,
+    entropy: torch.Tensor,
+    *,
+    previous_hidden: torch.Tensor | None = None,
+    previous_logits: torch.Tensor | None = None,
+) -> tuple[dict[str, float], torch.Tensor, torch.Tensor]:
+    hidden = student.hidden(token_ids)
+    logits = F.linear(hidden, student.vocabulary)
+    rows = exact_kl_rows(logits, probability, entropy)
+    quantiles = torch.quantile(
+        rows.float(),
+        torch.tensor((0.0, 0.01, 0.1, 0.5, 0.9, 0.99, 1.0), device=rows.device),
+    )
+    metrics = {
+        "probe_kl": float(rows.mean()),
+        "probe_kl_std": float(rows.float().std(unbiased=False)),
+        "probe_logit_rms": float(logits.float().square().mean().sqrt()),
+        "probe_hidden_rms": float(hidden.float().square().mean().sqrt()),
+        "probe_top1_agreement": float(
+            (logits.argmax(-1) == probability.argmax(-1)).float().mean()
+        ),
+        "probe_teacher_entropy": float(entropy.mean()),
+        "probe_teacher_top1_probability": float(probability.max(-1).values.mean()),
+    }
+    for label, value in zip(
+        ("min", "p01", "p10", "p50", "p90", "p99", "max"),
+        quantiles,
+        strict=True,
+    ):
+        metrics[f"probe_kl_{label}"] = float(value)
+    if previous_hidden is not None:
+        metrics["probe_hidden_delta_rms"] = float(
+            (hidden.float() - previous_hidden.float()).square().mean().sqrt()
+        )
+        metrics["probe_hidden_before_after_cosine"] = _cosine(
+            hidden, previous_hidden
+        )
+    if previous_logits is not None:
+        metrics["probe_logit_delta_rms"] = float(
+            (logits.float() - previous_logits.float()).square().mean().sqrt()
+        )
+        metrics["probe_logit_before_after_cosine"] = _cosine(
+            logits, previous_logits
+        )
+    return metrics, hidden.detach(), logits.detach()
+
+
 def clean_state_dict(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     prefixes = ("module.", "_orig_mod.")
     clean = {}
@@ -586,6 +792,167 @@ def teacher_targets(teacher, token_ids: torch.Tensor) -> tuple[torch.Tensor, tor
         probability[start:stop].copy_(chunk)
         entropy[start:stop].copy_(-(chunk * log_probability).sum(-1))
     return probability, entropy
+
+
+@torch.no_grad()
+def teacher_targets_with_hidden(
+    teacher,
+    token_ids: torch.Tensor,
+    projection: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """Debug target pass: exact probabilities and optional projected final hidden."""
+    probability = torch.empty(
+        token_ids.shape[0],
+        CONFIG["vocab_size"],
+        device=token_ids.device,
+        dtype=getattr(torch, CONFIG["teacher_probability_dtype"]),
+    )
+    entropy = torch.empty(
+        token_ids.shape[0], device=token_ids.device, dtype=torch.float32
+    )
+    projected = (
+        torch.empty(
+            token_ids.shape[0],
+            projection.shape[1],
+            device=token_ids.device,
+            dtype=torch.float32,
+        )
+        if projection is not None
+        else None
+    )
+    weight = teacher.get_output_embeddings().weight[: CONFIG["vocab_size"]]
+    for start in range(0, len(token_ids), CONFIG["teacher_microbatch"]):
+        stop = min(start + CONFIG["teacher_microbatch"], len(token_ids))
+        hidden = teacher.model(
+            input_ids=token_ids[start:stop], use_cache=False, return_dict=True
+        ).last_hidden_state[:, -1]
+        log_probability = F.log_softmax(F.linear(hidden, weight).float(), -1)
+        chunk = log_probability.exp()
+        probability[start:stop].copy_(chunk)
+        entropy[start:stop].copy_(-(chunk * log_probability).sum(-1))
+        if projected is not None:
+            projected[start:stop].copy_(
+                per_token_rms(hidden.float() @ projection)
+            )
+    return probability, entropy, projected
+
+
+@torch.inference_mode()
+def evaluate_debug(
+    student: Student,
+    teacher,
+    contexts: np.ndarray,
+    targets: np.ndarray,
+    device: torch.device,
+    *,
+    examples: int | None = None,
+) -> dict[str, float]:
+    student.eval()
+    limit = min(int(examples or CONFIG["eval_examples"]), len(contexts))
+    totals = torch.zeros(5, device=device, dtype=torch.float64)
+    for start in range(0, limit, CONFIG["eval_batch"]):
+        stop = min(start + CONFIG["eval_batch"], limit)
+        token_ids = torch.as_tensor(
+            np.asarray(contexts[start:stop], dtype=np.int64), device=device
+        )
+        target = torch.as_tensor(
+            np.asarray(targets[start:stop], dtype=np.int64), device=device
+        )
+        probability, log_probability, entropy = teacher_distribution(
+            teacher, token_ids
+        )
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            logits = student.logits(token_ids)
+        totals[0] += exact_kl_rows(logits, probability, entropy).double().sum()
+        totals[1] += F.cross_entropy(logits.float(), target, reduction="sum")
+        totals[2] += (-log_probability.gather(1, target[:, None])).double().sum()
+        totals[3] += (logits.argmax(-1) == target).double().sum()
+        totals[4] += stop - start
+    student.train()
+    count = float(totals[4])
+    return {
+        "validation_kl": float(totals[0] / count),
+        "validation_student_nll": float(totals[1] / count),
+        "validation_teacher_nll": float(totals[2] / count),
+        "validation_accuracy": float(totals[3] / count),
+        "validation_examples": int(count),
+    }
+
+
+@torch.inference_mode()
+def evaluate_projection_oracle(
+    teacher,
+    contexts: np.ndarray,
+    projection: torch.Tensor,
+    projected_vocabulary: torch.Tensor,
+    device: torch.device,
+) -> dict[str, float]:
+    limit = min(int(CONFIG["eval_examples"]), len(contexts))
+    total_kl = torch.zeros((), device=device, dtype=torch.float64)
+    total_hidden_rms = torch.zeros_like(total_kl)
+    total = 0
+    weight = teacher.get_output_embeddings().weight[: CONFIG["vocab_size"]]
+    for start in range(0, limit, CONFIG["eval_batch"]):
+        stop = min(start + CONFIG["eval_batch"], limit)
+        token_ids = torch.as_tensor(
+            np.asarray(contexts[start:stop], dtype=np.int64), device=device
+        )
+        hidden = teacher.model(
+            input_ids=token_ids, use_cache=False, return_dict=True
+        ).last_hidden_state[:, -1]
+        teacher_log_probability = F.log_softmax(
+            F.linear(hidden, weight).float(), -1
+        )
+        probability = teacher_log_probability.exp()
+        entropy = -(probability * teacher_log_probability).sum(-1)
+        projected_hidden = per_token_rms(hidden.float() @ projection)
+        projected_logits = F.linear(projected_hidden, projected_vocabulary)
+        rows = exact_kl_rows(projected_logits, probability, entropy)
+        total_kl += rows.double().sum()
+        total_hidden_rms += (
+            projected_hidden.float().square().mean(-1).sqrt().double().sum()
+        )
+        total += stop - start
+    return {
+        "projection_oracle_kl": float(total_kl / total),
+        "projection_hidden_rms": float(total_hidden_rms / total),
+        "validation_examples": total,
+    }
+
+
+@torch.inference_mode()
+def evaluate_hidden_debug(
+    student: Student,
+    teacher,
+    contexts: np.ndarray,
+    projection: torch.Tensor,
+    device: torch.device,
+) -> dict[str, float]:
+    limit = min(int(CONFIG["eval_examples"]), len(contexts))
+    mse = torch.zeros((), device=device, dtype=torch.float64)
+    cosine = torch.zeros_like(mse)
+    total = 0
+    student.eval()
+    for start in range(0, limit, CONFIG["eval_batch"]):
+        stop = min(start + CONFIG["eval_batch"], limit)
+        token_ids = torch.as_tensor(
+            np.asarray(contexts[start:stop], dtype=np.int64), device=device
+        )
+        teacher_hidden = teacher.model(
+            input_ids=token_ids, use_cache=False, return_dict=True
+        ).last_hidden_state[:, -1]
+        target = per_token_rms(teacher_hidden.float() @ projection)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            actual = student.hidden(token_ids)
+        mse += (actual.float() - target).square().mean(-1).double().sum()
+        cosine += F.cosine_similarity(actual.float(), target, dim=-1).double().sum()
+        total += stop - start
+    student.train()
+    return {
+        "hidden_validation_mse": float(mse / total),
+        "hidden_validation_cosine": float(cosine / total),
+        "validation_examples": total,
+    }
 
 
 @torch.inference_mode()
@@ -1888,6 +2255,967 @@ def stream_benchmark() -> None:
     os._exit(0)
 
 
+def atomic_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2, sort_keys=True))
+    os.replace(temporary, path)
+
+
+def wait_for_debug_barrier(run_url: str) -> None:
+    if CONFIG["debug_ready"]:
+        atomic_json(
+            Path(CONFIG["debug_ready"]),
+            {"pid": os.getpid(), "wandb_url": run_url, "label": CONFIG["debug_label"]},
+        )
+    if not CONFIG["debug_barrier"]:
+        return
+    barrier = Path(CONFIG["debug_barrier"])
+    deadline = time.monotonic() + 600
+    while not barrier.is_file():
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"timed out waiting for debug barrier {barrier}")
+        time.sleep(0.25)
+
+
+def init_debug_wandb(metadata: dict):
+    key = os.environ.get("WANDB_API_KEY")
+    if not key:
+        raise RuntimeError("WANDB_API_KEY is required")
+    import wandb
+
+    wandb.login(key=key, relogin=True)
+    run = wandb.init(
+        project=CONFIG["wandb_project"],
+        name=CONFIG["debug_label"],
+        id=CONFIG["debug_wandb_id"] or None,
+        resume="allow",
+        allow_val_change=True,
+        config={
+            **CONFIG,
+            **metadata,
+            "schema": "exp9-random-projection-debug-v1",
+            "parameters": parameter_count(),
+            "world_size": 1,
+            "optimizer_global_batch": int(CONFIG["optimizer_local_batch"]),
+            "optimizer_global_token_batch": int(CONFIG["optimizer_local_batch"])
+            * CONFIG["context_length"],
+            "physical_global_batch": int(CONFIG["physical_local_batch"]),
+            "physical_global_token_batch": int(CONFIG["physical_local_batch"])
+            * CONFIG["context_length"],
+        },
+    )
+    if not run.url:
+        raise RuntimeError("W&B did not return a direct run URL")
+    print(f"WANDB_URL={run.url}", flush=True)
+    wait_for_debug_barrier(run.url)
+    return run
+
+
+@torch.no_grad()
+def load_debug_student(
+    teacher,
+    device: torch.device,
+) -> tuple[Student, torch.Tensor | None, dict]:
+    torch.manual_seed(CONFIG["seed"])
+    student = Student().to(device)
+    projection = None
+    metadata: dict[str, object] = {"debug_initialization": CONFIG["debug_init"]}
+    if CONFIG["debug_init"] == "checkpoint":
+        source = Path(CONFIG["debug_source"] or CONFIG["resume"])
+        saved = torch.load(source, map_location="cpu", weights_only=False)
+        student.load_state_dict(clean_state_dict(saved["model"]))
+        student.canonicalize_factors_()
+        metadata.update(
+            {
+                "source_checkpoint": str(source),
+                "source_sha256": file_sha256(source),
+            }
+        )
+    elif CONFIG["debug_init"] == "projection":
+        teacher_width = teacher.get_input_embeddings().weight.shape[1]
+        projection = rademacher_projection(
+            teacher_width,
+            CONFIG["width"],
+            CONFIG["debug_projection_seed"],
+            device=device,
+        )
+        initialize_projected_vocabulary(student, teacher, projection)
+        student.canonicalize_factors_()
+        metadata.update(
+            {
+                "projection_seed": int(CONFIG["debug_projection_seed"]),
+                "projection_sha256": tensor_sha256(projection),
+                "projected_vocabulary_sha256": tensor_sha256(student.vocabulary),
+            }
+        )
+    elif CONFIG["debug_init"] == "model":
+        source = Path(CONFIG["debug_source"])
+        saved = torch.load(source, map_location="cpu", weights_only=False)
+        student.load_state_dict(clean_state_dict(saved["model"]))
+        student.canonicalize_factors_()
+        projection_seed = int(saved["metadata"]["projection_seed"])
+        projection = rademacher_projection(
+            teacher.get_input_embeddings().weight.shape[1],
+            CONFIG["width"],
+            projection_seed,
+            device=device,
+        )
+        metadata.update(saved["metadata"])
+        metadata.update(
+            {
+                "debug_initialization": "projected_hidden_warmstart",
+                "source_model": str(source),
+                "source_sha256": file_sha256(source),
+            }
+        )
+    else:
+        raise ValueError(f"unsupported debug initialization {CONFIG['debug_init']}")
+    return student, projection, metadata
+
+
+def build_debug_optimizer(student: Student) -> SplitOptimizer:
+    from bitsandbytes.optim import AdamW8bit
+
+    return SplitOptimizer(
+        BatchedMuon(
+            student.blocks.parameters(),
+            lr=CONFIG["lr"],
+            momentum=CONFIG["muon_momentum"],
+            ns_steps=CONFIG["muon_ns_steps"],
+        ),
+        AdamW8bit(
+            [student.vocabulary],
+            lr=CONFIG["vocabulary_lr"],
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=CONFIG["weight_decay"],
+        ),
+    )
+
+
+def save_debug_model(path: Path, student: Student, metadata: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    torch.save(
+        {
+            "schema": "exp9-debug-model-v1",
+            "model": student.state_dict(),
+            "metadata": metadata,
+        },
+        temporary,
+    )
+    os.replace(temporary, path)
+
+
+def debug_numerical_preflight(
+    student: Student,
+    teacher,
+    contexts: np.ndarray,
+    device: torch.device,
+) -> dict[str, float]:
+    token_ids = torch.as_tensor(
+        np.asarray(contexts[:16], dtype=np.int64), device=device
+    )
+    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+        probability, entropy = teacher_targets(teacher, token_ids)
+    optimizer = build_debug_optimizer(student)
+    optimizer.zero_grad(set_to_none=True)
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        eager_loss = student(token_ids, probability, entropy)
+    eager_loss.backward()
+    eager_gradient = torch.cat(
+        [
+            student.vocabulary.grad[:1024].detach().float().flatten(),
+            *[
+                parameter.grad.detach().float().flatten()
+                for parameter in student.blocks.parameters()
+            ],
+        ]
+    )
+    optimizer.zero_grad(set_to_none=True)
+    compiled = (
+        torch.compile(student, fullgraph=True, dynamic=False)
+        if CONFIG["compile"]
+        else student
+    )
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        compiled_loss = compiled(token_ids, probability, entropy)
+    compiled_loss.backward()
+    compiled_gradient = torch.cat(
+        [
+            student.vocabulary.grad[:1024].detach().float().flatten(),
+            *[
+                parameter.grad.detach().float().flatten()
+                for parameter in student.blocks.parameters()
+            ],
+        ]
+    )
+    grad_norm = torch.nn.utils.clip_grad_norm_(student.parameters(), 1.0)
+    optimizer.step()
+    student.canonicalize_factors_()
+    finite = optimizer_states_finite(optimizer) and all(
+        torch.isfinite(parameter).all() for parameter in student.parameters()
+    )
+    loss_error = abs(float(eager_loss) - float(compiled_loss))
+    gradient_cosine = _cosine(eager_gradient, compiled_gradient)
+    if loss_error > 2e-3 or gradient_cosine < 0.999 or not finite:
+        raise RuntimeError(
+            "compiled/eager preflight failed: "
+            f"loss_error={loss_error} gradient_cosine={gradient_cosine} finite={finite}"
+        )
+    return {
+        "preflight_eager_loss": float(eager_loss),
+        "preflight_compiled_loss": float(compiled_loss),
+        "preflight_loss_abs_error": loss_error,
+        "preflight_gradient_cosine": gradient_cosine,
+        "preflight_grad_norm": float(grad_norm),
+        "preflight_finite": float(finite),
+    }
+
+
+def debug_train(
+    student: Student,
+    teacher,
+    projection: torch.Tensor | None,
+    train_contexts: np.ndarray,
+    validation_contexts: np.ndarray,
+    validation_targets: np.ndarray,
+    device: torch.device,
+    run,
+    metadata: dict,
+) -> dict:
+    stage = CONFIG["debug_stage"]
+    hidden_stage = stage == "hidden"
+    if hidden_stage and projection is None:
+        raise RuntimeError("hidden warm-start requires a projection")
+    student.vocabulary.requires_grad_(not hidden_stage)
+    optimizer = build_debug_optimizer(student)
+    compiled = (
+        torch.compile(student, fullgraph=True, dynamic=False)
+        if CONFIG["compile"]
+        else student
+    )
+    physical = int(CONFIG["physical_local_batch"])
+    optimizer_batch = int(CONFIG["optimizer_local_batch"])
+    if physical % optimizer_batch:
+        raise RuntimeError("debug physical batch must divide by optimizer batch")
+    token_batch = optimizer_batch * CONFIG["context_length"]
+    if token_batch < 100_000:
+        raise RuntimeError("debug arm violates the 100k-token optimizer policy")
+
+    initial = evaluate_debug(
+        student,
+        teacher,
+        validation_contexts,
+        validation_targets,
+        device,
+    )
+    run.log({**initial, "debug_stage": stage, "stage_event": 0})
+    print(json.dumps({"initial_validation": initial}), flush=True)
+    fixed = stage in {"hidden", "fixed_kl"}
+    fixed_token_ids = None
+    fixed_probability = None
+    fixed_entropy = None
+    fixed_hidden = None
+    if fixed:
+        fixed_token_ids = torch.as_tensor(
+            np.asarray(train_contexts[:physical], dtype=np.int64), device=device
+        )
+        with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+            fixed_probability, fixed_entropy, fixed_hidden = teacher_targets_with_hidden(
+                teacher, fixed_token_ids, projection if hidden_stage else None
+            )
+
+    updates = 0
+    stage_tokens = 0
+    best_train_kl = math.inf
+    last_train_kl = math.inf
+    started = time.perf_counter()
+    last_time = started
+    last_tokens = 0
+    deep_every = int(CONFIG["debug_deep_every"])
+    next_eval = 67_108_864
+    stop_tokens = (
+        int(CONFIG["debug_replays"]) * physical * CONFIG["context_length"]
+        if fixed
+        else int(CONFIG["debug_tokens"])
+    )
+
+    while stage_tokens < stop_tokens:
+        if fixed:
+            token_ids = fixed_token_ids
+            probability = fixed_probability
+            entropy = fixed_entropy
+            projected_hidden = fixed_hidden
+        else:
+            start_context = stage_tokens // CONFIG["context_length"]
+            count = min(physical, len(train_contexts) - start_context)
+            if count <= 0:
+                break
+            token_ids = torch.as_tensor(
+                np.asarray(
+                    train_contexts[start_context : start_context + count],
+                    dtype=np.int64,
+                ),
+                device=device,
+            )
+            with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+                probability, entropy, _ = teacher_targets_with_hidden(
+                    teacher, token_ids
+                )
+            projected_hidden = None
+
+        for start in range(0, len(token_ids), optimizer_batch):
+            stop = min(start + optimizer_batch, len(token_ids))
+            if stop - start <= 0 or stage_tokens >= stop_tokens:
+                break
+            optimizer.zero_grad(set_to_none=True)
+            deep = updates == 0 or (updates + 1) % deep_every == 0
+            probe_count = min(int(CONFIG["debug_probe_examples"]), stop - start)
+            if deep:
+                with torch.no_grad():
+                    before_probe, probe_hidden, probe_logits = probe_diagnostics(
+                        student,
+                        token_ids[start : start + probe_count],
+                        probability[start : start + probe_count],
+                        entropy[start : start + probe_count],
+                    )
+                before = [
+                    parameter.detach().clone() for parameter in student.parameters()
+                ]
+            else:
+                before_probe = {}
+                probe_hidden = None
+                probe_logits = None
+                before = None
+
+            if hidden_stage:
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    actual_hidden = compiled.hidden(token_ids[start:stop])
+                    loss = (
+                        actual_hidden.float()
+                        - projected_hidden[start:stop].float()
+                    ).square().mean()
+                train_kl = float("nan")
+            else:
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    loss = compiled(
+                        token_ids[start:stop],
+                        probability[start:stop],
+                        entropy[start:stop],
+                    )
+                train_kl = float(loss.detach())
+                last_train_kl = train_kl
+                best_train_kl = min(best_train_kl, train_kl)
+            loss.backward()
+            gradient_metrics = gradient_diagnostics(student)
+            grad_norm = torch.nn.utils.clip_grad_norm_(student.parameters(), 1.0)
+            if not torch.isfinite(loss) or not torch.isfinite(grad_norm):
+                raise RuntimeError("non-finite debug loss or gradient")
+            optimizer.step()
+            if deep:
+                raw = [
+                    parameter.detach().clone() for parameter in student.parameters()
+                ]
+            else:
+                raw = None
+            student.canonicalize_factors_()
+            if not optimizer_states_finite(optimizer):
+                raise RuntimeError("non-finite debug optimizer state")
+
+            contexts_this_step = stop - start
+            tokens_this_step = contexts_this_step * CONFIG["context_length"]
+            stage_tokens += tokens_this_step
+            updates += 1
+            torch.cuda.synchronize()
+            now = time.perf_counter()
+            metrics = {
+                "debug_stage": stage,
+                "stage_event": updates,
+                "stage_tokens": stage_tokens,
+                "optimizer_updates": updates,
+                "train_loss": float(loss.detach()),
+                "train_kl": train_kl,
+                "best_train_kl": best_train_kl,
+                "grad_norm_pre_clip": float(grad_norm),
+                "gradient_clipped": float(grad_norm > 1.0),
+                "optimizer_states_finite": 1.0,
+                "muon_lr": float(CONFIG["lr"]),
+                "vocabulary_lr": float(CONFIG["vocabulary_lr"]),
+                "optimizer_global_batch": contexts_this_step,
+                "optimizer_global_token_batch": tokens_this_step,
+                "tokens_per_second": (stage_tokens - last_tokens)
+                / max(now - last_time, 1e-9),
+                "end_to_end_tokens_per_second": stage_tokens
+                / max(now - started, 1e-9),
+                "memory_allocated_gib": torch.cuda.memory_allocated() / 2**30,
+                "memory_reserved_gib": torch.cuda.memory_reserved() / 2**30,
+                "peak_allocated_gib": torch.cuda.max_memory_allocated() / 2**30,
+                "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30,
+                **gradient_metrics,
+            }
+            if deep:
+                metrics.update(
+                    update_diagnostics(student, before, prefix="deep_")
+                )
+                metrics.update(
+                    deep_optimizer_diagnostics(student, optimizer, before, raw)
+                )
+                metrics.update(scale_diagnostics(student))
+                metrics.update(
+                    activation_scale_diagnostics(
+                        student, token_ids[start : start + probe_count]
+                    )
+                )
+                after_probe, _, _ = probe_diagnostics(
+                    student,
+                    token_ids[start : start + probe_count],
+                    probability[start : start + probe_count],
+                    entropy[start : start + probe_count],
+                    previous_hidden=probe_hidden,
+                    previous_logits=probe_logits,
+                )
+                metrics.update(
+                    {f"before_{key}": value for key, value in before_probe.items()}
+                )
+                metrics.update(after_probe)
+                metrics["probe_kl_step_delta"] = (
+                    after_probe["probe_kl"] - before_probe["probe_kl"]
+                )
+            run.log(metrics)
+            print(json.dumps(metrics), flush=True)
+            last_time = now
+            last_tokens = stage_tokens
+
+            if not fixed and stage_tokens >= next_eval:
+                validation = evaluate_debug(
+                    student,
+                    teacher,
+                    validation_contexts,
+                    validation_targets,
+                    device,
+                )
+                run.log({**validation, "debug_stage": stage, "stage_tokens": stage_tokens})
+                print(json.dumps(validation), flush=True)
+                next_eval += 67_108_864
+
+    if hidden_stage:
+        final = evaluate_hidden_debug(
+            student, teacher, validation_contexts, projection, device
+        )
+    else:
+        final = evaluate_debug(
+            student,
+            teacher,
+            validation_contexts,
+            validation_targets,
+            device,
+        )
+    result = {
+        "schema": "exp9-random-projection-debug-result-v1",
+        "status": "complete",
+        "debug_stage": stage,
+        "debug_label": CONFIG["debug_label"],
+        "stage_tokens": stage_tokens,
+        "optimizer_updates": updates,
+        "best_train_kl": best_train_kl,
+        "last_train_kl": last_train_kl,
+        "elapsed_seconds": time.perf_counter() - started,
+        "optimizer_local_batch": optimizer_batch,
+        "optimizer_global_token_batch": token_batch,
+        "physical_local_batch": physical,
+        "wandb_url": run.url,
+        **metadata,
+        **final,
+    }
+    return result
+
+
+def debug_arm() -> None:
+    if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
+        raise RuntimeError("a debug arm requires exactly one visible CUDA GPU")
+    device = torch.device("cuda:0")
+    torch.cuda.set_device(device)
+    teacher = load_teacher(str(device))
+    student, projection, metadata = load_debug_student(teacher, device)
+    run = init_debug_wandb(metadata)
+    output = Path(CONFIG["output_dir"])
+    output.mkdir(parents=True, exist_ok=True)
+    if CONFIG["debug_stage"] == "preflight":
+        contexts, _, _ = load_split(CONFIG["data_root"], "train")
+        result = {
+            "schema": "exp9-random-projection-debug-result-v1",
+            "status": "complete",
+            "debug_stage": "preflight",
+            "debug_label": CONFIG["debug_label"],
+            "wandb_url": run.url,
+            **metadata,
+            **debug_numerical_preflight(student, teacher, contexts, device),
+        }
+    elif CONFIG["debug_stage"] == "oracle":
+        if projection is None:
+            raise RuntimeError("projection oracle requires projected initialization")
+        validation_contexts, _, _ = load_split(CONFIG["data_root"], "validation")
+        result = {
+            "schema": "exp9-random-projection-debug-result-v1",
+            "status": "complete",
+            "debug_stage": "oracle",
+            "debug_label": CONFIG["debug_label"],
+            "wandb_url": run.url,
+            **metadata,
+            **evaluate_projection_oracle(
+                teacher,
+                validation_contexts,
+                projection,
+                student.vocabulary,
+                device,
+            ),
+        }
+    else:
+        if CONFIG["debug_stage"] == "fresh_kl":
+            if not CONFIG["debug_context_cache"]:
+                raise RuntimeError("fresh debug stage requires a context cache")
+            train_contexts = np.load(
+                CONFIG["debug_context_cache"], mmap_mode="r"
+            )
+        else:
+            train_contexts, _, _ = load_split(CONFIG["data_root"], "train")
+        validation_contexts, validation_targets, _ = load_split(
+            CONFIG["data_root"], "validation"
+        )
+        result = debug_train(
+            student,
+            teacher,
+            projection,
+            train_contexts,
+            validation_contexts,
+            validation_targets,
+            device,
+            run,
+            metadata,
+        )
+        save_debug_model(output / "student.pt", student, metadata)
+    atomic_json(output / "result.json", result)
+    run.log(result)
+    run.finish()
+    print(json.dumps(result, indent=2), flush=True)
+
+
+def debug_prepare() -> None:
+    output = Path(
+        CONFIG["debug_context_cache"]
+        or Path(CONFIG["debug_root"]) / "fresh-contexts.npy"
+    )
+    count = int(CONFIG["debug_tokens"]) // CONFIG["context_length"]
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_suffix(".tmp.npy")
+    array = np.lib.format.open_memmap(
+        temporary,
+        mode="w+",
+        dtype=np.int32,
+        shape=(count, CONFIG["context_length"]),
+    )
+    stream = FineWebEduStream(0, 1, int(CONFIG["physical_local_batch"]))
+    written = 0
+    try:
+        while written < count:
+            contexts, _, _, _, _ = stream.next()
+            take = min(len(contexts), count - written)
+            array[written : written + take] = contexts[:take]
+            written += take
+            if written % (int(CONFIG["physical_local_batch"]) * 16) == 0:
+                print(json.dumps({"debug_contexts_written": written}), flush=True)
+    finally:
+        stream.close()
+    array.flush()
+    del array
+    os.replace(temporary, output)
+    atomic_json(
+        output.with_suffix(".json"),
+        {
+            "schema": "exp9-debug-context-cache-v1",
+            "contexts": count,
+            "input_tokens": count * CONFIG["context_length"],
+            "shape": [count, CONFIG["context_length"]],
+            "dtype": "int32",
+            "sha256": file_sha256(output),
+        },
+    )
+    print(json.dumps({"debug_context_cache": str(output), "contexts": count}), flush=True)
+
+
+def _debug_arm_arguments(
+    *,
+    stage: str,
+    label: str,
+    init: str,
+    source: Path,
+    output: Path,
+    wandb_id: str,
+    barrier: Path,
+    projection_seed: int,
+    optimizer_batch: int,
+    lr: float,
+    vocabulary_lr: float,
+    replays: int,
+    context_cache: Path,
+) -> list[str]:
+    return [
+        str(Path(__file__).resolve()),
+        "--mode=debug_arm",
+        f"--debug_stage={stage}",
+        f"--debug_label={label}",
+        f"--debug_init={init}",
+        f"--debug_source={source}",
+        f"--debug_projection_seed={projection_seed}",
+        f"--optimizer_local_batch={optimizer_batch}",
+        f"--physical_local_batch={CONFIG['physical_local_batch']}",
+        f"--lr={lr}",
+        f"--vocabulary_lr={vocabulary_lr}",
+        f"--debug_replays={replays}",
+        f"--debug_tokens={CONFIG['debug_tokens']}",
+        f"--debug_context_cache={context_cache}",
+        f"--debug_wandb_id={wandb_id}",
+        f"--debug_barrier={barrier}",
+        f"--debug_ready={output / 'ready.json'}",
+        f"--output_dir={output}",
+        f"--run_name={label}",
+        f"--debug_deep_every={CONFIG['debug_deep_every']}",
+    ]
+
+
+def _run_debug_phase(root: Path, phase: str, specs: list[dict]) -> list[dict]:
+    barrier = root / "barriers" / f"{phase}.go"
+    barrier.parent.mkdir(parents=True, exist_ok=True)
+    barrier.unlink(missing_ok=True)
+    processes = []
+    for gpu, spec in enumerate(specs):
+        output = root / phase / spec["label"]
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "ready.json").unlink(missing_ok=True)
+        log_path = root / "logs" / f"{phase}-{spec['label']}.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log = log_path.open("ab")
+        command = [
+            sys.executable,
+            *_debug_arm_arguments(
+                stage=spec["stage"],
+                label=spec["label"],
+                init=spec["init"],
+                source=Path(spec["source"]),
+                output=output,
+                wandb_id=spec["wandb_id"],
+                barrier=barrier,
+                projection_seed=int(spec.get("projection_seed", 0)),
+                optimizer_batch=int(spec.get("optimizer_batch", 24_576)),
+                lr=float(spec.get("lr", 0.002)),
+                vocabulary_lr=float(spec.get("vocabulary_lr", 0.0003)),
+                replays=int(spec.get("replays", 0)),
+                context_cache=Path(spec.get("context_cache", "")),
+            ),
+        ]
+        process = subprocess.Popen(
+            command,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            env={
+                **os.environ,
+                "CUDA_VISIBLE_DEVICES": str(gpu),
+                "PYTHONUNBUFFERED": "1",
+            },
+        )
+        processes.append((spec, output, log_path, log, process))
+
+    deadline = time.monotonic() + 900
+    while True:
+        failed = [
+            (spec["label"], process.returncode)
+            for spec, _, _, _, process in processes
+            if process.poll() is not None
+        ]
+        if failed:
+            for _, _, _, _, process in processes:
+                if process.poll() is None:
+                    process.terminate()
+            raise RuntimeError(f"debug phase {phase} failed before barrier: {failed}")
+        if all((output / "ready.json").is_file() for _, output, _, _, _ in processes):
+            break
+        if time.monotonic() >= deadline:
+            for _, _, _, _, process in processes:
+                process.terminate()
+            raise RuntimeError(f"debug phase {phase} timed out waiting for W&B")
+        time.sleep(1)
+    barrier.write_text("go\n")
+    atomic_json(
+        root / "coordinator-status.json",
+        {
+            "schema": "exp9-debug-coordinator-v1",
+            "status": "running",
+            "phase": phase,
+            "arms": [
+                {
+                    "gpu": gpu,
+                    "label": spec["label"],
+                    "pid": process.pid,
+                    "log": str(log_path),
+                    "ready": json.loads((output / "ready.json").read_text()),
+                }
+                for gpu, (spec, output, log_path, _, process) in enumerate(processes)
+            ],
+        },
+    )
+    failures = []
+    while any(process.poll() is None for _, _, _, _, process in processes):
+        for spec, _, _, _, process in processes:
+            if process.poll() not in (None, 0):
+                failures.append((spec["label"], process.returncode))
+        if failures:
+            for _, _, _, _, process in processes:
+                if process.poll() is None:
+                    process.terminate()
+            break
+        time.sleep(5)
+    for _, _, _, log, process in processes:
+        process.wait()
+        log.close()
+    if failures or any(process.returncode for _, _, _, _, process in processes):
+        raise RuntimeError(
+            f"debug phase {phase} failed: "
+            f"{[(spec['label'], process.returncode, str(log_path)) for spec, _, log_path, _, process in processes]}"
+        )
+    return [
+        json.loads((output / "result.json").read_text())
+        for _, output, _, _, _ in processes
+    ]
+
+
+def debug_coordinator() -> None:
+    if torch.cuda.device_count() != 8:
+        raise RuntimeError("debug coordinator requires exactly eight H100/H200 GPUs")
+    if not os.environ.get("WANDB_API_KEY"):
+        raise RuntimeError("WANDB_API_KEY is required before the paid debug run")
+    source = Path(CONFIG["debug_source"] or CONFIG["resume"])
+    if not source.is_file():
+        raise RuntimeError(f"production source checkpoint is missing: {source}")
+    root = Path(CONFIG["debug_root"])
+    root.mkdir(parents=True, exist_ok=True)
+    context_cache = Path(
+        CONFIG["debug_context_cache"] or root / "fresh-contexts.npy"
+    )
+    plan_path = root / "plan.json"
+    if plan_path.is_file():
+        plan = json.loads(plan_path.read_text())
+    else:
+        plan = {
+            "schema": "exp9-debug-plan-v1",
+            "source_checkpoint": str(source),
+            "source_sha256": file_sha256(source),
+            "wandb_ids": {
+                label: uuid.uuid4().hex[:8]
+                for label in (
+                    "projection-0",
+                    "projection-1",
+                    "projection-2",
+                    "projection-3",
+                    "control-0",
+                    "control-1",
+                    "control-2",
+                    "control-3",
+                )
+            },
+        }
+        atomic_json(plan_path, plan)
+    ids = plan["wandb_ids"]
+
+    prepare_log_path = root / "logs" / "prepare-contexts.log"
+    prepare_log_path.parent.mkdir(parents=True, exist_ok=True)
+    prepare_log = prepare_log_path.open("ab")
+    prepare = None
+    if not context_cache.is_file():
+        prepare = subprocess.Popen(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--mode=debug_prepare",
+                f"--debug_root={root}",
+                f"--debug_context_cache={context_cache}",
+                f"--debug_tokens={CONFIG['debug_tokens']}",
+                f"--physical_local_batch={CONFIG['physical_local_batch']}",
+            ],
+            stdout=prepare_log,
+            stderr=subprocess.STDOUT,
+            env={**os.environ, "CUDA_VISIBLE_DEVICES": ""},
+        )
+
+    oracle_specs = [
+        {
+            "label": f"projection-{seed}",
+            "stage": "oracle",
+            "init": "projection",
+            "source": source,
+            "projection_seed": seed,
+            "wandb_id": ids[f"projection-{seed}"],
+        }
+        for seed in range(4)
+    ] + [
+        {
+            "label": f"control-{index}",
+            "stage": "preflight",
+            "init": "checkpoint",
+            "source": source,
+            "wandb_id": ids[f"control-{index}"],
+        }
+        for index in range(4)
+    ]
+    oracle_results = _run_debug_phase(root, "oracle", oracle_specs)
+    oracle_projection = min(
+        (result for result in oracle_results if result["debug_stage"] == "oracle"),
+        key=lambda result: (result["projection_oracle_kl"], result["projection_seed"]),
+    )
+    projection_seed = int(oracle_projection["projection_seed"])
+
+    hidden_grid = (
+        (24_576, 0.002),
+        (8_192, 0.002),
+        (24_576, 0.004),
+        (8_192, 0.004),
+    )
+    fixed_grid = (
+        (24_576, 0.002, 0.0003),
+        (8_192, 0.002, 0.0003),
+        (24_576, 0.004, 0.0003),
+        (24_576, 0.002, 0.001),
+    )
+    warmup_specs = []
+    for index, (optimizer_batch, lr) in enumerate(hidden_grid):
+        warmup_specs.append(
+            {
+                "label": f"projection-{index}",
+                "stage": "hidden",
+                "init": "projection",
+                "source": source,
+                "projection_seed": projection_seed,
+                "optimizer_batch": optimizer_batch,
+                "lr": lr,
+                "vocabulary_lr": 0.0003,
+                "replays": int(CONFIG["debug_warmup_replays"]),
+                "wandb_id": ids[f"projection-{index}"],
+            }
+        )
+    for index, (optimizer_batch, lr, vocabulary_lr) in enumerate(fixed_grid):
+        warmup_specs.append(
+            {
+                "label": f"control-{index}",
+                "stage": "fixed_kl",
+                "init": "checkpoint",
+                "source": source,
+                "optimizer_batch": optimizer_batch,
+                "lr": lr,
+                "vocabulary_lr": vocabulary_lr,
+                "replays": int(CONFIG["debug_warmup_replays"]),
+                "wandb_id": ids[f"control-{index}"],
+            }
+        )
+    warmup_results = _run_debug_phase(root, "warmup", warmup_specs)
+    hidden_winner = min(
+        (result for result in warmup_results if result["debug_stage"] == "hidden"),
+        key=lambda result: (
+            result["hidden_validation_mse"],
+            -result["hidden_validation_cosine"],
+            result["optimizer_local_batch"],
+        ),
+    )
+    hidden_model = (
+        root / "warmup" / hidden_winner["debug_label"] / "student.pt"
+    )
+
+    fixed_specs = []
+    for initialization in ("projection", "control"):
+        for index, (optimizer_batch, lr, vocabulary_lr) in enumerate(fixed_grid):
+            label = f"{initialization}-{index}"
+            fixed_specs.append(
+                {
+                    "label": label,
+                    "stage": "fixed_kl",
+                    "init": "model" if initialization == "projection" else "checkpoint",
+                    "source": hidden_model if initialization == "projection" else source,
+                    "optimizer_batch": optimizer_batch,
+                    "lr": lr,
+                    "vocabulary_lr": vocabulary_lr,
+                    "replays": int(CONFIG["debug_replays"]),
+                    "wandb_id": ids[label],
+                }
+            )
+    fixed_results = _run_debug_phase(root, "fixed", fixed_specs)
+    projection_fixed = [
+        result
+        for result in fixed_results
+        if result["debug_label"].startswith("projection-")
+    ]
+    passed = min(result["best_train_kl"] for result in projection_fixed) < 1.0
+    summary = {
+        "schema": "exp9-debug-summary-v1",
+        "status": "fixed_pass" if passed else "fixed_failed",
+        "source_checkpoint": str(source),
+        "source_sha256": file_sha256(source),
+        "projection_oracle": oracle_projection,
+        "hidden_winner": hidden_winner,
+        "fixed_results": fixed_results,
+        "context_cache": str(context_cache),
+    }
+    atomic_json(root / "summary.json", summary)
+    if not passed:
+        if prepare is not None and prepare.poll() is None:
+            prepare.terminate()
+            prepare.wait()
+        prepare_log.close()
+        print(json.dumps(summary, indent=2), flush=True)
+        return
+
+    if prepare is not None:
+        if prepare.wait() != 0:
+            prepare_log.close()
+            raise RuntimeError(f"debug context preparation failed: {prepare_log_path}")
+    prepare_log.close()
+    if not context_cache.is_file():
+        raise RuntimeError(f"debug context cache is missing: {context_cache}")
+
+    fresh_specs = []
+    for initialization in ("projection", "control"):
+        for index, (optimizer_batch, lr, vocabulary_lr) in enumerate(fixed_grid):
+            label = f"{initialization}-{index}"
+            fresh_specs.append(
+                {
+                    "label": label,
+                    "stage": "fresh_kl",
+                    "init": "model" if initialization == "projection" else "checkpoint",
+                    "source": hidden_model if initialization == "projection" else source,
+                    "optimizer_batch": optimizer_batch,
+                    "lr": lr,
+                    "vocabulary_lr": vocabulary_lr,
+                    "replays": 0,
+                    "wandb_id": ids[label],
+                    "context_cache": context_cache,
+                }
+            )
+    fresh_results = _run_debug_phase(root, "fresh", fresh_specs)
+    summary.update({"status": "complete", "fresh_results": fresh_results})
+    atomic_json(root / "summary.json", summary)
+    atomic_json(
+        root / "coordinator-status.json",
+        {
+            "schema": "exp9-debug-coordinator-v1",
+            "status": "complete",
+            "summary": str(root / "summary.json"),
+            "wandb_urls": sorted(
+                {result["wandb_url"] for result in fresh_results}
+            ),
+        },
+    )
+    print(json.dumps(summary, indent=2), flush=True)
+
+
 if __name__ == "__main__":
     overrides()
     if CONFIG["mode"] == "self_test":
@@ -1898,5 +3226,11 @@ if __name__ == "__main__":
         long_supervisor()
     elif CONFIG["mode"] == "stream_benchmark":
         stream_benchmark()
+    elif CONFIG["mode"] == "debug_prepare":
+        debug_prepare()
+    elif CONFIG["mode"] == "debug_arm":
+        debug_arm()
+    elif CONFIG["mode"] == "debug_coordinator":
+        debug_coordinator()
     else:
         train()
