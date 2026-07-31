@@ -202,4 +202,23 @@ Early held-out validation is monotonic:
 `1.334100747 → 1.327680901 → 1.324427568`. At the second validation,
 the durable checkpoint contained `84,022,394,880` long-run input tokens,
 all eight stream states, optimizer moments, and W&B ID `a30921cf`.
-The run remains active toward the one-trillion-token budget and `<1` KL target.
+
+### 2026-07-31 final state and teardown
+
+The continuation was gracefully stopped after reaching `91,191,508,992`
+long-run input tokens and optimizer update `39,784`. Its best held-out
+validation KL was `1.318127608`; progress had slowed to a plateau near `1.319`,
+well above the `<1` target. The final restart had no reported training error.
+The durable checkpoint is
+`/cache/exp9-standard-muon/long-1t-lr-1e-4-v2/checkpoint.pt`, SHA-256
+`9367efa39b51c238f381b0aa38107921ac5f9069a82cdae2800e817ec6fcf7e7`,
+with all eight stream states, optimizer state, and W&B ID `a30921cf`.
+
+After the checkpoint completed, both live Northflank services were paused:
+the eight-H100 service
+`fda-race-asia-northeast/gpu-h100-8` and temporary CPU cache-export service
+`fda-test/fda-cache-export`. An account-wide post-stop audit checked all 15
+projects, 14 services, six jobs, and all add-ons. It found zero live service
+containers, zero services with nonzero desired instances, zero active job
+runs, no add-ons, and no query errors. Service definitions and storage were
+retained for a future restart.
