@@ -2182,7 +2182,7 @@ def long_supervisor() -> None:
         )
         if not resume.is_file():
             raise RuntimeError(f"long-run resume checkpoint is missing: {resume}")
-        reset_optimizer = False
+        reset_optimizer = bool(CONFIG["reset_optimizer"])
         arguments = [
             "--mode=long",
             f"--optimizer_local_batch={optimizer_local}",
@@ -2198,7 +2198,7 @@ def long_supervisor() -> None:
             f"--run_name=exp9-standard-muon-1t-lr-{str(long_lr).replace('.', 'p')}",
             f"--wandb_id={wandb_id}",
             f"--reset_optimizer={str(reset_optimizer).lower()}",
-            "--reset_stream=true",
+            f"--reset_stream={str(bool(CONFIG['reset_stream'])).lower()}",
         ]
         print(json.dumps({"long_launch": arguments, "screen_winner": winner}), flush=True)
         completed = subprocess.run(base + arguments, check=False)
@@ -2801,6 +2801,9 @@ def debug_train(
             validation_contexts,
             validation_targets,
             device,
+        )
+        best_validation_kl = min(
+            best_validation_kl, float(final["validation_kl"])
         )
     result = {
         "schema": "exp9-random-projection-debug-result-v1",

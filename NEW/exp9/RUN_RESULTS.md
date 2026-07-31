@@ -131,3 +131,50 @@ Persistent W&B arms:
 [C2](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/e99a6d3a),
 and
 [C3](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/b33b0f58).
+
+## 2026-07-31 fresh validation sweep
+
+Eight one-GPU arms resumed the immutable `83.7B`-token checkpoint on distinct
+post-checkpoint FineWeb-Edu stream shards. Each arm consumed `176,160,768`
+fresh input tokens in 448 updates with `24,576` contexts =
+`393,216` input tokens per optimizer update. Initial held-out KL was
+`1.334100747`.
+
+The first launch exposed and canonically fixed a fresh-stream lifetime bug:
+Python retained the previous `49,152 × 248,320` FP32 teacher-probability
+tensor while allocating the next one. Explicitly releasing each completed
+teacher batch before refill prevents the transient two-target OOM. No
+optimizer state from that failed launch was reused.
+
+| Arm | Muon LR | Vocabulary LR | Final validation KL |
+|---|---:|---:|---:|
+| fresh-0 | 1e-4 | 3e-5 | **1.323781** |
+| fresh-1 | 2e-4 | 3e-5 | 1.324475 |
+| fresh-2 | 4e-4 | 3e-5 | 1.328334 |
+| fresh-3 | 8e-4 | 3e-5 | 1.336523 |
+| fresh-4 | 2e-4 | 1e-4 | 1.325658 |
+| fresh-5 | 4e-4 | 1e-4 | 1.329143 |
+| fresh-6 (body only) | 2e-4 | 0 | 1.326274 |
+| fresh-7 (vocabulary only) | 0 | 3e-4 | 1.330887 |
+
+The winning joint low-rate update improved held-out KL by `0.010320`.
+Body-only and vocabulary-only controls both underperformed it, while the
+largest Muon rate regressed. LR tuning therefore recovers some progress but
+does not explain the full `~1.33` plateau.
+
+Every arm peaked at `75.42/75.82 GiB` allocated/reserved, approximately
+95% of each H100. Stable compiled intervals reached approximately
+`2.5–2.83M` input tokens/second per arm; one-second utilization samples were
+usually `99–100%` during compute and dropped asynchronously during teacher
+refill and diagnostics.
+
+W&B:
+[fresh-0](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/37101c13),
+[fresh-1](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/d8ca665d),
+[fresh-2](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/aefac8ba),
+[fresh-3](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/ec565f8d),
+[fresh-4](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/8142b621),
+[fresh-5](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/97c2a661),
+[fresh-6](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/b79c5ea8),
+and
+[fresh-7](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/8bf3e57d).
