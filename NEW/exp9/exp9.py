@@ -2892,9 +2892,8 @@ def debug_prepare() -> None:
         dtype=np.int32,
         shape=(count, CONFIG["context_length"]),
     )
-    stream_rank = 0
     stream_world = 1
-    resume_state = None
+    resume_states = [None]
     source_sha256 = None
     if CONFIG["debug_source"]:
         source = Path(CONFIG["debug_source"])
@@ -2905,26 +2904,35 @@ def debug_prepare() -> None:
         if not stream_states:
             raise RuntimeError("stream source checkpoint has no saved stream states")
         stream_world = len(stream_states)
-        resume_state = stream_states[stream_rank]
+        resume_states = stream_states
         source_sha256 = file_sha256(source)
-    stream = FineWebEduStream(
-        stream_rank,
-        stream_world,
-        int(CONFIG["physical_local_batch"]),
-        resume_state,
-    )
+    if int(CONFIG["physical_local_batch"]) % stream_world:
+        raise RuntimeError("physical batch must divide the saved stream count")
+    stream_batch = int(CONFIG["physical_local_batch"]) // stream_world
+    # Each producer owns one saved dataset shard and tokenizes asynchronously.
+    # Consuming them round-robin uses the node's CPUs and preserves all eight
+    # post-checkpoint stream positions without making GPU training wait on text.
+    streams = [
+        FineWebEduStream(rank, stream_world, stream_batch, resume_states[rank])
+        for rank in range(stream_world)
+    ]
     written = 0
-    final_stream_state = None
+    final_stream_states = [None] * stream_world
     try:
         while written < count:
-            contexts, final_stream_state, _, _, _ = stream.next()
-            take = min(len(contexts), count - written)
-            array[written : written + take] = contexts[:take]
-            written += take
-            if written % (int(CONFIG["physical_local_batch"]) * 16) == 0:
-                print(json.dumps({"debug_contexts_written": written}), flush=True)
+            for rank, stream in enumerate(streams):
+                contexts, state, _, _, _ = stream.next()
+                final_stream_states[rank] = state
+                take = min(len(contexts), count - written)
+                array[written : written + take] = contexts[:take]
+                written += take
+                if written % (int(CONFIG["physical_local_batch"]) * 16) == 0:
+                    print(json.dumps({"debug_contexts_written": written}), flush=True)
+                if written >= count:
+                    break
     finally:
-        stream.close()
+        for stream in streams:
+            stream.close()
     array.flush()
     del array
     os.replace(temporary, output)
@@ -2939,16 +2947,19 @@ def debug_prepare() -> None:
             "sha256": file_sha256(output),
             "source_checkpoint": CONFIG["debug_source"] or None,
             "source_sha256": source_sha256,
-            "stream_rank": stream_rank,
             "stream_world": stream_world,
-            "final_stream_position": (
-                {
-                    "epoch": int(final_stream_state["epoch"]),
-                    "batch_ordinal": int(final_stream_state["batch_ordinal"]),
-                }
-                if final_stream_state
-                else None
-            ),
+            "final_stream_positions": [
+                (
+                    {
+                        "rank": rank,
+                        "epoch": int(state["epoch"]),
+                        "batch_ordinal": int(state["batch_ordinal"]),
+                    }
+                    if state
+                    else None
+                )
+                for rank, state in enumerate(final_stream_states)
+            ],
         },
     )
     print(json.dumps({"debug_context_cache": str(output), "contexts": count}), flush=True)
