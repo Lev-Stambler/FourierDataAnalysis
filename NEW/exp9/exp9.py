@@ -97,6 +97,7 @@ CONFIG = {
     "debug_source": "",
     "debug_root": "/cache/exp9-random-projection-debug-v1",
     "debug_context_cache": "",
+    "debug_stream_rank": 0,
     "debug_tokens": 536_870_912,
     "debug_replays": 128,
     "debug_warmup_replays": 32,
@@ -2491,12 +2492,13 @@ def debug_train(
     student: Student,
     teacher,
     projection: torch.Tensor | None,
-    train_contexts: np.ndarray,
+    train_contexts: np.ndarray | None,
     validation_contexts: np.ndarray,
     validation_targets: np.ndarray,
     device: torch.device,
     run,
     metadata: dict,
+    train_stream: FineWebEduStream | None = None,
 ) -> dict:
     stage = CONFIG["debug_stage"]
     hidden_stage = stage == "hidden"
@@ -2580,17 +2582,30 @@ def debug_train(
             entropy = fixed_entropy
             projected_hidden = fixed_hidden
         else:
-            start_context = stage_tokens // CONFIG["context_length"]
-            count = min(physical, len(train_contexts) - start_context)
-            if count <= 0:
-                break
-            token_ids = torch.as_tensor(
-                np.asarray(
-                    train_contexts[start_context : start_context + count],
-                    dtype=np.int64,
-                ),
-                device=device,
-            )
+            if train_stream is not None:
+                streamed, _, _, _, _ = train_stream.next()
+                count = min(
+                    len(streamed),
+                    math.ceil((stop_tokens - stage_tokens) / CONFIG["context_length"]),
+                )
+                token_ids = torch.as_tensor(
+                    np.asarray(streamed[:count], dtype=np.int64),
+                    device=device,
+                )
+            else:
+                if train_contexts is None:
+                    raise RuntimeError("fresh training has no context source")
+                start_context = stage_tokens // CONFIG["context_length"]
+                count = min(physical, len(train_contexts) - start_context)
+                if count <= 0:
+                    break
+                token_ids = torch.as_tensor(
+                    np.asarray(
+                        train_contexts[start_context : start_context + count],
+                        dtype=np.int64,
+                    ),
+                    device=device,
+                )
             with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
                 probability, entropy, _ = teacher_targets_with_hidden(
                     teacher, token_ids
@@ -2849,28 +2864,49 @@ def debug_arm() -> None:
             ),
         }
     else:
+        train_stream = None
         if CONFIG["debug_stage"] == "fresh_kl":
-            if not CONFIG["debug_context_cache"]:
-                raise RuntimeError("fresh debug stage requires a context cache")
-            train_contexts = np.load(
-                CONFIG["debug_context_cache"], mmap_mode="r"
-            )
+            if CONFIG["debug_context_cache"]:
+                train_contexts = np.load(
+                    CONFIG["debug_context_cache"], mmap_mode="r"
+                )
+            else:
+                source = Path(CONFIG["debug_source"] or CONFIG["resume"])
+                saved = torch.load(source, map_location="cpu", weights_only=False)
+                stream_states = saved.get("stream_states")
+                stream_rank = int(CONFIG["debug_stream_rank"])
+                if not stream_states or not 0 <= stream_rank < len(stream_states):
+                    raise RuntimeError(
+                        f"checkpoint has no saved stream rank {stream_rank}"
+                    )
+                train_contexts = None
+                train_stream = FineWebEduStream(
+                    stream_rank,
+                    len(stream_states),
+                    int(CONFIG["physical_local_batch"]),
+                    stream_states[stream_rank],
+                )
         else:
             train_contexts, _, _ = load_split(CONFIG["data_root"], "train")
         validation_contexts, validation_targets, _ = load_split(
             CONFIG["data_root"], "validation"
         )
-        result = debug_train(
-            student,
-            teacher,
-            projection,
-            train_contexts,
-            validation_contexts,
-            validation_targets,
-            device,
-            run,
-            metadata,
-        )
+        try:
+            result = debug_train(
+                student,
+                teacher,
+                projection,
+                train_contexts,
+                validation_contexts,
+                validation_targets,
+                device,
+                run,
+                metadata,
+                train_stream,
+            )
+        finally:
+            if train_stream is not None:
+                train_stream.close()
         save_debug_model(output / "student.pt", student, metadata)
     atomic_json(output / "result.json", result)
     run.log(result)
@@ -2979,7 +3015,8 @@ def _debug_arm_arguments(
     lr: float,
     vocabulary_lr: float,
     replays: int,
-    context_cache: Path,
+    context_cache: str | Path,
+    stream_rank: int,
 ) -> list[str]:
     return [
         str(Path(__file__).resolve()),
@@ -2996,6 +3033,7 @@ def _debug_arm_arguments(
         f"--debug_replays={replays}",
         f"--debug_tokens={CONFIG['debug_tokens']}",
         f"--debug_context_cache={context_cache}",
+        f"--debug_stream_rank={stream_rank}",
         f"--debug_wandb_id={wandb_id}",
         f"--debug_barrier={barrier}",
         f"--debug_ready={output / 'ready.json'}",
@@ -3035,7 +3073,8 @@ def _run_debug_phase(root: Path, phase: str, specs: list[dict]) -> list[dict]:
                 lr=float(spec.get("lr", 0.002)),
                 vocabulary_lr=float(spec.get("vocabulary_lr", 0.0003)),
                 replays=int(spec.get("replays", 0)),
-                context_cache=Path(spec.get("context_cache", "")),
+                context_cache=spec.get("context_cache", ""),
+                stream_rank=int(spec.get("stream_rank", gpu)),
             ),
         ]
         process = subprocess.Popen(
@@ -3363,19 +3402,27 @@ def debug_fresh_coordinator() -> None:
     if not os.environ.get("WANDB_API_KEY"):
         raise RuntimeError("WANDB_API_KEY is required before the paid debug run")
     source = Path(CONFIG["debug_source"] or CONFIG["resume"])
-    context_cache = Path(CONFIG["debug_context_cache"])
+    context_cache = (
+        Path(CONFIG["debug_context_cache"]) if CONFIG["debug_context_cache"] else None
+    )
     if not source.is_file():
         raise RuntimeError(f"source checkpoint is missing: {source}")
-    if not context_cache.is_file():
-        raise RuntimeError(f"fresh context cache is missing: {context_cache}")
-    contexts = np.load(context_cache, mmap_mode="r")
-    required = math.ceil(int(CONFIG["debug_tokens"]) / CONFIG["context_length"])
-    if len(contexts) < required:
-        raise RuntimeError(f"context cache has {len(contexts)} rows; need {required}")
-    # A terminated open_memmap retains its full declared shape. Reject an
-    # unwritten tail instead of silently training on all-padding contexts.
-    if not np.asarray(contexts[required - 1]).any():
-        raise RuntimeError(f"context cache row {required - 1} is unwritten")
+    if context_cache is not None:
+        if not context_cache.is_file():
+            raise RuntimeError(f"fresh context cache is missing: {context_cache}")
+        contexts = np.load(context_cache, mmap_mode="r")
+        required = math.ceil(int(CONFIG["debug_tokens"]) / CONFIG["context_length"])
+        if len(contexts) < required:
+            raise RuntimeError(f"context cache has {len(contexts)} rows; need {required}")
+        # A terminated open_memmap retains its full declared shape. Reject an
+        # unwritten tail instead of silently training on all-padding contexts.
+        if not np.asarray(contexts[required - 1]).any():
+            raise RuntimeError(f"context cache row {required - 1} is unwritten")
+    else:
+        saved = torch.load(source, map_location="cpu", weights_only=False)
+        stream_states = saved.get("stream_states")
+        if not stream_states or len(stream_states) != 8:
+            raise RuntimeError("live sweep requires eight saved stream states")
 
     root = Path(CONFIG["debug_root"])
     root.mkdir(parents=True, exist_ok=True)
@@ -3399,7 +3446,7 @@ def debug_fresh_coordinator() -> None:
             "schema": "exp9-fresh-validation-sweep-v1",
             "source_checkpoint": str(source),
             "source_sha256": file_sha256(source),
-            "context_cache": str(context_cache),
+            "context_source": str(context_cache) if context_cache else "live_checkpoint",
             "fresh_input_tokens_per_arm": int(CONFIG["debug_tokens"]),
             "grid": [
                 {
@@ -3431,7 +3478,8 @@ def debug_fresh_coordinator() -> None:
                 "vocabulary_lr": item["vocabulary_lr"],
                 "replays": 0,
                 "wandb_id": plan["wandb_ids"][item["label"]],
-                "context_cache": context_cache,
+                "context_cache": context_cache or "",
+                "stream_rank": int(item["label"].removeprefix("fresh-")),
             }
         )
     results = _run_debug_phase(root, "fresh", specs)
