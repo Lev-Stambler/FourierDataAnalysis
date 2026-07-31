@@ -2182,7 +2182,9 @@ def long_supervisor() -> None:
         )
         if not resume.is_file():
             raise RuntimeError(f"long-run resume checkpoint is missing: {resume}")
-        reset_optimizer = bool(CONFIG["reset_optimizer"])
+        # Reset once when promoting the source checkpoint into this run.
+        # Infrastructure restarts from our own checkpoint must retain moments.
+        reset_optimizer = bool(CONFIG["reset_optimizer"]) and not checkpoint.is_file()
         arguments = [
             "--mode=long",
             f"--optimizer_local_batch={optimizer_local}",
