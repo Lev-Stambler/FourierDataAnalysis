@@ -178,3 +178,28 @@ W&B:
 [fresh-6](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/b79c5ea8),
 and
 [fresh-7](https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/8bf3e57d).
+
+### Promoted eight-GPU continuation
+
+The winning rates were promoted from the immutable production checkpoint into
+a full eight-way DDP continuation:
+
+- W&B:
+  <https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/a30921cf>
+- output: `/cache/exp9-standard-muon/long-1t-lr-1e-4-v2`
+- Muon LR: `1e-4`, cosine floor `1e-5`
+- AdamW8bit vocabulary LR: `3e-5`, cosine floor `3e-6`
+- fresh optimizer on initial promotion; optimizer and all eight stream states
+  preserved on supervised restarts
+- local physical/optimizer batch: `49,152/24,576` contexts
+- global optimizer batch: `196,608` contexts =
+  `3,145,728` input tokens
+- per-GPU peak allocated/reserved: `75.49/75.78 GiB`
+- stable measured throughput: approximately `1.1–1.72M` global input
+  tokens/second
+
+Early held-out validation is monotonic:
+`1.334100747 → 1.327680901 → 1.324427568`. At the second validation,
+the durable checkpoint contained `84,022,394,880` long-run input tokens,
+all eight stream states, optimizer moments, and W&B ID `a30921cf`.
+The run remains active toward the one-trillion-token budget and `<1` KL target.
