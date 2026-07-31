@@ -2783,6 +2783,13 @@ def debug_train(
                     early_stop_reason = "validation_regression"
                     break
 
+        if not fixed:
+            # Release the completed teacher batch before constructing the next
+            # one. Python evaluates an assignment's right-hand side first, so
+            # merely reassigning `probability` would temporarily retain two
+            # 49,152 x 248,320 FP32 tensors and OOM an 80-GiB H100.
+            del token_ids, probability, entropy, projected_hidden
+
     if hidden_stage:
         final = evaluate_hidden_debug(
             student, teacher, validation_contexts, projection, device
