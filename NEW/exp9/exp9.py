@@ -28,7 +28,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 CONFIG = {
     # self_test | study | benchmark | train | long | long_supervisor |
-    # debug_prepare | debug_arm | debug_coordinator
+    # debug_prepare | debug_arm | debug_coordinator | debug_fresh_coordinator
     "mode": "train",
     "seed": 0,
     "context_length": 16,
@@ -103,6 +103,9 @@ CONFIG = {
     "debug_projection_seed": 0,
     "debug_probe_examples": 64,
     "debug_deep_every": 16,
+    "debug_eval_tokens": 67_108_864,
+    "debug_regression_delta": 0.02,
+    "debug_regression_patience": 2,
     "debug_wandb_id": "",
     "debug_barrier": "",
     "debug_ready": "",
@@ -2526,7 +2529,14 @@ def debug_train(
         validation_targets,
         device,
     )
-    run.log({**initial, "debug_stage": stage, "stage_event": 0})
+    run.log(
+        {
+            **initial,
+            "debug_stage": stage,
+            "stage_event": 0,
+            "validation_event": 0,
+        }
+    )
     print(json.dumps({"initial_validation": initial}), flush=True)
     fixed = stage in {"hidden", "fixed_kl"}
     fixed_token_ids = None
@@ -2546,18 +2556,24 @@ def debug_train(
     stage_tokens = 0
     best_train_kl = math.inf
     last_train_kl = math.inf
+    initial_train_kl = None
+    initial_validation_kl = float(initial["validation_kl"])
+    best_validation_kl = initial_validation_kl
+    validation_event = 0
+    regression_evals = 0
+    early_stop_reason = None
     started = time.perf_counter()
     last_time = started
     last_tokens = 0
     deep_every = int(CONFIG["debug_deep_every"])
-    next_eval = 67_108_864
+    next_eval = int(CONFIG["debug_eval_tokens"])
     stop_tokens = (
         int(CONFIG["debug_replays"]) * physical * CONFIG["context_length"]
         if fixed
         else int(CONFIG["debug_tokens"])
     )
 
-    while stage_tokens < stop_tokens:
+    while stage_tokens < stop_tokens and early_stop_reason is None:
         if fixed:
             token_ids = fixed_token_ids
             probability = fixed_probability
@@ -2621,6 +2637,11 @@ def debug_train(
                         entropy[start:stop],
                     )
                 train_kl = float(loss.detach())
+                if initial_train_kl is None:
+                    # The first loss is measured before the first optimizer
+                    # update. Log it explicitly instead of leaving an
+                    # ambiguous NaN at W&B event zero.
+                    initial_train_kl = train_kl
                 last_train_kl = train_kl
                 best_train_kl = min(best_train_kl, train_kl)
             loss.backward()
@@ -2651,8 +2672,6 @@ def debug_train(
                 "stage_tokens": stage_tokens,
                 "optimizer_updates": updates,
                 "train_loss": float(loss.detach()),
-                "train_kl": train_kl,
-                "best_train_kl": best_train_kl,
                 "grad_norm_pre_clip": float(grad_norm),
                 "gradient_clipped": float(grad_norm > 1.0),
                 "optimizer_states_finite": 1.0,
@@ -2670,6 +2689,16 @@ def debug_train(
                 "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30,
                 **gradient_metrics,
             }
+            if hidden_stage:
+                metrics["train_hidden_mse"] = float(loss.detach())
+            else:
+                metrics.update(
+                    {
+                        "train_kl": train_kl,
+                        "initial_train_kl": initial_train_kl,
+                        "best_train_kl": best_train_kl,
+                    }
+                )
             if deep:
                 metrics.update(
                     update_diagnostics(student, before, prefix="deep_")
@@ -2711,9 +2740,33 @@ def debug_train(
                     validation_targets,
                     device,
                 )
-                run.log({**validation, "debug_stage": stage, "stage_tokens": stage_tokens})
+                validation_event += 1
+                best_validation_kl = min(
+                    best_validation_kl, float(validation["validation_kl"])
+                )
+                if (
+                    float(validation["validation_kl"])
+                    > initial_validation_kl + float(CONFIG["debug_regression_delta"])
+                ):
+                    regression_evals += 1
+                else:
+                    regression_evals = 0
+                run.log(
+                    {
+                        **validation,
+                        "debug_stage": stage,
+                        "stage_tokens": stage_tokens,
+                        "validation_event": validation_event,
+                        "initial_validation_kl": initial_validation_kl,
+                        "best_validation_kl": best_validation_kl,
+                        "regression_evals": regression_evals,
+                    }
+                )
                 print(json.dumps(validation), flush=True)
-                next_eval += 67_108_864
+                next_eval += int(CONFIG["debug_eval_tokens"])
+                if regression_evals >= int(CONFIG["debug_regression_patience"]):
+                    early_stop_reason = "validation_regression"
+                    break
 
     if hidden_stage:
         final = evaluate_hidden_debug(
@@ -2736,6 +2789,10 @@ def debug_train(
         "optimizer_updates": updates,
         "best_train_kl": None if hidden_stage else best_train_kl,
         "last_train_kl": None if hidden_stage else last_train_kl,
+        "initial_train_kl": None if hidden_stage else initial_train_kl,
+        "initial_validation_kl": initial_validation_kl,
+        "best_validation_kl": best_validation_kl,
+        "early_stop_reason": early_stop_reason,
         "elapsed_seconds": time.perf_counter() - started,
         "muon_lr": float(CONFIG["lr"]),
         "vocabulary_lr": float(CONFIG["vocabulary_lr"]),
@@ -2835,11 +2892,32 @@ def debug_prepare() -> None:
         dtype=np.int32,
         shape=(count, CONFIG["context_length"]),
     )
-    stream = FineWebEduStream(0, 1, int(CONFIG["physical_local_batch"]))
+    stream_rank = 0
+    stream_world = 1
+    resume_state = None
+    source_sha256 = None
+    if CONFIG["debug_source"]:
+        source = Path(CONFIG["debug_source"])
+        if not source.is_file():
+            raise RuntimeError(f"stream source checkpoint is missing: {source}")
+        saved = torch.load(source, map_location="cpu", weights_only=False)
+        stream_states = saved.get("stream_states")
+        if not stream_states:
+            raise RuntimeError("stream source checkpoint has no saved stream states")
+        stream_world = len(stream_states)
+        resume_state = stream_states[stream_rank]
+        source_sha256 = file_sha256(source)
+    stream = FineWebEduStream(
+        stream_rank,
+        stream_world,
+        int(CONFIG["physical_local_batch"]),
+        resume_state,
+    )
     written = 0
+    final_stream_state = None
     try:
         while written < count:
-            contexts, _, _, _, _ = stream.next()
+            contexts, final_stream_state, _, _, _ = stream.next()
             take = min(len(contexts), count - written)
             array[written : written + take] = contexts[:take]
             written += take
@@ -2853,12 +2931,24 @@ def debug_prepare() -> None:
     atomic_json(
         output.with_suffix(".json"),
         {
-            "schema": "exp9-debug-context-cache-v1",
+            "schema": "exp9-fresh-context-cache-v1",
             "contexts": count,
             "input_tokens": count * CONFIG["context_length"],
             "shape": [count, CONFIG["context_length"]],
             "dtype": "int32",
             "sha256": file_sha256(output),
+            "source_checkpoint": CONFIG["debug_source"] or None,
+            "source_sha256": source_sha256,
+            "stream_rank": stream_rank,
+            "stream_world": stream_world,
+            "final_stream_position": (
+                {
+                    "epoch": int(final_stream_state["epoch"]),
+                    "batch_ordinal": int(final_stream_state["batch_ordinal"]),
+                }
+                if final_stream_state
+                else None
+            ),
         },
     )
     print(json.dumps({"debug_context_cache": str(output), "contexts": count}), flush=True)
@@ -2901,6 +2991,9 @@ def _debug_arm_arguments(
         f"--output_dir={output}",
         f"--run_name={label}",
         f"--debug_deep_every={CONFIG['debug_deep_every']}",
+        f"--debug_eval_tokens={CONFIG['debug_eval_tokens']}",
+        f"--debug_regression_delta={CONFIG['debug_regression_delta']}",
+        f"--debug_regression_patience={CONFIG['debug_regression_patience']}",
     ]
 
 
@@ -3252,6 +3345,105 @@ def debug_coordinator() -> None:
     print(json.dumps(summary, indent=2), flush=True)
 
 
+def debug_fresh_coordinator() -> None:
+    """Run eight controlled fresh-data continuations from one checkpoint."""
+    if torch.cuda.device_count() != 8:
+        raise RuntimeError("fresh coordinator requires exactly eight H100/H200 GPUs")
+    if not os.environ.get("WANDB_API_KEY"):
+        raise RuntimeError("WANDB_API_KEY is required before the paid debug run")
+    source = Path(CONFIG["debug_source"] or CONFIG["resume"])
+    context_cache = Path(CONFIG["debug_context_cache"])
+    if not source.is_file():
+        raise RuntimeError(f"source checkpoint is missing: {source}")
+    if not context_cache.is_file():
+        raise RuntimeError(f"fresh context cache is missing: {context_cache}")
+    contexts = np.load(context_cache, mmap_mode="r")
+    required = math.ceil(int(CONFIG["debug_tokens"]) / CONFIG["context_length"])
+    if len(contexts) < required:
+        raise RuntimeError(f"context cache has {len(contexts)} rows; need {required}")
+    # A terminated open_memmap retains its full declared shape. Reject an
+    # unwritten tail instead of silently training on all-padding contexts.
+    if not np.asarray(contexts[required - 1]).any():
+        raise RuntimeError(f"context cache row {required - 1} is unwritten")
+
+    root = Path(CONFIG["debug_root"])
+    root.mkdir(parents=True, exist_ok=True)
+    grid = [
+        # Muon body LR, AdamW8bit tied-vocabulary LR, optimizer contexts.
+        (1e-4, 3e-5, 24_576),
+        (2e-4, 3e-5, 24_576),
+        (4e-4, 3e-5, 24_576),
+        (8e-4, 3e-5, 24_576),
+        (2e-4, 1e-4, 24_576),
+        (4e-4, 1e-4, 24_576),
+        (2e-4, 0.0, 24_576),
+        (0.0, 3e-4, 24_576),
+    ]
+    plan_path = root / "plan.json"
+    if plan_path.is_file():
+        plan = json.loads(plan_path.read_text())
+    else:
+        labels = [f"fresh-{index}" for index in range(len(grid))]
+        plan = {
+            "schema": "exp9-fresh-validation-sweep-v1",
+            "source_checkpoint": str(source),
+            "source_sha256": file_sha256(source),
+            "context_cache": str(context_cache),
+            "fresh_input_tokens_per_arm": int(CONFIG["debug_tokens"]),
+            "grid": [
+                {
+                    "label": label,
+                    "muon_lr": muon_lr,
+                    "vocabulary_lr": vocabulary_lr,
+                    "optimizer_contexts": optimizer_batch,
+                    "optimizer_input_tokens": optimizer_batch
+                    * CONFIG["context_length"],
+                }
+                for label, (muon_lr, vocabulary_lr, optimizer_batch) in zip(
+                    labels, grid, strict=True
+                )
+            ],
+            "wandb_ids": {label: uuid.uuid4().hex[:8] for label in labels},
+        }
+        atomic_json(plan_path, plan)
+
+    specs = []
+    for item in plan["grid"]:
+        specs.append(
+            {
+                "label": item["label"],
+                "stage": "fresh_kl",
+                "init": "checkpoint",
+                "source": source,
+                "optimizer_batch": item["optimizer_contexts"],
+                "lr": item["muon_lr"],
+                "vocabulary_lr": item["vocabulary_lr"],
+                "replays": 0,
+                "wandb_id": plan["wandb_ids"][item["label"]],
+                "context_cache": context_cache,
+            }
+        )
+    results = _run_debug_phase(root, "fresh", specs)
+    summary = {
+        "schema": "exp9-fresh-validation-sweep-result-v1",
+        "status": "complete",
+        "source_checkpoint": str(source),
+        "results": results,
+        "winner": min(results, key=lambda result: result["best_validation_kl"]),
+    }
+    atomic_json(root / "summary.json", summary)
+    atomic_json(
+        root / "coordinator-status.json",
+        {
+            "schema": "exp9-fresh-validation-sweep-v1",
+            "status": "complete",
+            "summary": str(root / "summary.json"),
+            "wandb_urls": sorted(result["wandb_url"] for result in results),
+        },
+    )
+    print(json.dumps(summary, indent=2), flush=True)
+
+
 if __name__ == "__main__":
     overrides()
     if CONFIG["mode"] == "self_test":
@@ -3268,5 +3460,7 @@ if __name__ == "__main__":
         debug_arm()
     elif CONFIG["mode"] == "debug_coordinator":
         debug_coordinator()
+    elif CONFIG["mode"] == "debug_fresh_coordinator":
+        debug_fresh_coordinator()
     else:
         train()
