@@ -1,0 +1,121 @@
+{
+  "schema": "exp12-paid-result-summary-v1",
+  "date_utc": "2026-08-02",
+  "experiment_id": "exp12-deep-kronecker-gpu1-v1",
+  "status": "complete",
+  "verdict": "deep_kronecker_did_not_reach_final_promotion",
+  "wandb_url": "https://wandb.ai/lev-tear-tear-labs/exp12-deep-kronecker/runs/i7di0mjd",
+  "test_opened_after_selection": false,
+  "selection_target_tokens": 10000000,
+  "trained_tokens_across_unique_cells": 233046016,
+  "selections": {
+    "deep-kron-r8": {
+      "body_parameters": 4313408,
+      "total_parameters": 6410560,
+      "optimizer": "muon",
+      "body_lr": 0.03,
+      "auxiliary_lr": 0.003,
+      "schedule": "constant",
+      "recipe_slug": "29bda0b223295768",
+      "actual_tokens_per_seed": 10027008,
+      "validation_nll_by_seed": [
+        5.850284246009166,
+        5.84314926027313,
+        5.809621375376784
+      ],
+      "mean_validation_nll": 5.834351627219693,
+      "std_validation_nll": 0.01772786925575386
+    },
+    "transformer": {
+      "body_parameters": 4456512,
+      "total_parameters": 6553664,
+      "optimizer": "muon",
+      "body_lr": 0.1,
+      "auxiliary_lr": 0.002,
+      "schedule": "constant",
+      "recipe_slug": "9309c96ca35a1414",
+      "actual_tokens_per_seed": 10158080,
+      "validation_nll_by_seed": [
+        7.3935560091273995,
+        7.397865956223856,
+        7.386934776005782
+      ],
+      "mean_validation_nll": 7.392785580452347,
+      "std_validation_nll": 0.0044957643397246306
+    }
+  },
+  "promotion": {
+    "status": "fail",
+    "mean_deep_minus_transformer_validation_nll": -1.5584339532326528,
+    "paired_deep_minus_transformer_validation_nll": [
+      -1.5432717631182333,
+      -1.5547166959507264,
+      -1.5773134006289986
+    ],
+    "maximum_seed_delta": -1.5432717631182333,
+    "body_parameter_ratio": 0.9678887883618399,
+    "throughput_ratio": 0.3951748844508905,
+    "limits": {
+      "maximum_mean_validation_nll_delta": 0.05,
+      "maximum_single_seed_validation_nll_delta": 0.15,
+      "maximum_body_parameter_ratio": 1.0,
+      "minimum_throughput_ratio": 0.4
+    }
+  },
+  "selected_preflight": {
+    "deep-kron-r8/adamw": {
+      "physical_batch": 384,
+      "global_tokens_per_step": 98304,
+      "gradient_accumulation": 1,
+      "tokens_per_second": 390205.49489021965,
+      "peak_allocated_gib": 48.272465229034424,
+      "peak_reserved_gib": 48.322265625,
+      "sampled_gpu_utilization_percent": 76.0,
+      "power_draw_watts": 404.61
+    },
+    "deep-kron-r8/muon": {
+      "physical_batch": 384,
+      "global_tokens_per_step": 98304,
+      "gradient_accumulation": 1,
+      "tokens_per_second": 390655.35519620054,
+      "peak_allocated_gib": 48.260319232940674,
+      "peak_reserved_gib": 48.310546875,
+      "sampled_gpu_utilization_percent": 100.0,
+      "power_draw_watts": 396.68
+    },
+    "transformer/adamw": {
+      "physical_batch": 640,
+      "global_tokens_per_step": 163840,
+      "gradient_accumulation": 1,
+      "tokens_per_second": 978428.8818905298,
+      "peak_allocated_gib": 53.47022104263306,
+      "peak_reserved_gib": 58.48046875,
+      "sampled_gpu_utilization_percent": 97.0,
+      "power_draw_watts": 479.81
+    },
+    "transformer/muon": {
+      "physical_batch": 640,
+      "global_tokens_per_step": 163840,
+      "gradient_accumulation": 1,
+      "tokens_per_second": 988563.2173690137,
+      "peak_allocated_gib": 53.45361948013306,
+      "peak_reserved_gib": 58.462890625,
+      "sampled_gpu_utilization_percent": 82.0,
+      "power_draw_watts": 357.31
+    }
+  },
+  "audit": {
+    "gpu_seconds": 1336.1435795203743,
+    "actual_dollars": 1.0169537244127294,
+    "status": "complete"
+  },
+  "artifact_sha256": {
+    "launch_manifest": "9e286c41603db94318af4cf638cdcf85404e845c18c7d166823e13e44ec5cad2",
+    "audit_json": "1cd004279aec1347dfddc5a2f462676735365c14e8285e3690b14be48d4e3daf",
+    "ledger_jsonl": "14febcde54af42182bc0b39941950b9c8714997fb2c7283452fe5ba763aabfaf",
+    "plan_json": "07dd72acca7a1447d6a120b85518b4066d60961dace9883c6fdb3fba61afbd09",
+    "result_json": "c037154fb836e340a844c80cb476e503530274076fec47a8b20a1aa652b4722c",
+    "preflight_json": "7c32c8428f5c85566981a5e8209a8085fd57af190860e11e1cfee44e650b50cb"
+  },
+  "retrieved_artifact_root": "/tmp/exp12-deep-kronecker-gpu1-v1"
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "exp10-transformer-reference-v1",
+  "status": "active_reference",
+  "supersedes": "kronecker-general-causal-lm",
+  "decision": "stop_pursuing_kronecker",
+  "dataset": "wikitext-103",
+  "context_length": 256,
+  "vocabulary_size": 16384,
+  "architecture": {
+    "type": "transformer",
+    "parameters": 255000576,
+    "width": 1024,
+    "depth": 20,
+    "heads": 16,
+    "mlp_width": 2512
+  },
+  "locked_training_recipe": {
+    "learning_rate": 0.0004,
+    "weight_decay": 0.1,
+    "world_size": 8,
+    "hardware": "NVIDIA H100 80GB",
+    "local_windows_per_gpu": 512,
+    "global_token_batch": 1048576,
+    "gradient_accumulation_steps": 1,
+    "train_prediction_tokens": 124359168,
+    "precision": "bfloat16"
+  },
+  "held_out_test": {
+    "seeds": [0, 1, 2],
+    "nll": [7.399183147033534, 7.392889650956578, 7.3936016053243225],
+    "mean_nll": 7.395224801104811
+  },
+  "performance": {
+    "sustained_train_tokens_per_second": [
+      795247.3346022273,
+      793737.6857113237,
+      793704.6656803375
+    ],
+    "peak_allocated_gib_per_gpu": 38.64502477645874,
+    "decode_tokens_per_second_batch1": [
+      47.75510568152772
+    ]
+  },
+  "wandb_runs": [
+    "https://wandb.ai/lev-tear-tear-labs/exp10-causal-architecture-verdict/runs/o8ptqkky",
+    "https://wandb.ai/lev-tear-tear-labs/exp10-causal-architecture-verdict/runs/n02ajf9t",
+    "https://wandb.ai/lev-tear-tear-labs/exp10-causal-architecture-verdict/runs/na757tsc"
+  ]
+}

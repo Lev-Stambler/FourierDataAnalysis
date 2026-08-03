@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 GPU_PRIORITY = ("h200-141", "h100-80")
-EPHEMERAL_MB = {"h200-141": 10_240_000, "h100-80": 4_096_000}
+EPHEMERAL_MB_PER_GPU = {"h200-141": 1_280_000, "h100-80": 512_000}
 IMAGE = "nvidia/cuda:12.8.1-devel-ubuntu22.04"
 
 
@@ -79,7 +79,7 @@ def managed_candidates(
 
 def spot_inventory(team: str) -> list[dict]:
     """Return configured BYOC preemptible pools; an empty list is definitive."""
-    clusters = nf_json("list", "cloud", "clusters", "--teamId", team).get(
+    clusters = nf_json("list", "cloud", "clusters").get(
         "clusters", []
     )
     result = []
@@ -107,8 +107,6 @@ def parse_existing(values: list[str], team: str) -> list[Candidate]:
             project_id,
             "--serviceId",
             service_id,
-            "--teamId",
-            team,
         )
         gpu = service["deployment"]["gpu"]["configuration"]
         if gpu["gpuType"] not in GPU_PRIORITY or int(gpu["gpuCount"]) != 8:
@@ -135,8 +133,6 @@ def ensure_project(candidate: Candidate, team: str) -> None:
             "project",
             "--projectId",
             candidate.project_id,
-            "--teamId",
-            team,
             "-o",
             "json",
         ],
@@ -150,7 +146,7 @@ def ensure_project(candidate: Candidate, team: str) -> None:
         "region": candidate.region,
         "description": "Reusable H100/H200 capacity race",
     }
-    nf("create", "project", "--teamId", team, "-i", json.dumps(payload))
+    nf("create", "project", "-i", json.dumps(payload))
 
 
 def service_payload(candidate: Candidate) -> dict:
@@ -179,7 +175,10 @@ def service_payload(candidate: Candidate) -> dict:
             "ssh": {"enabled": True},
             "storage": {
                 "ephemeralStorage": {
-                    "storageSize": EPHEMERAL_MB[candidate.gpu_type]
+                    "storageSize": (
+                        EPHEMERAL_MB_PER_GPU[candidate.gpu_type]
+                        * candidate.gpu_count
+                    )
                 },
                 "shmSize": 16_384,
             },
@@ -204,8 +203,6 @@ def ensure_service(candidate: Candidate, team: str) -> None:
             candidate.project_id,
             "--serviceId",
             candidate.service_id,
-            "--teamId",
-            team,
             "-o",
             "json",
         ],
@@ -219,8 +216,6 @@ def ensure_service(candidate: Candidate, team: str) -> None:
             "deployment",
             "--projectId",
             candidate.project_id,
-            "--teamId",
-            team,
             "-i",
             json.dumps(service_payload(candidate)),
         )
@@ -232,8 +227,6 @@ def ensure_service(candidate: Candidate, team: str) -> None:
             candidate.project_id,
             "--serviceId",
             candidate.service_id,
-            "--teamId",
-            team,
             "-i",
             '{"instances":1}',
             check=False,
@@ -249,8 +242,6 @@ def status(candidate: Candidate, team: str) -> str:
         candidate.project_id,
         "--serviceId",
         candidate.service_id,
-        "--teamId",
-        team,
     )
     containers = data.get("containers", [])
     return containers[0]["status"] if containers else "NO_CONTAINER"
@@ -264,8 +255,6 @@ def pause(candidate: Candidate, team: str) -> None:
         candidate.project_id,
         "--serviceId",
         candidate.service_id,
-        "--teamId",
-        team,
         check=False,
     )
 
@@ -328,6 +317,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--count", type=int, default=8)
     parser.add_argument("--project-prefix", default="fda-race")
     parser.add_argument("--regions", default="")
+    parser.add_argument("--gpu-types", default="h200-141,h100-80")
     parser.add_argument("--existing", action="append", default=[])
     parser.add_argument("--prefer-spot", action="store_true")
     parser.add_argument("--spot-only", action="store_true")
@@ -346,6 +336,8 @@ def main() -> None:
         project_prefix=args.project_prefix,
         allowed_regions=allowed,
     )
+    allowed_gpu_types = {value for value in args.gpu_types.split(",") if value}
+    candidates = [value for value in candidates if value.gpu_type in allowed_gpu_types]
     spots = spot_inventory(args.team)
     existing = parse_existing(args.existing, args.team)
     inventory = {

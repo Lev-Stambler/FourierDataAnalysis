@@ -1,0 +1,137 @@
+{
+  "schema": "exp11-paid-tuning-summary-v1",
+  "date_utc": "2026-08-02",
+  "experiment_id": "exp11-optimizer-tuning-gpu1-v6",
+  "status": "complete",
+  "verdict": "do_not_scale_yet",
+  "supersedes": "exp11-kronecker-debug-gpu1-v5 optimizer conclusions",
+  "hardware": {
+    "accelerator": "NVIDIA H100 80GB HBM3",
+    "device_count": 1,
+    "service": "fda-exp11-tune-us-central/gpu-h100-1",
+    "instances_after_retrieval": 0
+  },
+  "wandb_url": "https://wandb.ai/lev-tear-tear-labs/exp11-kronecker-debug/runs/br9xucjl",
+  "selection": {
+    "basis": "lowest three-seed mean validation NLL at 10M tokens",
+    "seeds": [0, 1, 2],
+    "prediction_tokens_per_screen": 10027008,
+    "test_opened_after_selection": true,
+    "order3_r8_lr_grid": [0.01, 0.03, 0.06, 0.12],
+    "transformer_lr_grid": [0.0005, 0.0015, 0.003, 0.006],
+    "schedules": ["constant", "warmup-cosine"],
+    "warmup_tokens": 2000000,
+    "matrix_weight_decay_ablation": [0.0, 0.01],
+    "beta2_ablation": [0.95, 0.99],
+    "order3-r8": {
+      "recipe_slug": "9171c6098ddee108",
+      "recipe": {
+        "peak_lr": 0.06,
+        "schedule": "constant",
+        "weight_decay": 0.01,
+        "beta2": 0.95,
+        "clip_norm": 1.0,
+        "warmup_tokens": 2000000,
+        "horizon_tokens": 40000000,
+        "minimum_lr_ratio": 0.1
+      },
+      "validation_nll_by_seed": {
+        "0": 6.48711197019562,
+        "1": 6.5105271226777806,
+        "2": 6.501974030742495
+      },
+      "mean_validation_nll": 6.4998710412052985,
+      "std_validation_nll": 0.009674167154019753
+    },
+    "transformer": {
+      "recipe_slug": "8bf9ce4504d69515",
+      "recipe": {
+        "peak_lr": 0.0015,
+        "schedule": "constant",
+        "weight_decay": 0.01,
+        "beta2": 0.95,
+        "clip_norm": 1.0,
+        "warmup_tokens": 2000000,
+        "horizon_tokens": 40000000,
+        "minimum_lr_ratio": 0.1
+      },
+      "validation_nll_by_seed": {
+        "0": 6.5891783706785185,
+        "1": 6.599109559547244,
+        "2": 6.559254083107776
+      },
+      "mean_validation_nll": 6.582514004444512,
+      "std_validation_nll": 0.01693960022216134
+    }
+  },
+  "preflight": {
+    "physical_batch": 768,
+    "global_examples_per_step": 768,
+    "global_tokens_per_step": 196608,
+    "gradient_accumulation_steps": 1,
+    "execution_mode": "compiled",
+    "finite_forward_backward_optimizer": true,
+    "gpu_utilization_percent": 96.0,
+    "order3_r8_tokens_per_second": 1372481.70094212,
+    "transformer_tokens_per_second": 2129302.9220987777,
+    "order3_r8_peak_allocated_gib": 46.365981578826904,
+    "transformer_peak_allocated_gib": 45.48918104171753
+  },
+  "models": {
+    "order3-r8": {
+      "body_parameters": 2125888,
+      "total_parameters": 4223040,
+      "mean_final_tokens_per_second": 1379295.315794335,
+      "test_nll_by_seed": {
+        "0": 5.696459205214155,
+        "1": 5.243670082256288,
+        "2": 5.257663769447281
+      },
+      "mean_test_nll": 5.3992643523059085
+    },
+    "transformer": {
+      "body_parameters": 2146304,
+      "total_parameters": 4243456,
+      "mean_final_tokens_per_second": 2138481.2746740715,
+      "test_nll_by_seed": {
+        "0": 5.20354085776279,
+        "1": 5.220564785643272,
+        "2": 5.194903674662779
+      },
+      "mean_test_nll": 5.2063364393562805
+    }
+  },
+  "matched_comparison": {
+    "prediction_tokens_per_seed": 40108032,
+    "order3_to_transformer_body_parameter_ratio": 0.9904878339694656,
+    "order3_to_transformer_throughput_ratio": 0.6449882597192977,
+    "paired_order3_minus_transformer_test_nll": [
+      0.492918347451365,
+      0.02310529661301608,
+      0.06276009478450195
+    ],
+    "mean_order3_minus_transformer_test_nll": 0.19292791294962766,
+    "bootstrap_95_percent_interval": [
+      0.02310529661301608,
+      0.492918347451365
+    ],
+    "maximum_allowed_upper_nll_bound": 0.02,
+    "pass": false
+  },
+  "accounting": {
+    "tuning_stage_gpu_seconds": 608.584528595,
+    "tuning_stage_dollars": 0.4632004467639723,
+    "audited_total_gpu_seconds": 3331.921929502,
+    "audited_total_dollars": 2.5359628018987443
+  },
+  "retrieved_artifacts": {
+    "root": "/tmp/exp11-optimizer-tuning-gpu1-v6",
+    "manifest_sha256": "8da542184a1a8607b616f75cc0e6df1943a323875f61851d98334e2de073e011",
+    "sha256": {
+      "stages/optimizer-tuning/result.json": "544df5fe98d79047b6f13d709ef80c7998b06eb4b87015348a942d95dda6cf81",
+      "stages/optimizer-tuning/tuning-cells/preflight.json": "a1e64bc7a0089198a5b3fb711d342757849494821c0c06c94e158de4e8b788ae",
+      "audit.json": "e37bd64b523c62d1767f891e894c744f18a27e86832d64613c4ce170dd9f29f0",
+      "ledger.jsonl": "1288bad035d845db8b6ba8f7ebd521593055dde6f0e4e6ec1c5e59d38276de7c"
+    }
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "schema": "research-control-v1",
+  "experiment_id": "exp11-muon-tuning-gpu1-v8",
+  "working_directory": "..",
+  "hypothesis": "After validation-only LR-boundary expansion through four rounds, canonical Muon on all hidden/body matrices, with AdamW on tied vocabulary and vector amplitudes, can remove the optimization deficit of the parameter-matched order-three rank-8 mixer.",
+  "policy": {
+    "pilot_max_dollars": 25.0,
+    "pilot_max_gpu_hours": 1.0,
+    "scale_tokens_per_parameter": 20.0,
+    "primary_metric": "three-seed test NLL after optimizer-family selection by three-seed 10M-token validation NLL",
+    "no_255m_run_without_smaller_frontier_win": true
+  },
+  "source_artifacts": [
+    {
+      "path": "exp11_kronecker_debug/__main__.py",
+      "sha256": "ae0676a126f98680d19d8d6a9fc619b3e7a94fcb8c736dc98ceac4d299bc11a7"
+    },
+    {
+      "path": "exp11_kronecker_debug/model.py",
+      "sha256": "99e1ad9c061e78cb0b80c5a9716af1a83331ca667bdfb9d996ed106362846077"
+    },
+    {
+      "path": "exp11_kronecker_debug/diagnostics.py",
+      "sha256": "c1dab11e300b7808a9cfcd3042ab434d8cedcffdfb24ab98270d421333a7089c"
+    },
+    {
+      "path": "exp11_kronecker_debug/gates.py",
+      "sha256": "44e95111062e99192a21647ec056d8500858a929e440a508694d32a7bf88066d"
+    },
+    {
+      "path": "exp11_kronecker_debug/lm.py",
+      "sha256": "1489eeadb314a85dbde94eb097724d52fd77740f48e763e796a52f31cfbf29c9"
+    },
+    {
+      "path": "exp11_kronecker_debug/muon_tuning.py",
+      "sha256": "392fb36da6fcb5084b28566843ec4aad3d11ebf6c52c6c14fa2422e6fcc8cd76"
+    },
+    {
+      "path": "exp11_kronecker_debug/paid_tuning_v6_summary.json",
+      "sha256": "7935f8bcd06e6c8f859c913cdac34eca27e6bb092091798cf24054ccd2287add"
+    },
+    {
+      "path": "research_control/__main__.py",
+      "sha256": "2eb5b022ec99d762dcd13069ea2753eef15adf0ad47eb275f023fde5a4f3143f"
+    },
+    {
+      "path": "research_control/controller.py",
+      "sha256": "bc52b339e391023f40a853ebbe8e944cd7a0e5fcbd2f6309d1e01267eae80837"
+    },
+    {
+      "path": "research_control/northflank.py",
+      "sha256": "91cf910827bedfcbffae62391db99e5ae989e5617d18f194d3147771a70c176a"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "738c24fb35372527b56e13ffed32458248aa253057711d43a298940c4e85d83d"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "c49b9c2a6065b05ce338e09c87b402cebb7933e5e312d2c189529d8e2feeec90"
+    }
+  ],
+  "future_scale_gate": {
+    "minimum_training_tokens_per_parameter": 20.0,
+    "required_pilot_verdict": "muon_rescues_order3",
+    "required_paired_nll_bootstrap_upper_bound": 0.02,
+    "maximum_order3_to_transformer_body_parameter_ratio": 1.01,
+    "next_scale_parameters": 32000000,
+    "next_scale_training_tokens": 640000000,
+    "maximum_scale_parameters_without_new_approval": 32000000
+  },
+  "stages": [
+    {
+      "id": "local-correctness",
+      "tier": "local",
+      "requires": [],
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "exp11_kronecker_debug",
+        "local-correctness",
+        "--output={state_root}/gates/local-correctness.json"
+      ],
+      "result_path": "{state_root}/gates/local-correctness.json"
+    },
+    {
+      "id": "muon-correctness",
+      "tier": "local",
+      "requires": [
+        "local-correctness"
+      ],
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "exp11_kronecker_debug",
+        "muon-correctness",
+        "--output={state_root}/gates/muon-correctness.json"
+      ],
+      "result_path": "{state_root}/gates/muon-correctness.json"
+    },
+    {
+      "id": "muon-tuning",
+      "tier": "pilot",
+      "requires": [
+        "local-correctness",
+        "muon-correctness"
+      ],
+      "local_checks": [
+        "local-correctness",
+        "muon-correctness"
+      ],
+      "gpu_count": 1,
+      "price_per_gpu_hour": 2.74,
+      "max_wall_seconds": 2700,
+      "heartbeat_path": "{state_root}/stages/muon-tuning/heartbeat",
+      "heartbeat_timeout_seconds": 300,
+      "data_artifacts": [
+        {
+          "path": "/cache/exp10/data/wikitext/manifest.json",
+          "sha256": "aef005c8fa4a86f1033cf0a0f0524873f8dfd35368d638f618afa8022e5ed2fe"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/train.npy",
+          "sha256": "0840f947e9b4a86e96d9f24e23db9f6d204f5c8e356dff9cb3f917e3db494419"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/validation.npy",
+          "sha256": "c9dca5e3979aa7c80084c39ac7eac964845da76897694539887678ee4860e09c"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/test.npy",
+          "sha256": "9bb7235fa485da526b56fa2e6033c82e601c94c95e596bba65e6fb87180ee7d1"
+        }
+      ],
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "exp11_kronecker_debug",
+        "wikitext-muon",
+        "--output={state_root}/stages/muon-tuning/result.json",
+        "--data-root=/cache/exp10/data/wikitext",
+        "--heartbeat={state_root}/stages/muon-tuning/heartbeat",
+        "--wall-limit-seconds=2400"
+      ],
+      "result_path": "{state_root}/stages/muon-tuning/result.json",
+      "pause_command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "research_control.northflank",
+        "pause"
+      ]
+    }
+  ]
+}

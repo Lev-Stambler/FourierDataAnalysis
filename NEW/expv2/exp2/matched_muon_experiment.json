@@ -1,0 +1,58 @@
+{
+  "schema": "research-control-v1",
+  "experiment_id": "expv2-2-matched-muon-8gpu-v1",
+  "working_directory": "../..",
+  "hypothesis": "At a 0.241% total-parameter mismatch, the rank-1/depth-66 Kronecker whole-state mixer can match the conventional Transformer on all corrected ID algorithms and improve four-seed macro OOD accuracy when both architectures receive independently selected pure-Muon learning rates and identical per-phase context/token budgets.",
+  "policy": {
+    "pilot_max_dollars": 25.0,
+    "pilot_max_gpu_hours": 1.0,
+    "confirmation_max_dollars": 15.0,
+    "confirmation_max_gpu_hours": 4.0,
+    "scale_tokens_per_parameter": 20.0,
+    "primary_metric": "four-seed paired Kronecker-minus-Transformer macro OOD accuracy after both architectures pass every 95% ID gate",
+    "no_scale_without_confirmation_win": true
+  },
+  "source_artifacts": [],
+  "stages": [
+    {
+      "id": "matched-muon-cloud",
+      "tier": "scale",
+      "requires": [],
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "expv2.exp2",
+        "launch-matched-cloud",
+        "--repo-root=.",
+        "--local-output={state_root}/stages/matched-muon-cloud/artifacts",
+        "--result={state_root}/stages/matched-muon-cloud/result.json",
+        "--timeout-seconds=10800"
+      ],
+      "result_path": "{state_root}/stages/matched-muon-cloud/result.json",
+      "gpu_count": 8,
+      "price_per_gpu_hour": 2.825,
+      "max_wall_seconds": 10800,
+      "parameters": 1646592,
+      "training_tokens": 167772160000,
+      "promotion_checks": [
+        {
+          "path": "/home/lev/.cache/research-control/expv2-2-full-transformer-control-h100-v1/stages/h100-full-control/result.json",
+          "field": "control_valid",
+          "equals": true
+        }
+      ],
+      "pause_command": [
+        "northflank",
+        "pause",
+        "service",
+        "--projectId",
+        "fda-test",
+        "--serviceId",
+        "fda-node8h2"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "schema": "exp11-paid-pilot-summary-v1",
+  "date_utc": "2026-08-02",
+  "experiment_id": "exp11-kronecker-debug-gpu1-v5",
+  "status": "complete",
+  "verdict": "do_not_scale_yet",
+  "superseded_by": "exp11-optimizer-tuning-gpu1-v6",
+  "qualification": "under-tuned pilot; do not use for optimizer or architecture selection",
+  "hardware": {
+    "accelerator": "NVIDIA H100 80GB HBM3",
+    "device_count": 1,
+    "service": "fda-exp11-us-central/gpu-h100-1",
+    "instances_after_retrieval": 0
+  },
+  "wandb_urls": {
+    "synthetic": "https://wandb.ai/lev-tear-tear-labs/exp11-kronecker-debug/runs/jk32yzre",
+    "wikitext": "https://wandb.ai/lev-tear-tear-labs/exp11-kronecker-debug/runs/sl8bloez"
+  },
+  "tuning": {
+    "selection_seed": 0,
+    "selection_tokens_approximate": 2000000,
+    "kronecker_lr_grid": [0.003, 0.01, 0.03],
+    "transformer_lr_grid": [0.0003, 0.001, 0.003],
+    "order3_r4_winning_lr": 0.03,
+    "transformer_winning_lr": 0.003,
+    "locked_across_final_seeds": true
+  },
+  "primary_models": {
+    "order3-r4": {
+      "body_parameters": 1062944,
+      "total_parameters": 3160096,
+      "global_tokens_per_step": 131072,
+      "execution_mode": "eager",
+      "mean_final_tokens_per_second": 1203626.6782711984,
+      "test_nll_by_seed": {
+        "0": 5.543143589744666,
+        "1": 5.710859244585242,
+        "2": 5.781560896187123
+      },
+      "mean_test_nll": 5.678521243505678
+    },
+    "transformer": {
+      "body_parameters": 2146304,
+      "total_parameters": 4243456,
+      "global_tokens_per_step": 131072,
+      "execution_mode": "compiled",
+      "mean_final_tokens_per_second": 2050611.4558303272,
+      "test_nll_by_seed": {
+        "0": 4.80383542192874,
+        "1": 4.820831489070981,
+        "2": 7.196432118567535
+      },
+      "mean_test_nll": 5.607033009855752,
+      "seed_2_collapsed": true
+    }
+  },
+  "matched_comparison": {
+    "tokens_per_seed": 40108032,
+    "order3_to_transformer_body_parameter_ratio": 0.4952439169847328,
+    "paired_order3_minus_transformer_test_nll": [
+      0.7393081678159259,
+      0.8900277555142608,
+      -1.4148712223804116
+    ],
+    "mean_order3_minus_transformer_test_nll": 0.07148823364992503,
+    "bootstrap_95_percent_interval": [
+      -1.4148712223804116,
+      0.8900277555142608
+    ],
+    "maximum_allowed_upper_nll_bound": 0.02,
+    "pass": false
+  },
+  "accounting": {
+    "final_stage_gpu_seconds": 363.33740090699996,
+    "final_stage_dollars": 0.27654013291255,
+    "audited_total_gpu_seconds": 2163.337400907,
+    "audited_total_dollars": 1.6465401329125502
+  },
+  "retrieved_artifacts": {
+    "root": "/tmp/exp11-kronecker-debug-gpu1-v5",
+    "sha256": {
+      "stages/full-pilot/result.json": "e1ab227623f1d9270b90c0f2641b057fd42ca8d6141803db78f0ba082c53b978",
+      "stages/full-pilot/wikitext.json": "eab18403ebd7022ddb7377ae2a2d1d9258f50a5388f4d17ccc451abff1da0b76",
+      "stages/full-pilot/synthetic.json": "1d5563eb3ea9d82db00606bd4462b57b4bfac31ed1304c8663f519fca9dda933",
+      "stages/full-pilot/wikitext-cells/preflight.json": "db92e0f03cde837572c18c79828e5622582ab5cf45a8dbd152ada60ade2543bb",
+      "audit.json": "9fb3699c0423f6c403bc8d290eb46b19130b57a2da7f6f6cc17d254d16da53df",
+      "ledger.jsonl": "d8a63848b3a2c21a0b62d6f8d1f13d3ba1608cad0ea54d7eb9a57264fae20abb"
+    }
+  }
+}

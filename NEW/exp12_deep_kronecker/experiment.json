@@ -1,0 +1,158 @@
+{
+  "schema": "research-control-v1",
+  "experiment_id": "exp12-deep-kronecker-gpu1-v1",
+  "working_directory": "..",
+  "hypothesis": "At matched depth and no more body parameters, shared causal Kronecker bases plus layer-specific content routing, changing channel tensorizations, and gated channel updates will match or beat a tuned Transformer because the structured model can apply more compositional mixing to the representation instead of spending nearly all body parameters on duplicated position tables.",
+  "policy": {
+    "pilot_max_dollars": 25.0,
+    "pilot_max_gpu_hours": 1.0,
+    "scale_tokens_per_parameter": 20.0,
+    "primary_metric": "three-seed paired test NLL after validation-only architecture and optimizer selection",
+    "no_scale_without_smaller_frontier_win": true
+  },
+  "source_artifacts": [
+    {
+      "path": "exp12_deep_kronecker/__init__.py",
+      "sha256": "be8a858423df942f21cf2598efd6ad2049d5c50019c7f135011e5826500a19f1"
+    },
+    {
+      "path": "exp12_deep_kronecker/__main__.py",
+      "sha256": "f1774b0a95e46177a3b6e4cf09af4c69adf9d9d12f51c77cb3bf613c08a95858"
+    },
+    {
+      "path": "exp12_deep_kronecker/model.py",
+      "sha256": "c61c27b34af227eb4373bd0c01237900963960942d98853552bc1c893d39e2bc"
+    },
+    {
+      "path": "exp12_deep_kronecker/gates.py",
+      "sha256": "99bdeedd9f1ca0ded74cdb0cdeec0f0eb8f7398211c82bff50627a3fdb0b08f8"
+    },
+    {
+      "path": "exp12_deep_kronecker/study.py",
+      "sha256": "23c82a85927feef152dd49cffcee384eeb88137698137d83b56a8ba3836b757f"
+    },
+    {
+      "path": "exp12_deep_kronecker/campaign.py",
+      "sha256": "1346dbfefd854b527f85d9ee2ceb4599a1093cff8e473b51e4f52d2e6fa59c03"
+    },
+    {
+      "path": "exp12_deep_kronecker/test_exp12.py",
+      "sha256": "851a56b7258231746d4006e41b0ac3983fc19018a10c574d2b06733f9903e61f"
+    },
+    {
+      "path": "exp12_deep_kronecker/README.md",
+      "sha256": "ca508470c21817ecf9a9bc66a2c0b73db22a275ac8163e52df1ecdf47d4ec6d6"
+    },
+    {
+      "path": "exp11_kronecker_debug/lm.py",
+      "sha256": "1489eeadb314a85dbde94eb097724d52fd77740f48e763e796a52f31cfbf29c9"
+    },
+    {
+      "path": "exp11_kronecker_debug/muon_tuning.py",
+      "sha256": "392fb36da6fcb5084b28566843ec4aad3d11ebf6c52c6c14fa2422e6fcc8cd76"
+    },
+    {
+      "path": "research_control/__main__.py",
+      "sha256": "2eb5b022ec99d762dcd13069ea2753eef15adf0ad47eb275f023fde5a4f3143f"
+    },
+    {
+      "path": "research_control/controller.py",
+      "sha256": "bc52b339e391023f40a853ebbe8e944cd7a0e5fcbd2f6309d1e01267eae80837"
+    },
+    {
+      "path": "research_control/northflank.py",
+      "sha256": "91cf910827bedfcbffae62391db99e5ae989e5617d18f194d3147771a70c176a"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "51f42550d709028dd9cb112ac2fa9122a3358a70b9bf019653305386fd4f6a52"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "c49b9c2a6065b05ce338e09c87b402cebb7933e5e312d2c189529d8e2feeec90"
+    }
+  ],
+  "future_scale_gate": {
+    "required_pilot_verdict": "deep_kronecker_frontier_win",
+    "required_paired_nll_bootstrap_upper_bound": 0.02,
+    "maximum_kronecker_to_transformer_body_parameter_ratio": 1.0,
+    "minimum_training_tokens_per_parameter": 20.0,
+    "next_scale_parameters": 32000000,
+    "next_scale_training_tokens": 640000000,
+    "maximum_scale_parameters_without_new_approval": 32000000
+  },
+  "stages": [
+    {
+      "id": "local-correctness",
+      "tier": "local",
+      "requires": [],
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "exp12_deep_kronecker",
+        "local-correctness",
+        "--output={state_root}/gates/local-correctness.json"
+      ],
+      "result_path": "{state_root}/gates/local-correctness.json"
+    },
+    {
+      "id": "wikitext-campaign",
+      "tier": "pilot",
+      "requires": [
+        "local-correctness"
+      ],
+      "local_checks": [
+        "local-correctness"
+      ],
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "exp12_deep_kronecker",
+        "wikitext-campaign",
+        "--output={state_root}/stages/wikitext-campaign/result.json",
+        "--data-root=/cache/exp10/data/wikitext",
+        "--heartbeat={state_root}/stages/wikitext-campaign/heartbeat",
+        "--wall-limit-seconds=3000"
+      ],
+      "result_path": "{state_root}/stages/wikitext-campaign/result.json",
+      "heartbeat_path": "{state_root}/stages/wikitext-campaign/heartbeat",
+      "heartbeat_timeout_seconds": 300,
+      "gpu_count": 1,
+      "price_per_gpu_hour": 2.74,
+      "max_wall_seconds": 3300,
+      "data_artifacts": [
+        {
+          "path": "/cache/exp10/data/wikitext/manifest.json",
+          "sha256": "aef005c8fa4a86f1033cf0a0f0524873f8dfd35368d638f618afa8022e5ed2fe"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/train.npy",
+          "sha256": "0840f947e9b4a86e96d9f24e23db9f6d204f5c8e356dff9cb3f917e3db494419"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/validation.npy",
+          "sha256": "c9dca5e3979aa7c80084c39ac7eac964845da76897694539887678ee4860e09c"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/test.npy",
+          "sha256": "9bb7235fa485da526b56fa2e6033c82e601c94c95e596bba65e6fb87180ee7d1"
+        }
+      ],
+      "pause_command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "research_control.northflank",
+        "pause"
+      ]
+    }
+  ]
+}

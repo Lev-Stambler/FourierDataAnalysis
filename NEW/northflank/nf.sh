@@ -39,7 +39,9 @@ if [[ -f "$NEW_DIR/.env" ]]; then
 fi
 
 NF=(northflank)
-NF_SCOPE=(--teamId "$TEAM_ID")
+# CLI 0.11+ derives team scope from the authenticated token and rejects the
+# retired --teamId flag. Keep this array for the existing command assembly.
+NF_SCOPE=()
 NF_SVC=(--projectId "$PROJECT_ID" --serviceId "$SERVICE_ID" "${NF_SCOPE[@]}")
 
 die() { echo "nf.sh: $*" >&2; exit 1; }
@@ -243,6 +245,9 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends rsync git curl ca-certificates >/dev/null
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
+apt-get install -y -qq --no-install-recommends nodejs >/dev/null
+npm install -g @northflank/cli@0.11.7 >/dev/null
 command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
 grep -q '.local/bin' ~/.profile 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile
 grep -q '.fda_env' ~/.profile 2>/dev/null || echo '[ -f "$HOME/.fda_env" ] && . "$HOME/.fda_env"' >> ~/.profile
@@ -260,6 +265,15 @@ EOS
     if [[ -n "${HF_TOKEN:-}" ]]; then echo "export HF_TOKEN=$HF_TOKEN"; fi
     if [[ -n "${WANDB_API_KEY:-}" ]]; then echo "export WANDB_API_KEY=$WANDB_API_KEY"; fi
   } | ssh "${SSH_OPTS[@]}" -p "$PROXY_PORT" "root@$PROXY_ADDR" "cat > /root/.fda_env"
+
+  # The research controller pauses the exact paid service from a finally hook.
+  # Give the remote CLI the same authenticated profile without printing it.
+  if [[ -f "$HOME/.northflank/config.json" ]]; then
+    remote "mkdir -p /root/.northflank && chmod 700 /root/.northflank"
+    scp "${SSH_OPTS[@]}" -P "$PROXY_PORT" \
+      "$HOME/.northflank/config.json" "root@$PROXY_ADDR:/root/.northflank/config.json"
+    remote "chmod 600 /root/.northflank/config.json"
+  fi
 
   echo "==> syncing code"
   do_sync

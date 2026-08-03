@@ -1,0 +1,208 @@
+{
+  "schema": "exp11-paid-muon-summary-v1",
+  "date_utc": "2026-08-02",
+  "experiment_id": "exp11-muon-tuning-gpu1-v8",
+  "status": "complete",
+  "verdict": "muon_does_not_rescue_order3",
+  "adamw_reference_experiment": "exp11-optimizer-tuning-gpu1-v6",
+  "hardware": {
+    "accelerator": "NVIDIA H100 80GB HBM3",
+    "device_count": 1,
+    "service": "fda-exp11-tune-europe-west-netherlands/gpu-h100-1",
+    "instances_after_retrieval": 0
+  },
+  "wandb_urls": {
+    "base_campaign": "https://wandb.ai/lev-tear-tear-labs/exp11-kronecker-debug/runs/h0cbydty",
+    "preregistered_boundary_completion": "https://wandb.ai/lev-tear-tear-labs/exp11-kronecker-debug/runs/163rz17g"
+  },
+  "preregistration": {
+    "boundary_completion_plan_locked_utc": "2026-08-02T16:46:22.882301814Z",
+    "base_result_written_utc": "2026-08-02T16:50:33.242294689Z",
+    "plan_locked_before_base_test_result": true,
+    "local_and_paid_plan_files_identical": true,
+    "locked_plan_sha256": "a3f2cf3790f11c5ba2a7906a6bec9afd2f563059a4c3e1cf52a0c4acbfae7932",
+    "manifest_sha256": "f2f7db9d1bd33c7fe51bb77d933e9ea86cfc13b77e8853c460e7438b5d141279"
+  },
+  "selection": {
+    "basis": "lowest three-seed mean validation NLL after 10M prediction tokens, followed by within-architecture optimizer-family selection",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "prediction_tokens_per_screen": 10027008,
+    "prediction_tokens_per_final": 40108032,
+    "test_opened_after_selection": true,
+    "optimizer_routing": "all body matrices to canonical Muon; tied vocabulary and vector amplitudes to AdamW",
+    "muon_lr_initial_grid": [
+      0.003,
+      0.01,
+      0.03,
+      0.1
+    ],
+    "schedules": [
+      "constant",
+      "warmup-cosine"
+    ],
+    "automatic_boundary_multiplier": 3.0,
+    "order3_boundary_lrs_evaluated": [
+      0.3,
+      0.9,
+      2.7
+    ],
+    "order3_lr_2_7_mean_validation_nll": 6.568498346123483,
+    "order3_r8": {
+      "muon_recipe_slug": "381c2aed466f6499",
+      "muon_recipe": {
+        "muon_lr": 0.9,
+        "auxiliary_lr": 0.03,
+        "schedule": "constant",
+        "weight_decay": 0.01,
+        "momentum": 0.95,
+        "nesterov": true,
+        "ns_steps": 5,
+        "clip_norm": 1.0
+      },
+      "muon_validation_nll_by_seed": {
+        "0": 6.52643783449188,
+        "1": 6.4968506820558565,
+        "2": 6.510220264825295
+      },
+      "muon_mean_validation_nll": 6.511169593791011,
+      "adamw_mean_validation_nll": 6.4998710412052985,
+      "selected_optimizer": "adamw"
+    },
+    "transformer": {
+      "muon_recipe_slug": "9036157a92cdfc1b",
+      "muon_recipe": {
+        "muon_lr": 0.03,
+        "auxiliary_lr": 0.003,
+        "schedule": "constant",
+        "weight_decay": 0.01,
+        "momentum": 0.95,
+        "nesterov": true,
+        "ns_steps": 5,
+        "clip_norm": 1.0
+      },
+      "muon_validation_nll_by_seed": {
+        "0": 6.07245858260027,
+        "1": 6.060221994955708,
+        "2": 6.055937759519562
+      },
+      "muon_mean_validation_nll": 6.06287277902518,
+      "adamw_mean_validation_nll": 6.582514004444512,
+      "selected_optimizer": "muon"
+    }
+  },
+  "preflight": {
+    "optimizer": "muon+adamw",
+    "physical_batch": 768,
+    "global_examples_per_step": 768,
+    "global_tokens_per_step": 196608,
+    "gradient_accumulation_steps": 1,
+    "execution_mode": "compiled",
+    "finite_forward_backward_optimizer": true,
+    "order3_r8": {
+      "tokens_per_second": 1341538.8347761678,
+      "gpu_utilization_percent": 92.0,
+      "peak_allocated_gib": 46.35806226730347,
+      "peak_reserved_gib": 46.78515625
+    },
+    "transformer": {
+      "tokens_per_second": 2084774.4807950596,
+      "gpu_utilization_percent": 94.0,
+      "peak_allocated_gib": 45.48118543624878,
+      "peak_reserved_gib": 45.568359375
+    }
+  },
+  "models": {
+    "order3-r8": {
+      "body_parameters": 2125888,
+      "total_parameters": 4223040,
+      "mean_final_tokens_per_second": 1357603.8374722267,
+      "muon_test_nll_by_seed": {
+        "0": 5.548310506989601,
+        "1": 5.489103256579831,
+        "2": 5.492105892374919
+      },
+      "muon_mean_test_nll": 5.509839885314784,
+      "adamw_mean_test_nll": 5.3992643523059085,
+      "muon_minus_adamw_mean_test_nll": 0.11057553300887601,
+      "muon_minus_adamw_bootstrap_95_percent_interval": [
+        -0.14814869822455368,
+        0.2454331743235434
+      ]
+    },
+    "transformer": {
+      "body_parameters": 2146304,
+      "total_parameters": 4243456,
+      "mean_final_tokens_per_second": 2089024.8717255455,
+      "muon_test_nll_by_seed": {
+        "0": 5.013985185303365,
+        "1": 5.01935759107306,
+        "2": 4.988201111836979
+      },
+      "muon_mean_test_nll": 5.007181296071135,
+      "adamw_mean_test_nll": 5.2063364393562805,
+      "muon_minus_adamw_mean_test_nll": -0.19915514328514572,
+      "muon_minus_adamw_bootstrap_95_percent_interval": [
+        -0.20670256282580013,
+        -0.1895556724594254
+      ]
+    }
+  },
+  "matched_comparisons": {
+    "order3_to_transformer_body_parameter_ratio": 0.9904878339694656,
+    "order3_to_transformer_muon_throughput_ratio": 0.649874425071272,
+    "muon_both_architectures": {
+      "paired_order3_minus_transformer_test_nll": [
+        0.5343253216862367,
+        0.4697456655067711,
+        0.5039047805379404
+      ],
+      "mean_order3_minus_transformer_test_nll": 0.5026585892436494,
+      "bootstrap_95_percent_interval": [
+        0.4697456655067711,
+        0.5343253216862367
+      ]
+    },
+    "best_optimizer_per_architecture": {
+      "order3_optimizer": "adamw",
+      "transformer_optimizer": "muon",
+      "paired_order3_minus_transformer_test_nll": [
+        0.6824740199107904,
+        0.2243124911832277,
+        0.2694626576103021
+      ],
+      "mean_order3_minus_transformer_test_nll": 0.3920830562347734,
+      "bootstrap_95_percent_interval": [
+        0.2243124911832277,
+        0.6824740199107904
+      ],
+      "maximum_allowed_upper_nll_bound": 0.02,
+      "pass": false
+    }
+  },
+  "accounting": {
+    "base_campaign_gpu_seconds": 731.7378032739999,
+    "base_campaign_dollars": 0.5569337724918778,
+    "boundary_completion_gpu_seconds": 58.16351745399993,
+    "boundary_completion_dollars": 0.04426889939554439,
+    "cumulative_audited_gpu_seconds": 1970.0397419718222,
+    "cumulative_audited_dollars": 1.4994191369452203
+  },
+  "retrieved_artifacts": {
+    "base_root": "/tmp/exp11-muon-tuning-gpu1-v7",
+    "final_root": "/tmp/exp11-muon-tuning-gpu1-v8",
+    "sha256": {
+      "base/stages/muon-tuning/result.json": "17339015b2675ada15730fa3f85e3968f40d76cd76c927d9817b90098d344046",
+      "base/audit.json": "72aa3a4bdf3dbf582ed84c2e6b8a2db346d7469c91267870ab0644cc7c155ff5",
+      "base/ledger.jsonl": "21f7763ad91793f994a4dc00de274c0f784161d8ff6d6db30fcf58b2afca4b78",
+      "final/plan.json": "a3f2cf3790f11c5ba2a7906a6bec9afd2f563059a4c3e1cf52a0c4acbfae7932",
+      "final/stages/muon-tuning/result.json": "ac523ac9a72f00e2c2001a31dbeb0254531168c426740a51e3e1afcdf01e78cb",
+      "final/stages/muon-tuning/muon-cells/preflight.json": "70758ff23bdfc6b80fae72e4e96833bf74b2f4cd04fe86ed9bb61c34c98b1764",
+      "final/audit.json": "0a06222751a8f93e8035ca743abd85f87f12a0ca2914344d4ac3c884fd76f7e6",
+      "final/ledger.jsonl": "00423a7e9b8c5be593377d2315fd1c0db65010642573a9e58f3cf23ed639ff11"
+    }
+  }
+}

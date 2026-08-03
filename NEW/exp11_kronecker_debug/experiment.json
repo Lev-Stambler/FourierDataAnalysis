@@ -1,0 +1,140 @@
+{
+  "schema": "research-control-v1",
+  "experiment_id": "exp11-kronecker-debug-gpu1-v5",
+  "working_directory": "..",
+  "hypothesis": "A row-balanced order-three causal Kronecker mixer uses its rank and hidden representation more effectively than the flawed Exp10 order-two mixer, and can match Transformer WikiText quality with at most half as many trainable body parameters.",
+  "policy": {
+    "pilot_max_dollars": 25.0,
+    "pilot_max_gpu_hours": 1.0,
+    "scale_tokens_per_parameter": 20.0,
+    "primary_metric": "test NLL at equal prediction tokens versus trainable body parameters",
+    "no_255m_run_without_smaller_frontier_win": true
+  },
+  "source_artifacts": [
+    {
+      "path": "exp11_kronecker_debug/__main__.py",
+      "sha256": "114afa7dcf5c138f033502a6bc05bc3f0894b62d4bd4eeeb0b06195e28c58242"
+    },
+    {
+      "path": "exp11_kronecker_debug/model.py",
+      "sha256": "99e1ad9c061e78cb0b80c5a9716af1a83331ca667bdfb9d996ed106362846077"
+    },
+    {
+      "path": "exp11_kronecker_debug/diagnostics.py",
+      "sha256": "c1dab11e300b7808a9cfcd3042ab434d8cedcffdfb24ab98270d421333a7089c"
+    },
+    {
+      "path": "exp11_kronecker_debug/gates.py",
+      "sha256": "44e95111062e99192a21647ec056d8500858a929e440a508694d32a7bf88066d"
+    },
+    {
+      "path": "exp11_kronecker_debug/synthetic.py",
+      "sha256": "36de9b6efeea21fbd2c5f212d0238a7a9ed27cef8dee285fc3f608b28df24e9e"
+    },
+    {
+      "path": "exp11_kronecker_debug/probes.py",
+      "sha256": "8e18a25cfb08d0ef08a94f21a9c82d56692a943f59585cb24811f429256b0955"
+    },
+    {
+      "path": "exp11_kronecker_debug/lm.py",
+      "sha256": "8f297899fc7b336ca31296cbf8cecf554c78d86c7256a3780b1e467aee23405a"
+    },
+    {
+      "path": "research_control/__main__.py",
+      "sha256": "2eb5b022ec99d762dcd13069ea2753eef15adf0ad47eb275f023fde5a4f3143f"
+    },
+    {
+      "path": "research_control/controller.py",
+      "sha256": "bc52b339e391023f40a853ebbe8e944cd7a0e5fcbd2f6309d1e01267eae80837"
+    },
+    {
+      "path": "research_control/northflank.py",
+      "sha256": "91cf910827bedfcbffae62391db99e5ae989e5617d18f194d3147771a70c176a"
+    }
+  ],
+  "future_scale_gate": {
+    "minimum_training_tokens_per_parameter": 20.0,
+    "required_pilot_verdict": "promote_order3_scaling",
+    "required_paired_nll_bootstrap_upper_bound": 0.02,
+    "maximum_order3_to_transformer_body_parameter_ratio": 0.5,
+    "next_scale_parameters": 32000000,
+    "next_scale_training_tokens": 640000000,
+    "maximum_scale_parameters_without_new_approval": 32000000
+  },
+  "stages": [
+    {
+      "id": "local-correctness",
+      "tier": "local",
+      "requires": [],
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "exp11_kronecker_debug",
+        "local-correctness",
+        "--output={state_root}/gates/local-correctness.json"
+      ],
+      "result_path": "{state_root}/gates/local-correctness.json"
+    },
+    {
+      "id": "full-pilot",
+      "tier": "pilot",
+      "requires": [
+        "local-correctness"
+      ],
+      "local_checks": [
+        "local-correctness"
+      ],
+      "gpu_count": 1,
+      "price_per_gpu_hour": 2.74,
+      "max_wall_seconds": 1800,
+      "heartbeat_path": "{state_root}/stages/full-pilot/heartbeat",
+      "heartbeat_timeout_seconds": 600,
+      "data_artifacts": [
+        {
+          "path": "/cache/exp10/data/wikitext/manifest.json",
+          "sha256": "aef005c8fa4a86f1033cf0a0f0524873f8dfd35368d638f618afa8022e5ed2fe"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/train.npy",
+          "sha256": "0840f947e9b4a86e96d9f24e23db9f6d204f5c8e356dff9cb3f917e3db494419"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/validation.npy",
+          "sha256": "c9dca5e3979aa7c80084c39ac7eac964845da76897694539887678ee4860e09c"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/test.npy",
+          "sha256": "9bb7235fa485da526b56fa2e6033c82e601c94c95e596bba65e6fb87180ee7d1"
+        }
+      ],
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "exp11_kronecker_debug",
+        "full-pilot",
+        "--output={state_root}/stages/full-pilot/result.json",
+        "--synthetic-output={state_root}/stages/full-pilot/synthetic.json",
+        "--wikitext-output={state_root}/stages/full-pilot/wikitext.json",
+        "--data-root=/cache/exp10/data/wikitext",
+        "--heartbeat={state_root}/stages/full-pilot/heartbeat",
+        "--wall-limit-seconds=1800"
+      ],
+      "result_path": "{state_root}/stages/full-pilot/result.json",
+      "pause_command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "research_control.northflank",
+        "pause"
+      ]
+    }
+  ]
+}

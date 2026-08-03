@@ -110,3 +110,57 @@ target. The remaining limitation is optimization and/or model capacity.
   nonlinear depth from Kronecker operator rank.
 - Increasing width is the only one of these knobs that also expands the tied
   vocabulary head, but its body compute scales approximately quadratically.
+
+## Parameter-matched standard Transformer control
+
+Completed on 2026-07-29. This control compares the width-64, depth-32,
+rank-8 Kronecker student against a conventional causal Transformer with four
+attention heads, RoPE, and a width-96 SwiGLU. Both models have exactly
+1,177,920 trainable parameters: 63,808 vocabulary parameters and 1,114,112
+body parameters.
+
+The comparison also matched the frozen teacher, tied multiplicative
+vocabulary, data order, objective, optimizer family, seed, context length,
+global batch, and total training examples. Each model received 144 updates
+with a global batch of 466,944 contexts, totaling exactly 67,239,936 contexts
+and 1,075,838,976 input tokens. Training used all eight H200s without gradient
+accumulation; provider telemetry reported 99-100% utilization on every GPU.
+
+The Transformer learning-rate screen tested `0.05`, `0.1`, `0.2`, and `0.4`
+for 16 updates. LR `0.4` had the best validation KL and was locked for the
+full run. The Kronecker arm reused its existing LR `0.2` recipe; it did not
+receive an equivalent matched-budget LR screen in this experiment.
+
+**Tuning caveat:** this is parameter-, data-, batch-, seed-, and
+training-budget-matched, but it is not symmetrically hyperparameter-tuned.
+The Transformer was tuned more directly than the Kronecker arm. Consequently,
+the result supports the claim that Kronecker beat a tuned standard Transformer
+under these recipes, but it does not establish the best achievable result for
+either architecture under equally exhaustive tuning.
+
+| Metric | Standard Transformer | Kronecker | Matched difference |
+|---|---:|---:|---:|
+| Parameters | 1,177,920 | 1,177,920 | exact match |
+| Training contexts | 67,239,936 | 67,239,936 | exact match |
+| Validation KL | 3.6942244 | **3.3316727** | **9.81% lower** |
+| Validation accuracy | 11.816% | **14.771%** | **+2.95 points** |
+| Test KL | 3.7464445 | **3.3757274** | **9.90% lower** |
+| Test accuracy | 12.402% | **14.978%** | **+2.58 points** |
+| Throughput | 1,394,998 tok/s | **1,703,879 tok/s** | **22.14% faster** |
+| Peak allocated VRAM/GPU | **90.281 GiB** | 133.198 GiB | Transformer uses 42.917 GiB less |
+
+- Transformer W&B:
+  <https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/rh51gjwf>
+- Kronecker W&B:
+  <https://wandb.ai/lev-tear-tear-labs/qwen-causal-kron-distill/runs/7du3wik7>
+- Audit artifact: `/cache/expv6-kiss/matched-standard/comparison.json`
+
+On this matched seed-0 comparison, Kronecker is better on held-out quality and
+training throughput, while the standard Transformer is substantially more
+memory-efficient. The validation KL gap is 0.3625517 in favor of Kronecker,
+which exceeds the preregistered 0.05 threshold; the protocol therefore did
+not require additional seeds before unlocking the test split. This remains
+strong single-seed evidence rather than a definitive architecture-level
+claim. A symmetric Kronecker LR screen followed by two additional matched
+seeds for both locked recipes would address the remaining tuning and
+run-to-run variance questions.

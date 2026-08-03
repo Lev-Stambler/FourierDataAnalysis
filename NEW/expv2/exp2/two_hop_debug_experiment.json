@@ -1,0 +1,56 @@
+{
+  "schema": "research-control-v1",
+  "experiment_id": "expv2-2-two-hop-debug-h100-v1",
+  "hypothesis": "The failed two-hop positive control can be localized by testing the two primitive retrieval edges, explicit edge-role markers, and edge pretraining before unmarked composition; a primitive failure indicates a task bug, marker-only success indicates role ambiguity, and curriculum success indicates an optimization-path failure.",
+  "working_directory": "../..",
+  "policy": {
+    "pilot_max_dollars": 25.0,
+    "pilot_max_gpu_hours": 1.0,
+    "scale_tokens_per_parameter": 20.0
+  },
+  "data_artifacts": [],
+  "source_artifacts": [
+    {"path": "expv2/exp1/model.py"},
+    {"path": "expv2/exp2/synthetic.py"},
+    {"path": "expv2/exp2/two_hop_debug.py"},
+    {"path": "expv2/exp2/preflight.py"},
+    {"path": "expv2/exp2/remote_runner.py"}
+  ],
+  "stages": [
+    {
+      "id": "local-audit",
+      "tier": "local",
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp2",
+        "two-hop-debug-audit",
+        "--output={state_root}/stages/local-audit/result.json"
+      ],
+      "requires": [],
+      "local_checks": [],
+      "data_artifacts": [],
+      "result_path": "{state_root}/stages/local-audit/result.json"
+    },
+    {
+      "id": "h100-debug",
+      "tier": "pilot",
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp2.remote_runner",
+        "--repo-root={manifest_dir}",
+        "--local-output={state_root}/stages/h100-debug/artifacts",
+        "--result={state_root}/stages/h100-debug/result.json",
+        "--campaign=two-hop-debug"
+      ],
+      "requires": ["local-audit"],
+      "local_checks": [],
+      "data_artifacts": [],
+      "gpu_count": 1,
+      "price_per_gpu_hour": 2.74,
+      "max_wall_seconds": 3600,
+      "result_path": "{state_root}/stages/h100-debug/result.json",
+      "pause_command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp2",
+        "delete-service-now"
+      ]
+    }
+  ]
+}

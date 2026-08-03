@@ -33,3 +33,20 @@
   loss agreement where relevant, all requested GPUs, and measured system
   utilization. OOM fallback must search downward from an ambitious batch; it must
   not silently settle on a known-underutilized default.
+
+## Keep the architecture notebook live
+
+- `ARCHITECTURE.md` is the canonical human-readable definition of the current
+  Kronecker candidate. Keep its frozen configuration, exact math, parameter
+  accounting, evidence status, and Mermaid block diagram synchronized with the
+  implementation whenever the architecture changes.
+- Stage proposed changes in the document before implementing them. State the
+  exact mathematical delta, intended mechanism, parameter/compute effect, and
+  smallest falsification test. Do not describe a proposal as current architecture.
+- Never silently mutate an architecture attached to completed results. Give a
+  changed candidate a new identity and keep observed evidence separate from the
+  architectural definition.
+- Serve the notebook during architecture work with
+  `uv run --no-sync python tools/serve_architecture.py`, then use
+  `http://127.0.0.1:8765/`. The viewer reloads Markdown, Mermaid diagrams, and
+  MathJax equations automatically as `ARCHITECTURE.md` changes.

@@ -1,0 +1,56 @@
+{
+  "schema": "research-control-v1",
+  "experiment_id": "expv2-2-corrected-positive-control-h100-v1",
+  "hypothesis": "After isolating one distribution shift per split and supplying at least 1,000 optimizer updates, a conventional matched Transformer with AdamW learns all three corrected ID algorithms above 95%; only then is OOD evidence valid enough to compare the Kronecker candidate.",
+  "working_directory": "../..",
+  "policy": {
+    "pilot_max_dollars": 25.0,
+    "pilot_max_gpu_hours": 1.0,
+    "scale_tokens_per_parameter": 20.0
+  },
+  "data_artifacts": [],
+  "source_artifacts": [
+    {"path": "expv2/exp1/model.py"},
+    {"path": "expv2/exp1/optimizer.py"},
+    {"path": "expv2/exp2/config.py"},
+    {"path": "expv2/exp2/synthetic.py"},
+    {"path": "expv2/exp2/training.py"},
+    {"path": "expv2/exp2/preflight.py"},
+    {"path": "expv2/exp2/campaign.py"},
+    {"path": "expv2/exp2/remote_runner.py"}
+  ],
+  "stages": [
+    {
+      "id": "local-audit",
+      "tier": "local",
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp2", "audit",
+        "--output={state_root}/stages/local-audit/result.json"
+      ],
+      "requires": [],
+      "local_checks": [],
+      "data_artifacts": [],
+      "result_path": "{state_root}/stages/local-audit/result.json"
+    },
+    {
+      "id": "h100-positive-control",
+      "tier": "pilot",
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp2.remote_runner",
+        "--repo-root={manifest_dir}",
+        "--local-output={state_root}/stages/h100-positive-control/artifacts",
+        "--result={state_root}/stages/h100-positive-control/result.json"
+      ],
+      "requires": ["local-audit"],
+      "local_checks": [],
+      "data_artifacts": [],
+      "gpu_count": 1,
+      "price_per_gpu_hour": 2.74,
+      "max_wall_seconds": 3600,
+      "result_path": "{state_root}/stages/h100-positive-control/result.json",
+      "pause_command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp2", "delete-service-now"
+      ]
+    }
+  ]
+}

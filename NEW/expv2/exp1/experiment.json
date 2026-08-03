@@ -1,0 +1,73 @@
+{
+  "schema": "research-control-v1",
+  "experiment_id": "expv2-1-kronecker-basics-h100-v1",
+  "hypothesis": "At a matched approximately 2.15M-parameter budget, a deep causal whole-state linear network whose dense token-by-channel maps are replaced only by sums of Kronecker products can match Transformer algorithmic capability and achieve lower TinyStories test NLL without catastrophic throughput loss.",
+  "working_directory": "../..",
+  "policy": {
+    "pilot_max_dollars": 25.0,
+    "pilot_max_gpu_hours": 1.0,
+    "scale_tokens_per_parameter": 20.0
+  },
+  "data_artifacts": [],
+  "source_artifacts": [
+    {"path": "expv2/exp1/model.py"},
+    {"path": "expv2/exp1/optimizer.py"},
+    {"path": "expv2/exp1/synthetic.py"},
+    {"path": "expv2/exp1/data.py"},
+    {"path": "expv2/exp1/training.py"},
+    {"path": "expv2/exp1/campaign.py"},
+    {"path": "expv2/exp1/preflight.py"},
+    {"path": "expv2/exp1/remote_runner.py"}
+  ],
+  "stages": [
+    {
+      "id": "local-audit",
+      "tier": "local",
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp1",
+        "local-audit", "--output={state_root}/stages/local-audit/result.json"
+      ],
+      "requires": [],
+      "local_checks": [],
+      "data_artifacts": [],
+      "result_path": "{state_root}/stages/local-audit/result.json"
+    },
+    {
+      "id": "prepare-data",
+      "tier": "local",
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp1",
+        "prepare-tinystories",
+        "--output-root={state_root}/data/tinystories",
+        "--result={state_root}/stages/prepare-data/result.json"
+      ],
+      "requires": ["local-audit"],
+      "local_checks": [],
+      "data_artifacts": [],
+      "result_path": "{state_root}/stages/prepare-data/result.json"
+    },
+    {
+      "id": "h100-pilot",
+      "tier": "pilot",
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp1.remote_runner",
+        "--repo-root={manifest_dir}",
+        "--data-root={state_root}/data/tinystories",
+        "--local-output={state_root}/stages/h100-pilot/artifacts",
+        "--result={state_root}/stages/h100-pilot/result.json"
+      ],
+      "requires": ["local-audit", "prepare-data"],
+      "local_checks": [],
+      "data_artifacts": [
+        {"path": "{state_root}/data/tinystories/manifest.json"}
+      ],
+      "gpu_count": 1,
+      "price_per_gpu_hour": 2.74,
+      "max_wall_seconds": 3600,
+      "result_path": "{state_root}/stages/h100-pilot/result.json",
+      "pause_command": [
+        "uv", "run", "--no-sync", "python", "-m", "expv2.exp1", "delete-service"
+      ]
+    }
+  ]
+}

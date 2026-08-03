@@ -1,0 +1,191 @@
+{
+  "schema": "research-control-v1",
+  "experiment_id": "exp13-wikitext-confirmation-8xh100-v2",
+  "working_directory": "..",
+  "hypothesis": "The frozen Exp12 deep content-routed Kronecker mixer will beat the strongest independently AdamW/Muon-tuned, total-parameter-matched standard causal Transformer aspect ratio on all four fresh paired WikiText confirmation seeds by at least 0.10 mean NLL.",
+  "policy": {
+    "pilot_max_dollars": 25.0,
+    "pilot_max_gpu_hours": 1.0,
+    "confirmation_max_dollars": 15.0,
+    "confirmation_max_gpu_hours": 4.0,
+    "scale_tokens_per_parameter": 20.0,
+    "primary_metric": "four-seed paired candidate-minus-strongest-standard-Transformer WikiText NLL on sealed confirmation and conditionally final halves",
+    "no_scale_without_confirmation_win": true,
+    "execution_correction": "eager end-to-end execution after v1 compilation exhausted the full preflight budget"
+  },
+  "source_artifacts": [
+    {
+      "path": "exp13_wikitext_confirmation/__init__.py",
+      "sha256": "3e2b5c03e8eba3ea6b7345233f508524cce041dd3166e0c4c494defe4f958b75"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/__main__.py",
+      "sha256": "15d363389b4018a6d8a4f0363a789bba74b83c79ef30cc890e47249497f797b6"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/model.py",
+      "sha256": "a49aebda8f9c1c54c08ef39f9f2222902f75f9ddb2378c3249c0eb5d5fdbfe4f"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/holdout.py",
+      "sha256": "0c476d95b7403bdc41371da67cefbdf8853383680166b0cffde78a4f88b3f99f"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/study.py",
+      "sha256": "9d3d35148f9ef09cb4363392abab7db1f54000c062136f90c8a838f121f61428"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/gates.py",
+      "sha256": "52a29b56a379cbc94bd2822d97459fefb2a2234e092e9ea372f29d566df9e5a0"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/campaign.py",
+      "sha256": "397bb5013de126bb70b00de9b5f289de816d40cb028b955071dacb4892ab5edd"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/campaign_v2.py",
+      "sha256": "baca730ca293332b6004ea8302c916b79632751b101c9cde2eb63382c3d650fc"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/remote_runner_v2.py",
+      "sha256": "d215ed6ac689657cdb03b86a73b5d874ecfa06b36101bcc27b5aad3e7bcacae1"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/test_exp13.py",
+      "sha256": "54bcda9f9122f0ea84fe47c4c4b1ce7f352d6b1d61a49b65e475b9cad6c66855"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/test_campaign_v2.py",
+      "sha256": "4d1dee3405c09026aee06e32ddc4a818e4658579df627d6e435939cd2e4e3fa8"
+    },
+    {
+      "path": "exp13_wikitext_confirmation/test_remote_runner_v2.py",
+      "sha256": "923433f65baee339a49ab027f0e2c8c86206fc694de20e9e327801a3484643a4"
+    },
+    {
+      "path": "exp11_kronecker_debug/lm.py",
+      "sha256": "1489eeadb314a85dbde94eb097724d52fd77740f48e763e796a52f31cfbf29c9"
+    },
+    {
+      "path": "exp11_kronecker_debug/muon_tuning.py",
+      "sha256": "392fb36da6fcb5084b28566843ec4aad3d11ebf6c52c6c14fa2422e6fcc8cd76"
+    },
+    {
+      "path": "exp11_kronecker_debug/model.py",
+      "sha256": "99e1ad9c061e78cb0b80c5a9716af1a83331ca667bdfb9d996ed106362846077"
+    },
+    {
+      "path": "exp11_kronecker_debug/diagnostics.py",
+      "sha256": "c1dab11e300b7808a9cfcd3042ab434d8cedcffdfb24ab98270d421333a7089c"
+    },
+    {
+      "path": "exp12_deep_kronecker/__init__.py",
+      "sha256": "be8a858423df942f21cf2598efd6ad2049d5c50019c7f135011e5826500a19f1"
+    },
+    {
+      "path": "exp12_deep_kronecker/model.py",
+      "sha256": "c61c27b34af227eb4373bd0c01237900963960942d98853552bc1c893d39e2bc"
+    },
+    {
+      "path": "research_control/__init__.py",
+      "sha256": "8d6b52f1e6d763b38f2303bb065e7c1d4117fc80ebe19700df5ce6b2f7343de7"
+    },
+    {
+      "path": "research_control/__main__.py",
+      "sha256": "2eb5b022ec99d762dcd13069ea2753eef15adf0ad47eb275f023fde5a4f3143f"
+    },
+    {
+      "path": "research_control/controller.py",
+      "sha256": "a84cfc4ef22ac52109281c787471617cf17c9f0ea81a052f36297f87e9b54340"
+    },
+    {
+      "path": "research_control/northflank.py",
+      "sha256": "91cf910827bedfcbffae62391db99e5ae989e5617d18f194d3147771a70c176a"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "2bf372b66286dfd7b90b2329dd4304b3064689eca3ec898cb63bd2db87f075b5"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "c49b9c2a6065b05ce338e09c87b402cebb7933e5e312d2c189529d8e2feeec90"
+    }
+  ],
+  "stages": [
+    {
+      "id": "local-audit",
+      "tier": "local",
+      "requires": [],
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m",
+        "exp13_wikitext_confirmation", "local-audit",
+        "--output={state_root}/gates/local-audit.json"
+      ],
+      "result_path": "{state_root}/gates/local-audit.json"
+    },
+    {
+      "id": "prepare-holdout",
+      "tier": "local",
+      "requires": ["local-audit"],
+      "local_checks": ["local-audit"],
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m",
+        "exp13_wikitext_confirmation", "prepare-holdout",
+        "--data-root=/cache/exp10/data/wikitext",
+        "--output-root={state_root}/sealed-holdout",
+        "--result={state_root}/gates/prepare-holdout.json"
+      ],
+      "result_path": "{state_root}/gates/prepare-holdout.json",
+      "data_artifacts": [
+        {
+          "path": "/cache/exp10/data/wikitext/manifest.json",
+          "sha256": "aef005c8fa4a86f1033cf0a0f0524873f8dfd35368d638f618afa8022e5ed2fe"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/test.npy",
+          "sha256": "9bb7235fa485da526b56fa2e6033c82e601c94c95e596bba65e6fb87180ee7d1"
+        }
+      ]
+    },
+    {
+      "id": "wikitext-confirmation-v2",
+      "tier": "confirmation",
+      "requires": ["local-audit", "prepare-holdout"],
+      "local_checks": ["local-audit", "prepare-holdout"],
+      "command": [
+        "uv", "run", "--no-sync", "python", "-m",
+        "exp13_wikitext_confirmation.campaign_v2",
+        "--output={state_root}/stages/wikitext-confirmation-v2/result.json",
+        "--data-root=/cache/exp10/data/wikitext",
+        "--holdout-root={state_root}/sealed-holdout",
+        "--heartbeat={state_root}/stages/wikitext-confirmation-v2/heartbeat"
+      ],
+      "result_path": "{state_root}/stages/wikitext-confirmation-v2/result.json",
+      "heartbeat_path": "{state_root}/stages/wikitext-confirmation-v2/heartbeat",
+      "heartbeat_timeout_seconds": 180,
+      "gpu_count": 8,
+      "price_per_gpu_hour": 2.825,
+      "max_wall_seconds": 1800,
+      "parameters": 6410560,
+      "training_tokens": 10000000,
+      "data_artifacts": [
+        {
+          "path": "/cache/exp10/data/wikitext/manifest.json",
+          "sha256": "aef005c8fa4a86f1033cf0a0f0524873f8dfd35368d638f618afa8022e5ed2fe"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/train.npy",
+          "sha256": "0840f947e9b4a86e96d9f24e23db9f6d204f5c8e356dff9cb3f917e3db494419"
+        },
+        {
+          "path": "/cache/exp10/data/wikitext/validation.npy",
+          "sha256": "c9dca5e3979aa7c80084c39ac7eac964845da76897694539887678ee4860e09c"
+        }
+      ],
+      "pause_command": [
+        "uv", "run", "--no-sync", "python", "-m",
+        "research_control.northflank", "pause"
+      ]
+    }
+  ]
+}
