@@ -1,0 +1,58 @@
+{
+  "schema": "exp19-norm-residual-plan-v1",
+  "status": "confirmation-complete-heldout-ladder-running",
+  "training_location": "cloud-only",
+  "hardware": "8xH100-80GB",
+  "wandb_url": null,
+  "target_total_parameters": 5400896,
+  "minimum_global_tokens_per_step": 100000,
+  "minimum_gpu_utilization_percent": 85,
+  "gradient_accumulation": 1,
+  "minimum_corpus_optimizer_updates": 128,
+  "two_example_confirmation_optimizer_updates": 128,
+  "corpus_confirmation_optimizer_updates": 256,
+  "unique_example_ladder": [8, 32, 128],
+  "primary_candidate": "prenorm-clean-token-r1",
+  "diagnostic_parameter_tolerance": {
+    "prenorm-learned-mixed-redundant-r1": 0.002
+  },
+  "tracks": [
+    "legacy-exp17-postnorm-r1",
+    "prenorm-affine-free-redundant-r1",
+    "prenorm-learned-mixed-redundant-r1",
+    "prenorm-clean-joint-r1",
+    "prenorm-clean-token-r1",
+    "prenorm-no-router-token-ffn",
+    "prenorm-transformer-d32-w128",
+    "prenorm-transformer-d3-w256"
+  ],
+  "training_tracks": [
+    "legacy-exp17-postnorm-r1",
+    "prenorm-clean-joint-r1",
+    "prenorm-clean-token-r1",
+    "prenorm-no-router-token-ffn",
+    "prenorm-transformer-d32-w128",
+    "prenorm-transformer-d3-w256"
+  ],
+  "diagnostic_only_tracks": [
+    "prenorm-affine-free-redundant-r1",
+    "prenorm-learned-mixed-redundant-r1"
+  ],
+  "initial_conditioning_gate": {
+    "finite_nonempty": true,
+    "maximum_individual_branch_state_ratio": 0.5,
+    "aggregate_branch_rss_interval": [0.05, 0.75],
+    "per_branch_0.02_0.20_fraction": "diagnostic-only"
+  },
+  "recovered_preflight_wandb_url": "https://wandb.ai/lev-tear-tear-labs/exp19-norm-residual/runs/c813xaby",
+  "corrected_screen_wandb_url": "https://wandb.ai/lev-tear-tear-labs/exp19-norm-residual/runs/8h20h44k",
+  "stopped_invalid_cache_resume_wandb_url": "https://wandb.ai/lev-tear-tear-labs/exp19-norm-residual/runs/ttb564mu",
+  "active_resumed_wandb_url": "https://wandb.ai/lev-tear-tear-labs/exp19-norm-residual/runs/uedf4491",
+  "resume_state_digest": "e0d29801f69b",
+  "corrected_preflight": {
+    "physical_batch": 4096,
+    "global_tokens_per_step": 1048576,
+    "full_node_tokens_per_second": 3558859,
+    "minimum_measured_worker_utilization_percent": 99.5
+  }
+}

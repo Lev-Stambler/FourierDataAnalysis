@@ -1,0 +1,20 @@
+{
+  "schema": "v3-dllm-monarch-audit-correction-v1",
+  "run_url": "https://wandb.ai/lev-tear-tear-labs/v3-dllm-monarch/runs/9th8eddp",
+  "checkpoint": "/cache/v3_dllm_monarch/outputs/quality-v1.2-continuation-step50-b160/checkpoint-300",
+  "corrections": {
+    "torch_compile": {
+      "recorded_result_value": false,
+      "observed_checkpoint_value": true,
+      "observed_backend": "inductor",
+      "observed_mode": "default",
+      "evidence_file": "checkpoint-300/training_args.bin",
+      "evidence_sha256": "238b2447d1c0fb34637d4094ff661094c4243200978175a9f79f4fd98cb9e0c1",
+      "interpretation": "Transformers enabled compilation because backend and mode were supplied even though the CLI compile flag was absent. Eight selected-row shapes recompiled before Dynamo fell back to eager execution. Hot steps after fallback are valid eager throughput evidence; the early compiled timings are not."
+    },
+    "heldout_evaluation": {
+      "recorded_result_is_longitudinally_valid": false,
+      "interpretation": "The old streaming iterable reconstructed to a different effective set and only 16 reported examples. These values are historical logs, not fixed held-out quality evidence."
+    }
+  }
+}

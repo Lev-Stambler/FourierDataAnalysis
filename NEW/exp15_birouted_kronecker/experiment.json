@@ -1,0 +1,29 @@
+{
+  "schema": "exp15-birouted-kronecker-plan-v1",
+  "status": "complete",
+  "training_location": "cloud-only",
+  "hardware": "8xH100-80GB",
+  "context_length": 256,
+  "prediction_shift_tokens": 16,
+  "variants": [
+    "current-r8",
+    "ffn-only",
+    "source-r8",
+    "bi-r8",
+    "decoupled-r8",
+    "bi-decoupled-r8",
+    "dense-workspace-r8",
+    "bi-r12"
+  ],
+  "primary_question": "Does source-before-mix plus destination-after-mix routing improve the block-causal Kronecker mixer?",
+  "result": {
+    "wandb_url": "https://wandb.ai/lev-tear-tear-labs/exp15-birouted-kronecker/runs/x9s7y8hf",
+    "verdict": "stop_no_mechanistic_signal",
+    "best_successor": "bi-decoupled-r8",
+    "screen_successor_minus_current_nll": -0.000464167853294839,
+    "screen_successor_minus_ffn_only_nll": -0.013580108041247207,
+    "screen_tokens_per_variant": 10000000,
+    "optimizer_tuning_ran": false,
+    "final_confirmation_ran": false
+  }
+}

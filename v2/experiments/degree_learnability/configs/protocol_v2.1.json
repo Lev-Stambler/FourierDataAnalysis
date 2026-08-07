@@ -1,0 +1,137 @@
+{
+  "version": "2.1",
+  "date": "2026-08-07",
+  "amendment_note": "Prospective unseen-corpus replication and out-of-corpus predictor selection. Frozen after v2.0 and after source-only byte materialization, but before any v2.1 Fourier profile or learning curve was computed.",
+  "source_protocol_hash": "5960946e29702cfb09dc5be144cb3e27643accf89b29793aa517dd32c232b2d0",
+  "datasets": [
+    {
+      "id": "gutenberg_books",
+      "domain": "public-domain books",
+      "path": "dlx/data_cache/v21_gutenberg_books_bytes_n5499984.npy",
+      "file_sha256": "a522af7209bc0f1ce0b4c32696c91c050ee74c637929062e42f22cbbcca5b80e",
+      "byte_stream_sha256": "6d29c7ccacb0b1fd4f4627430396bcb5019dcd05beb0efec129ef103572e84bc"
+    },
+    {
+      "id": "reuters_news",
+      "domain": "newswire",
+      "path": "dlx/data_cache/v21_reuters_news_bytes_n5499984.npy",
+      "file_sha256": "d30945bc658d3465acaca1de5d8b20be6b0edd4267f98fa7efd4970802d8965d",
+      "byte_stream_sha256": "372ae51feb23bac46f8e2a28a59acf2444abd77f553f708976394011a79d711b"
+    },
+    {
+      "id": "brown_balanced",
+      "domain": "balanced English genres",
+      "path": "dlx/data_cache/v21_brown_balanced_bytes_n5499984.npy",
+      "file_sha256": "a83cce6b57946edef88a08c108bd0999d390498b84bb903190f90f58c4f78450",
+      "byte_stream_sha256": "912ad55a415d2664a8606a5d1632ea80a3a5701573ba6ba3af261567c2afd10b"
+    },
+    {
+      "id": "pubmed_abstracts",
+      "domain": "biomedical abstracts",
+      "path": "dlx/data_cache/v21_pubmed_abstracts_bytes_n5499984.npy",
+      "file_sha256": "98ab511a6dc03eba1d10edc9186a93ee55e8e390a005f39a121eb1b8db6fc031",
+      "byte_stream_sha256": "ffdf07ce5360bbe26242454e8186987b6f723bea78fc03c52c1fc4ce153a38df"
+    },
+    {
+      "id": "cpython_source",
+      "domain": "Python source code",
+      "path": "dlx/data_cache/v21_cpython_source_bytes_n5499984.npy",
+      "file_sha256": "dee4188808ee0f70f9942a5013b107149d6c3ae11a0edb0a3518d04fa3b35f68",
+      "byte_stream_sha256": "28ab23656d4bcd8154d1c3d6eac4a412b921c8a9cc5a73c34a5bbf22f7e563a0"
+    },
+    {
+      "id": "linux_c_source",
+      "domain": "C source code",
+      "path": "dlx/data_cache/v21_linux_c_source_bytes_n5499984.npy",
+      "file_sha256": "4cb1a1b7c82794d7119c001a77a8e0e3adcb86975eeb195c0caaf7b81d30a406",
+      "byte_stream_sha256": "ab3f70a3c15a50157d0b2e0f610d515238736e6893f8c3582439a578841643fc"
+    }
+  ],
+  "intervention": {
+    "strides": [1, 2, 3, 4, 6, 8, 12, 16],
+    "transform": "split each fixed byte stream into s equal contiguous lanes and emit the transpose round-robin",
+    "preregistered_pair": "(s,2s); no data-dependent lag-pair selection",
+    "invariants": [
+      "exact byte multiset",
+      "q=256",
+      "corpus length=5499984",
+      "learner and token budget",
+      "source corpus within each stride block"
+    ],
+    "intended_variation": "eight radii plus naturally varying W0/W1/W2 across six unseen corpora, allowing out-of-corpus comparison of radius-only, conditional, and total-Parseval scaling"
+  },
+  "spectrum": {
+    "target": "f(x)=P(next byte|preregistered context pair (s,2s))",
+    "basis": "Formula-(19) Gram-orthonormalized categorical degree filtration",
+    "profile_positions": 96000,
+    "position_sampling": "uniform corpus-wide time indices with every interleaved lane represented in both cross-fit folds",
+    "level_weights": "W0=1-L0, W1=L0-L1, W2=L1-L2",
+    "parseval_total": "S=W0+W1+W2=E_D||f(X)||_2^2",
+    "predictors": [
+      "mean_degree_total",
+      "mean_degree_nonconstant",
+      "log2_radius",
+      "geometric_moment_absolute",
+      "geometric_moment_nonconstant",
+      "geometric_moment_total",
+      "spectral_entropy_uniform_within_level_upper_bits"
+    ],
+    "primary_predictor": "geometric_moment_total"
+  },
+  "learner": {
+    "vocab": 256,
+    "ctx_len": 64,
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4,
+    "mlp_mult": 4,
+    "dropout": 0.0,
+    "tie_weights": true,
+    "lr": 0.001,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "tokens_per_step": 1024,
+    "budget_tokens": 3000000,
+    "checkpoints": 16
+  },
+  "replication": {
+    "seeds": [0, 1, 2],
+    "datasets": 6,
+    "strides_per_dataset": 8,
+    "total_training_cells": 144,
+    "total_profile_cells": 48
+  },
+  "difficulty": {
+    "primary": "dataset-stride median final held-out CE divided by initial held-out CE; higher is harder",
+    "secondary": "dataset-stride median normalized held-out curve area over log1p token time",
+    "comparison_scale": "within-corpus change from stride 1"
+  },
+  "geometry_replication_test": {
+    "statistic": "mean of six within-dataset Spearman correlations between G_total and primary difficulty",
+    "null": "independently permute the eight difficulty ranks within every dataset",
+    "p_value": "two-sided exact probability computed by convolution of the six n=8 Spearman permutation distributions",
+    "support_rule": "geometry replicated if mean rho>=0.70, exact p<0.01, stride-16 difficulty exceeds stride-1 in at least 5 of 6 datasets, and seed-specific blocked mean rho is positive for all three seeds"
+  },
+  "predictor_selection_test": {
+    "procedure": "for each predictor and held-out corpus, subtract that corpus's stride-1 value, fit a zero-intercept slope on the other five corpora, and predict held-out stride deltas; aggregate squared error over the seven nonbaseline strides",
+    "primary_score": "leave-one-corpus-out RMSE",
+    "identifiability_gate": "absolute Pearson correlation of flattened within-corpus-centered G_total with every competing predictor must be below 0.995",
+    "selection_rule": "G_TOTAL_SELECTED if geometry replicates, G_total has the lowest LOCO RMSE, its RMSE is at least 5% below the runner-up, it beats log2_radius RMSE in at least 5 of 6 held-out corpora, and the identifiability gate passes",
+    "otherwise_if_geometry_replicates": "GEOMETRY_SUPPORTED_METRIC_UNRESOLVED",
+    "otherwise": "GEOMETRY_NOT_REPLICATED"
+  },
+  "execution": {
+    "provider": "Modal",
+    "training_gpu": "A10G",
+    "profile_compute": "remote CPU",
+    "remote_training_cells": 144,
+    "remote_profile_cells": 48,
+    "local_training_cells": 0,
+    "local_profile_cells": 0,
+    "retries": 0,
+    "timeout_seconds_per_cell": 1800,
+    "network_data_download_inside_cells": false
+  },
+  "scope": "out-of-corpus validation of locality and comparison of scalar geometry summaries on six fixed real byte corpora for this learner; not a universal cross-domain law",
+  "protocol_hash": "a38751bdc22ad8aca0534e24bbad1681e3fb6d782ceb2561a663dd54559d7db4"
+}

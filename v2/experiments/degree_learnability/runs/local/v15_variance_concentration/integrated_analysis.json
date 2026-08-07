@@ -1,0 +1,906 @@
+{
+  "protocol_version": "1.5",
+  "protocol_hash": "9819a0ca3aa0068f7463ba9816919e32ed88dd77640ef06374ec5f51066649c1",
+  "source_v1_4_protocol_hash": "86781a91c742806370fdc4d6ecc5f365e7018164eb086d6fedc2fc6e0e3812d9",
+  "metric_correction": "total conditional-function variance followed by cumulative low-degree concentration; effective degree is demoted to a derived diagnostic",
+  "controlled_consistency_check": {
+    "status": "PASS",
+    "not_an_independent_confirmation_test": true,
+    "copy_lag16_concentration_leq_1": 1.0,
+    "markov2_concentration_leq_1": 0.0,
+    "copy_minus_markov_concentration": 1.0,
+    "copy_degree2_tail": 0.0,
+    "markov2_degree2_tail": 1.0,
+    "source_training_verdict": "PASS",
+    "curve_area_markov_minus_copy": 0.1747138357500242,
+    "learning_copy_minus_markov_bits": 3.412179476711441,
+    "rule": {
+      "copy_lag16": "C_leq1 >= 0.95 and degree-2 tail <= 0.05",
+      "markov2": "C_leq1 <= 0.05 and degree-2 tail >= 0.95",
+      "ordering": "copy C_leq1 minus markov2 C_leq1 >= 0.90",
+      "status": "post-hoc metric correction; consistency check, not a new independent confirmation test"
+    }
+  },
+  "rungs": [
+    {
+      "rung": "enwik8_bytes",
+      "source_kind": "natural",
+      "planted_degree": null,
+      "span": null,
+      "n_seeds": 3,
+      "initial_ce_bits": 7.995422359764667,
+      "final_ce_bits": 3.1133761311717953,
+      "best_ce_bits": 3.0847620446822055,
+      "learning_amount_bits": 4.900324544726571,
+      "fractional_learning": 0.6112901609839809,
+      "normalized_curve_area": 0.6843886644089398,
+      "best_pair": [
+        1,
+        2
+      ],
+      "observed_output_variance": 0.949307754752,
+      "conditional_function_variance": 0.23024563530477293,
+      "conditional_fraction_of_observed_variance": 0.24254056090053008,
+      "degree_leq_1_variance": 0.10625889287526025,
+      "degree_2_incremental_variance": 0.12398674242951269,
+      "concentration_leq_1": 0.4615023113667577,
+      "concentration_leq_2": 1.0,
+      "tail_above_degree_1": 0.5384976886332423,
+      "effective_degree_diagnostic": 1.5384976886332424,
+      "pair_profiles": [
+        {
+          "lags": [
+            1,
+            2
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.949307754752,
+          "degree1_brier_L1": 0.8430488618767398,
+          "degree2_brier_L2": 0.7190621194472271,
+          "observed_output_variance": 0.949307754752,
+          "pair_function_variance": 0.23024563530477293,
+          "pair_variance_fraction_of_observed": 0.24254056090053008,
+          "degree1_variance": 0.10625889287526025,
+          "degree2_incremental_variance": 0.12398674242951269,
+          "concentration_leq_1": 0.4615023113667577,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.5384976886332423,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            1,
+            4
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9493075327359999,
+          "degree1_brier_L1": 0.8556547629065467,
+          "degree2_brier_L2": 0.7766939375561654,
+          "observed_output_variance": 0.9493075327359999,
+          "pair_function_variance": 0.17261359517983443,
+          "pair_variance_fraction_of_observed": 0.18183106024908985,
+          "degree1_variance": 0.09365276982945314,
+          "degree2_incremental_variance": 0.07896082535038129,
+          "concentration_leq_1": 0.542557321350515,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.45744267864948496,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            1,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.949307152064,
+          "degree1_brier_L1": 0.8644313156180575,
+          "degree2_brier_L2": 0.8238555856443542,
+          "observed_output_variance": 0.949307152064,
+          "pair_function_variance": 0.12545156641964572,
+          "pair_variance_fraction_of_observed": 0.13215065971733886,
+          "degree1_variance": 0.08487583644594243,
+          "degree2_incremental_variance": 0.04057572997370329,
+          "concentration_leq_1": 0.6765625880032924,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.3234374119967076,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            1,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.94930586528,
+          "degree1_brier_L1": 0.8667109625271596,
+          "degree2_brier_L2": 0.8359777608722548,
+          "observed_output_variance": 0.94930586528,
+          "pair_function_variance": 0.11332810440774521,
+          "pair_variance_fraction_of_observed": 0.11937996861982815,
+          "degree1_variance": 0.08259490275284043,
+          "degree2_incremental_variance": 0.030733201654904785,
+          "concentration_leq_1": 0.7288121793308282,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.2711878206691718,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            2,
+            4
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9493075327359999,
+          "degree1_brier_L1": 0.9053081999360884,
+          "degree2_brier_L2": 0.8292667069296333,
+          "observed_output_variance": 0.9493075327359999,
+          "pair_function_variance": 0.12004082580636655,
+          "pair_variance_fraction_of_observed": 0.12645093572616747,
+          "degree1_variance": 0.04399933279991153,
+          "degree2_incremental_variance": 0.07604149300645502,
+          "concentration_leq_1": 0.3665364054632983,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.6334635945367018,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            2,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.949307152064,
+          "degree1_brier_L1": 0.9145242673159588,
+          "degree2_brier_L2": 0.8766554591469653,
+          "observed_output_variance": 0.949307152064,
+          "pair_function_variance": 0.07265169291703466,
+          "pair_variance_fraction_of_observed": 0.0765312815341948,
+          "degree1_variance": 0.03478288474804114,
+          "degree2_incremental_variance": 0.03786880816899352,
+          "concentration_leq_1": 0.4787622056895744,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.5212377943104256,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            2,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.94930586528,
+          "degree1_brier_L1": 0.9164951763816929,
+          "degree2_brier_L2": 0.8887834939728314,
+          "observed_output_variance": 0.94930586528,
+          "pair_function_variance": 0.06052237130716864,
+          "pair_variance_fraction_of_observed": 0.06375434253670963,
+          "degree1_variance": 0.03281068889830718,
+          "degree2_incremental_variance": 0.02771168240886146,
+          "concentration_leq_1": 0.5421249727936698,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.4578750272063302,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            4,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.949307152064,
+          "degree1_brier_L1": 0.9303847993275807,
+          "degree2_brier_L2": 0.8947107351406015,
+          "observed_output_variance": 0.949307152064,
+          "pair_function_variance": 0.05459641692339845,
+          "pair_variance_fraction_of_observed": 0.05751185673118967,
+          "degree1_variance": 0.01892235273641929,
+          "degree2_incremental_variance": 0.03567406418697916,
+          "concentration_leq_1": 0.34658598132856067,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.6534140186714393,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            4,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.94930586528,
+          "degree1_brier_L1": 0.9327486304416576,
+          "degree2_brier_L2": 0.9086573559923847,
+          "observed_output_variance": 0.94930586528,
+          "pair_function_variance": 0.04064850928761532,
+          "pair_variance_fraction_of_observed": 0.04281919113143364,
+          "degree1_variance": 0.016557234838342483,
+          "degree2_incremental_variance": 0.024091274449272837,
+          "concentration_leq_1": 0.40732698759477254,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.5926730124052275,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            8,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.94930586528,
+          "degree1_brier_L1": 0.9420943664568145,
+          "degree2_brier_L2": 0.9182988546922718,
+          "observed_output_variance": 0.94930586528,
+          "pair_function_variance": 0.031007010587728256,
+          "pair_variance_fraction_of_observed": 0.03266282419795506,
+          "degree1_variance": 0.007211498823185503,
+          "degree2_incremental_variance": 0.023795511764542754,
+          "concentration_leq_1": 0.23257639761117832,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.7674236023888217,
+          "monotone_projection_applied": false
+        }
+      ]
+    },
+    {
+      "rung": "tinystories_bytes",
+      "source_kind": "natural",
+      "planted_degree": null,
+      "span": null,
+      "n_seeds": 3,
+      "initial_ce_bits": 8.014611753991312,
+      "final_ce_bits": 2.073231637089924,
+      "best_ce_bits": 2.072106806059787,
+      "learning_amount_bits": 5.924413168480518,
+      "fractional_learning": 0.7413185191338252,
+      "normalized_curve_area": 0.6530205646075818,
+      "best_pair": [
+        1,
+        2
+      ],
+      "observed_output_variance": 0.9295477852160001,
+      "conditional_function_variance": 0.2494334128586374,
+      "conditional_fraction_of_observed_variance": 0.26833845104657666,
+      "degree_leq_1_variance": 0.1495884937641837,
+      "degree_2_incremental_variance": 0.0998449190944537,
+      "concentration_leq_1": 0.5997131340577885,
+      "concentration_leq_2": 1.0,
+      "tail_above_degree_1": 0.4002868659422115,
+      "effective_degree_diagnostic": 1.4002868659422116,
+      "pair_profiles": [
+        {
+          "lags": [
+            1,
+            2
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9295477852160001,
+          "degree1_brier_L1": 0.7799592914518164,
+          "degree2_brier_L2": 0.6801143723573627,
+          "observed_output_variance": 0.9295477852160001,
+          "pair_function_variance": 0.2494334128586374,
+          "pair_variance_fraction_of_observed": 0.26833845104657666,
+          "degree1_variance": 0.1495884937641837,
+          "degree2_incremental_variance": 0.0998449190944537,
+          "concentration_leq_1": 0.5997131340577885,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.4002868659422115,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            1,
+            4
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.92954807776,
+          "degree1_brier_L1": 0.8033811803466056,
+          "degree2_brier_L2": 0.7434841148119116,
+          "observed_output_variance": 0.92954807776,
+          "pair_function_variance": 0.18606396294808847,
+          "pair_variance_fraction_of_observed": 0.20016604562989404,
+          "degree1_variance": 0.12616689741339449,
+          "degree2_incremental_variance": 0.05989706553469398,
+          "concentration_leq_1": 0.6780834687939805,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.3219165312060195,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            1,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.929546453568,
+          "degree1_brier_L1": 0.8111511107119509,
+          "degree2_brier_L2": 0.797878127741942,
+          "observed_output_variance": 0.929546453568,
+          "pair_function_variance": 0.13166832582605803,
+          "pair_variance_fraction_of_observed": 0.14164792444816313,
+          "degree1_variance": 0.11839534285604913,
+          "degree2_incremental_variance": 0.013272982970008895,
+          "concentration_leq_1": 0.8991938046850894,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.10080619531491064,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            1,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.929547835392,
+          "degree1_brier_L1": 0.812426434752965,
+          "degree2_brier_L2": 0.8137620446334324,
+          "observed_output_variance": 0.929547835392,
+          "pair_function_variance": 0.11712140063903498,
+          "pair_variance_fraction_of_observed": 0.1259982500950515,
+          "degree1_variance": 0.11712140063903498,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": 1.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.0,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            2,
+            4
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.92954807776,
+          "degree1_brier_L1": 0.8705872604517971,
+          "degree2_brier_L2": 0.8147067219896844,
+          "observed_output_variance": 0.92954807776,
+          "pair_function_variance": 0.11484135577031562,
+          "pair_variance_fraction_of_observed": 0.12354536415916995,
+          "degree1_variance": 0.058960817308202906,
+          "degree2_incremental_variance": 0.05588053846211272,
+          "concentration_leq_1": 0.5134110174223769,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.48658898257762306,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            2,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.929546453568,
+          "degree1_brier_L1": 0.8769259093667428,
+          "degree2_brier_L2": 0.8635946355971638,
+          "observed_output_variance": 0.929546453568,
+          "pair_function_variance": 0.06595181797083627,
+          "pair_variance_fraction_of_observed": 0.07095053476637424,
+          "degree1_variance": 0.05262054420125728,
+          "degree2_incremental_variance": 0.013331273769578988,
+          "concentration_leq_1": 0.7978634375859958,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.20213656241400424,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            2,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.929547835392,
+          "degree1_brier_L1": 0.878209500219888,
+          "degree2_brier_L2": 0.8799143929551967,
+          "observed_output_variance": 0.929547835392,
+          "pair_function_variance": 0.05133833517211206,
+          "pair_variance_fraction_of_observed": 0.055229363371560265,
+          "degree1_variance": 0.05133833517211206,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": 1.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.0,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            4,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.929546453568,
+          "degree1_brier_L1": 0.9147901641218987,
+          "degree2_brier_L2": 0.9036387105242919,
+          "observed_output_variance": 0.929546453568,
+          "pair_function_variance": 0.02590774304370813,
+          "pair_variance_fraction_of_observed": 0.027871380654794654,
+          "degree1_variance": 0.0147562894461013,
+          "degree2_incremental_variance": 0.01115145359760683,
+          "concentration_leq_1": 0.5695706268665098,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.43042937313349017,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            4,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.929547835392,
+          "degree1_brier_L1": 0.9160753939798316,
+          "degree2_brier_L2": 0.918425308803652,
+          "observed_output_variance": 0.929547835392,
+          "pair_function_variance": 0.013472441412168412,
+          "pair_variance_fraction_of_observed": 0.01449354288097174,
+          "degree1_variance": 0.013472441412168412,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": 1.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.0,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            8,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.929547835392,
+          "degree1_brier_L1": 0.9284575028239853,
+          "degree2_brier_L2": 0.9312397415275062,
+          "observed_output_variance": 0.929547835392,
+          "pair_function_variance": 0.001090332568014718,
+          "pair_variance_fraction_of_observed": 0.0011729709074680523,
+          "degree1_variance": 0.001090332568014718,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": 1.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.0,
+          "monotone_projection_applied": true
+        }
+      ]
+    },
+    {
+      "rung": "markov2_bytes",
+      "source_kind": "synthetic",
+      "planted_degree": 2,
+      "span": 2,
+      "n_seeds": 3,
+      "initial_ce_bits": 8.018443011504583,
+      "final_ce_bits": 7.548339528252077,
+      "best_ce_bits": 7.548339528252077,
+      "learning_amount_bits": 0.47365225926173515,
+      "fractional_learning": 0.05904422141131737,
+      "normalized_curve_area": 0.9945384239337036,
+      "best_pair": [
+        1,
+        2
+      ],
+      "observed_output_variance": 0.9961006417280001,
+      "conditional_function_variance": 0.16384172517013673,
+      "conditional_fraction_of_observed_variance": 0.16448310372123637,
+      "degree_leq_1_variance": 0.0,
+      "degree_2_incremental_variance": 0.16384172517013673,
+      "concentration_leq_1": 0.0,
+      "concentration_leq_2": 1.0,
+      "tail_above_degree_1": 1.0,
+      "effective_degree_diagnostic": 2.0,
+      "pair_profiles": [
+        {
+          "lags": [
+            1,
+            2
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961006417280001,
+          "degree1_brier_L1": 1.000165294271323,
+          "degree2_brier_L2": 0.8322589165578633,
+          "observed_output_variance": 0.9961006417280001,
+          "pair_function_variance": 0.16384172517013673,
+          "pair_variance_fraction_of_observed": 0.16448310372123637,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.16384172517013673,
+          "concentration_leq_1": 0.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 1.0,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            1,
+            4
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.996100654208,
+          "degree1_brier_L1": 1.0001622211316454,
+          "degree2_brier_L2": 0.9678675989909926,
+          "observed_output_variance": 0.996100654208,
+          "pair_function_variance": 0.028233055217007363,
+          "pair_variance_fraction_of_observed": 0.02834357662324344,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.028233055217007363,
+          "concentration_leq_1": 0.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 1.0,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            1,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961006675840001,
+          "degree1_brier_L1": 1.0001265606110472,
+          "degree2_brier_L2": 1.0103441339796713,
+          "observed_output_variance": 0.9961006675840001,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            1,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961006659839999,
+          "degree1_brier_L1": 1.000153652165248,
+          "degree2_brier_L2": 1.0157276298531783,
+          "observed_output_variance": 0.9961006659839999,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            2,
+            4
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.996100654208,
+          "degree1_brier_L1": 1.0001857344648517,
+          "degree2_brier_L2": 0.9585867398879535,
+          "observed_output_variance": 0.996100654208,
+          "pair_function_variance": 0.03751391432004647,
+          "pair_variance_fraction_of_observed": 0.03766076667209279,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.03751391432004647,
+          "concentration_leq_1": 0.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 1.0,
+          "monotone_projection_applied": false
+        },
+        {
+          "lags": [
+            2,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961006675840001,
+          "degree1_brier_L1": 1.0001564731608268,
+          "degree2_brier_L2": 1.0139381726292458,
+          "observed_output_variance": 0.9961006675840001,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            2,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961006659839999,
+          "degree1_brier_L1": 1.0001800769537659,
+          "degree2_brier_L2": 1.0157955089774957,
+          "observed_output_variance": 0.9961006659839999,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            4,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961006675840001,
+          "degree1_brier_L1": 1.0001523458210286,
+          "degree2_brier_L2": 1.0102704838936865,
+          "observed_output_variance": 0.9961006675840001,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            4,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961006659839999,
+          "degree1_brier_L1": 1.0001754019030615,
+          "degree2_brier_L2": 1.0160422751349323,
+          "observed_output_variance": 0.9961006659839999,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            8,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961006659839999,
+          "degree1_brier_L1": 1.000143767025258,
+          "degree2_brier_L2": 1.015879261160981,
+          "observed_output_variance": 0.9961006659839999,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        }
+      ]
+    },
+    {
+      "rung": "copy_lag16_bytes",
+      "source_kind": "synthetic",
+      "planted_degree": 1,
+      "span": 16,
+      "n_seeds": 3,
+      "initial_ce_bits": 8.017117369231732,
+      "final_ce_bits": 4.130113055544972,
+      "best_ce_bits": 4.130113055544972,
+      "learning_amount_bits": 3.885831735973176,
+      "fractional_learning": 0.48476278680023627,
+      "normalized_curve_area": 0.8198245881836794,
+      "best_pair": [
+        1,
+        16
+      ],
+      "observed_output_variance": 0.9961528474879999,
+      "conditional_function_variance": 0.5554597050523984,
+      "conditional_fraction_of_observed_variance": 0.5576048961292456,
+      "degree_leq_1_variance": 0.5554597050523984,
+      "degree_2_incremental_variance": 0.0,
+      "concentration_leq_1": 1.0,
+      "concentration_leq_2": 1.0,
+      "tail_above_degree_1": 0.0,
+      "effective_degree_diagnostic": 1.0,
+      "pair_profiles": [
+        {
+          "lags": [
+            1,
+            2
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528467199998,
+          "degree1_brier_L1": 1.0106885154372718,
+          "degree2_brier_L2": 1.029897841691656,
+          "observed_output_variance": 0.9961528467199998,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            1,
+            4
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528565760001,
+          "degree1_brier_L1": 1.0105566330237639,
+          "degree2_brier_L2": 1.0296714840988805,
+          "observed_output_variance": 0.9961528565760001,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            1,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528486400001,
+          "degree1_brier_L1": 1.0104690475813938,
+          "degree2_brier_L2": 1.029565818357366,
+          "observed_output_variance": 0.9961528486400001,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            1,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528474879999,
+          "degree1_brier_L1": 0.44069314243560154,
+          "degree2_brier_L2": 0.4518809845237583,
+          "observed_output_variance": 0.9961528474879999,
+          "pair_function_variance": 0.5554597050523984,
+          "pair_variance_fraction_of_observed": 0.5576048961292456,
+          "degree1_variance": 0.5554597050523984,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": 1.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.0,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            2,
+            4
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528565760001,
+          "degree1_brier_L1": 1.010776934039297,
+          "degree2_brier_L2": 1.0296440747734503,
+          "observed_output_variance": 0.9961528565760001,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            2,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528486400001,
+          "degree1_brier_L1": 1.0107087888743793,
+          "degree2_brier_L2": 1.0298982187264527,
+          "observed_output_variance": 0.9961528486400001,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            2,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528474879999,
+          "degree1_brier_L1": 0.44072781475963874,
+          "degree2_brier_L2": 0.45216370438953724,
+          "observed_output_variance": 0.9961528474879999,
+          "pair_function_variance": 0.5554250327283612,
+          "pair_variance_fraction_of_observed": 0.5575700899003374,
+          "degree1_variance": 0.5554250327283612,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": 1.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.0,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            4,
+            8
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528486400001,
+          "degree1_brier_L1": 1.0105596704540911,
+          "degree2_brier_L2": 1.0297677818274347,
+          "observed_output_variance": 0.9961528486400001,
+          "pair_function_variance": 0.0,
+          "pair_variance_fraction_of_observed": 0.0,
+          "degree1_variance": 0.0,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": null,
+          "concentration_leq_2": null,
+          "tail_above_degree_1": null,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            4,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528474879999,
+          "degree1_brier_L1": 0.4407091756557645,
+          "degree2_brier_L2": 0.45220210041361386,
+          "observed_output_variance": 0.9961528474879999,
+          "pair_function_variance": 0.5554436718322354,
+          "pair_variance_fraction_of_observed": 0.557588800988622,
+          "degree1_variance": 0.5554436718322354,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": 1.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.0,
+          "monotone_projection_applied": true
+        },
+        {
+          "lags": [
+            8,
+            16
+          ],
+          "n_positions": 250000,
+          "baseline_brier_L0": 0.9961528474879999,
+          "degree1_brier_L1": 0.4406984940521893,
+          "degree2_brier_L2": 0.45177881700219197,
+          "observed_output_variance": 0.9961528474879999,
+          "pair_function_variance": 0.5554543534358106,
+          "pair_variance_fraction_of_observed": 0.5575995238446596,
+          "degree1_variance": 0.5554543534358106,
+          "degree2_incremental_variance": 0.0,
+          "concentration_leq_1": 1.0,
+          "concentration_leq_2": 1.0,
+          "tail_above_degree_1": 0.0,
+          "monotone_projection_applied": true
+        }
+      ]
+    }
+  ],
+  "degree2_tail_vs_curve_area_spearman": 0.39999999999999997,
+  "scope": {
+    "controlled_generators": "the selected pair contains the complete planted parent set, so V_pair is the full conditional-function variance for the planted law",
+    "natural_text": "the estimate is the concentration of the strongest frozen two-lag conditional function only; it is not a full 64-position spectrum",
+    "effective_degree": "diagnostic identity 2-C_leq1 for a positive two-level decomposition; not a primary metric"
+  },
+  "conclusion": "CONTROLLED_VARIANCE_CONCENTRATION_RECOVERED; NATURAL_FULL_CONTEXT_CONCENTRATION_NOT_MEASURED",
+  "training_or_profile_recomputation": 0
+}

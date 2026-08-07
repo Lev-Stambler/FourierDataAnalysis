@@ -1,0 +1,78 @@
+{
+  "schema": "exp14-block-kronecker-plan-v1",
+  "experiment_id": "exp14-fully-factorized-block-causal-8xh100",
+  "candidate": "block-kron-r8",
+  "objective": {
+    "type": "block-autoregressive-language-modeling",
+    "context_tokens": 256,
+    "prediction_shift_tokens": 16,
+    "predicted_tokens_per_example": 256,
+    "token_modes": [16, 4, 4],
+    "channel_modes": [8, 16],
+    "causal_modes": [0],
+    "noncausal_modes": [1, 2, 3, 4]
+  },
+  "hardware": {
+    "provider": "northflank",
+    "team": "tearedcoder",
+    "project": "fda-race-us-central",
+    "service": "gpu-h200-8",
+    "service_id_note": "historical id; deployment is gated on actual h100-80 configuration",
+    "gpu_type": "h100-80",
+    "gpu_count": 8,
+    "cloud_only_training": true
+  },
+  "preflight": {
+    "batch_search": [2048, 1536, 1024, 768, 640, 512, 384, 320, 256, 192, 128],
+    "minimum_median_gpu_utilization_percent": 85.0,
+    "minimum_full_node_cell_scaling_efficiency": 0.8,
+    "gradient_accumulation": 1,
+    "loss": "fla-fused-linear-cross-entropy-exact",
+    "requires_fp32_loss_agreement": true,
+    "requires_finite_forward_backward_optimizer": true
+  },
+  "tuning": {
+    "coarse_tokens": 1000000,
+    "robust_tokens": 3000000,
+    "final_tokens": 10000000,
+    "coarse_seed": 0,
+    "robust_seeds": [1, 2],
+    "final_seeds": [3, 4, 5, 6],
+    "optimizers": ["adamw", "muon"],
+    "schedules": ["constant", "warmup-cosine"]
+  },
+  "primary_gate": {
+    "all_four_candidate_wins": true,
+    "minimum_mean_candidate_advantage_block_nll": 0.05
+  },
+  "observed": {
+    "eager_wandb_run": "p6os7f4i",
+    "compiled_mode_wandb_run": "qk3ftxx7",
+    "compiled_batch_wandb_run": "20t5mto4",
+    "compiled_replay_wandb_run": "xq61bnjk",
+    "optimizer_audit_wandb_run": "f8ihuo7e",
+    "selected_optimizer": "adamw",
+    "selected_learning_rate": 0.003,
+    "selected_schedule": "constant",
+    "selected_execution_mode": "default",
+    "selected_compiled_batch": 640,
+    "selected_global_tokens_per_step": 163840,
+    "compiled_tokens_per_second": 110374,
+    "compiled_speedup_over_eager": 3.85,
+    "all_four_candidate_wins": true,
+    "eager_mean_candidate_minus_transformer_nll": -0.023171,
+    "compiled_mean_candidate_minus_transformer_nll": -0.024701,
+    "strong_win_threshold_met": false,
+    "workspace_permutation_effect": "null_within_0.00014_nll",
+    "optimizer_audit_primary_candidate_optimizer": "muon",
+    "optimizer_audit_primary_transformer_optimizer": "muon",
+    "optimizer_audit_candidate_muon_body_lr": 0.06,
+    "optimizer_audit_candidate_muon_auxiliary_lr": 0.003,
+    "optimizer_audit_transformer_muon_body_lr": 0.03,
+    "optimizer_audit_transformer_muon_auxiliary_lr": 0.003,
+    "optimizer_audit_40m_adamw_mean_candidate_minus_transformer_nll": -0.007284,
+    "optimizer_audit_40m_muon_mean_candidate_minus_transformer_nll": 0.425456,
+    "optimizer_audit_all_four_primary_candidate_wins": false,
+    "optimizer_independent_architecture_win": false
+  }
+}

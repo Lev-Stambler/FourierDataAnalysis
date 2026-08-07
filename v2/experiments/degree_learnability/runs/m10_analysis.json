@@ -1,0 +1,779 @@
+{
+  "falsification_criteria_verbatim": "H1 falsified if any family shows non-monotone `T*` in its degree knob at fixed\nentropy (beyond seed noise, per a pre-specified trend test);\nH4 falsified if model (ii) explains >= 90% of what model (iii) explains.\nEither falsification is written up as a negative result with the same rigor.",
+  "trend_test_spec": "per family: Spearman rho between knob value and median difficulty (norm_remaining primary; T* where reached), alpha=0.05; families with >=2 censored cells classified censored-hard (reported, not trend-tested). Operationalization: difficulty proxy D = norm_remaining (bounded, defined for censored cells); monotone-non-decreasing required.",
+  "hypotheses": {
+    "H1": {
+      "F1_markov": {
+        "spearman_rho": 0.6,
+        "inversions": 2,
+        "censored_cells_families": 5,
+        "classification": "censored-hard group"
+      },
+      "F2_spread": {
+        "spearman_rho": 0.5,
+        "inversions": 0,
+        "censored_cells_families": 3,
+        "classification": "censored-hard group"
+      },
+      "F3_poly": {
+        "spearman_rho": NaN,
+        "inversions": 0,
+        "censored_cells_families": 2,
+        "classification": "censored-hard group"
+      },
+      "F4_mixed": {
+        "spearman_rho": NaN,
+        "inversions": 0,
+        "censored_cells_families": 2,
+        "classification": "censored-hard group"
+      }
+    },
+    "H4": {
+      "model_i_degree_only_R2": 0.07672609193603097,
+      "model_ii_span_floor_R2": 0.5253194510789643,
+      "model_iii_both_R2": 0.5429828920983338,
+      "fraction_ii_of_iii": 0.967469617779098,
+      "note": "total sensitivity included where measurable (M9 spectral influences; protocol-size synthetic cells lack a conditional oracle and are documented); sensitivity covariate therefore enters M9/M10 ladder analyses, not the synthetic OLS."
+    },
+    "H3": {
+      "m3_calibration_verdict": "PASS",
+      "m3_max_rel_err": 0.0063111925322307805,
+      "m2_slope": 0.9999999999999996,
+      "m7_measured_profiles_recorded": true,
+      "note": "difficulty predictions from measured profiles are exercised on the real ladders (H5); synthetic grid used planted knobs by construction."
+    },
+    "H5": {
+      "status": "computed from M7/M8/M9 ladders where artifacts exist",
+      "language_ladder_cells": 21,
+      "image_ladder_cells": 18,
+      "language_ols_normrem_vs_R1_R2": {
+        "R1_only_R2": 0.0628118238667641,
+        "R1_plus_log2q_R2": 0.17511339203966403,
+        "note": "R1 = measured 1-suffix predictability of the corpus law"
+      },
+      "pooled_cross_domain": {
+        "n_cells": 51,
+        "domains": [
+          "image",
+          "language",
+          "tabular"
+        ],
+        "ols_difficulty_vs_degreeproxy_with_domainFE_R2": 0.5501550050675039,
+        "note": "degree proxy scaled per domain (R1 for language, floor/9 for image, mean spectral degree/10 for tabular); descriptive pooled model per protocol v1 H5_test"
+      },
+      "tabular_cells": 36,
+      "tabular_ols_difficulty_vs_degree_R2": 0.046015812041383164,
+      "tabular_ols_difficulty_vs_degree_plus_nfeatures_R2": 0.9931504105319635
+    }
+  },
+  "analysis_item_1_difficulty_vs_knob": {
+    "F1_markov": {
+      "knob_name": "k",
+      "knobs": [
+        1,
+        2,
+        3,
+        4,
+        6,
+        8
+      ],
+      "cells": [
+        {
+          "family": "F1_k1",
+          "knob": null,
+          "norm_remaining_med": -0.013013658262427232,
+          "final_gap_med": -0.0006026106172232204,
+          "T_star_reached": true
+        },
+        {
+          "family": "F1_k2",
+          "knob": null,
+          "norm_remaining_med": 0.39599506078149416,
+          "final_gap_med": 1.527524683100852,
+          "T_star_reached": false
+        },
+        {
+          "family": "F1_k3",
+          "knob": null,
+          "norm_remaining_med": 0.7588592414959148,
+          "final_gap_med": 2.8049097420065077,
+          "T_star_reached": false
+        },
+        {
+          "family": "F1_k4",
+          "knob": null,
+          "norm_remaining_med": 0.7923423025829097,
+          "final_gap_med": 2.860790172942201,
+          "T_star_reached": false
+        },
+        {
+          "family": "F1_k6",
+          "knob": null,
+          "norm_remaining_med": 0.7647094364514183,
+          "final_gap_med": 2.8753543087522044,
+          "T_star_reached": false
+        },
+        {
+          "family": "F1_k8",
+          "knob": null,
+          "norm_remaining_med": 0.7441226336498934,
+          "final_gap_med": 2.960829342265718,
+          "T_star_reached": false
+        }
+      ]
+    },
+    "F2_spread": {
+      "knob_name": "s",
+      "knobs": [
+        2,
+        2,
+        3
+      ],
+      "cells": [
+        {
+          "family": "F2_s2_1-4",
+          "knob": null,
+          "norm_remaining_med": 0.8361729343861969,
+          "final_gap_med": 3.3969386917530193,
+          "T_star_reached": false
+        },
+        {
+          "family": "F2_s2_1-16",
+          "knob": null,
+          "norm_remaining_med": 0.9994439237887842,
+          "final_gap_med": 4.061112815692621,
+          "T_star_reached": false
+        },
+        {
+          "family": "F2_s3_1-16-32",
+          "knob": null,
+          "norm_remaining_med": 0.999367949203632,
+          "final_gap_med": 4.0611474701967705,
+          "T_star_reached": false
+        }
+      ]
+    },
+    "F3_poly": {
+      "knob_name": "d",
+      "knobs": [
+        2,
+        4
+      ],
+      "cells": [
+        {
+          "family": "F3_d2_M6",
+          "knob": null,
+          "norm_remaining_med": 1.0028890382421534,
+          "final_gap_med": 1.2548100812489125,
+          "T_star_reached": false
+        },
+        {
+          "family": "F3_d4_M6",
+          "knob": null,
+          "norm_remaining_med": 0.9964029424137252,
+          "final_gap_med": 1.444148701374857,
+          "T_star_reached": false
+        }
+      ]
+    },
+    "F4_mixed": {
+      "knob_name": "r",
+      "knobs": [
+        0.3,
+        0.7
+      ],
+      "cells": [
+        {
+          "family": "F4_r0.3_K6_M2",
+          "knob": null,
+          "norm_remaining_med": 0.903156719878649,
+          "final_gap_med": 1.2169562522927766,
+          "T_star_reached": false
+        },
+        {
+          "family": "F4_r0.7_K6_M2",
+          "knob": null,
+          "norm_remaining_med": 0.9960626006121276,
+          "final_gap_med": 1.2226520942275996,
+          "T_star_reached": false
+        }
+      ]
+    }
+  },
+  "analysis_item_2_scaling": {
+    "slope_log_mstar_vs_log_Nd": 0.9999999999999996,
+    "theorem_prediction": "~1 (m* ~ N_d / eps)",
+    "records": [
+      {
+        "d": 1,
+        "N_d": 19,
+        "m_star_per_seed": [
+          114,
+          228,
+          228,
+          152,
+          228
+        ],
+        "m_star": 228.0
+      },
+      {
+        "d": 2,
+        "N_d": 154,
+        "m_star_per_seed": [
+          1848,
+          1848,
+          1848,
+          1848,
+          1848
+        ],
+        "m_star": 1848.0
+      },
+      {
+        "d": 3,
+        "N_d": 694,
+        "m_star_per_seed": [
+          8328,
+          8328,
+          8328,
+          8328,
+          8328
+        ],
+        "m_star": 8328.0
+      }
+    ]
+  },
+  "analysis_item_3_predictor_ablation": {
+    "model_i_degree_only_R2": 0.07672609193603097,
+    "model_ii_span_floor_R2": 0.5253194510789643,
+    "model_iii_both_R2": 0.5429828920983338,
+    "fraction_ii_of_iii": 0.967469617779098,
+    "note": "total sensitivity included where measurable (M9 spectral influences; protocol-size synthetic cells lack a conditional oracle and are documented); sensitivity covariate therefore enters M9/M10 ladder analyses, not the synthetic OLS."
+  },
+  "analysis_item_4_measured_vs_planted": {
+    "m3_calibration_verdict": "PASS",
+    "m3_max_rel_err": 0.0063111925322307805,
+    "m2_slope": 0.9999999999999996,
+    "m7_measured_profiles_recorded": true,
+    "note": "difficulty predictions from measured profiles are exercised on the real ladders (H5); synthetic grid used planted knobs by construction."
+  },
+  "analysis_item_5_language_ladder": [
+    {
+      "rung": 1,
+      "name": "iid_random_tokens",
+      "q": 4096,
+      "floor": 12.0,
+      "init": 12.00986409791426,
+      "final": 12.000161524683184,
+      "norm_remaining": 0.016375008093826925,
+      "T_star": 249856,
+      "R1": 0.0004488975644063886,
+      "R2": 0.58428530976059,
+      "floor_method": "iid uniform over rung-3 vocab (exact generating-law floor)"
+    },
+    {
+      "rung": 1,
+      "name": "iid_random_tokens",
+      "q": 4096,
+      "floor": 12.0,
+      "init": 12.00775713845854,
+      "final": 11.99993364767079,
+      "norm_remaining": -0.008553712114891344,
+      "T_star": 249856,
+      "R1": 0.0004488975644063886,
+      "R2": 0.58428530976059,
+      "floor_method": "iid uniform over rung-3 vocab (exact generating-law floor)"
+    },
+    {
+      "rung": 1,
+      "name": "iid_random_tokens",
+      "q": 4096,
+      "floor": 12.0,
+      "init": 12.008978903210268,
+      "final": 12.000159976839326,
+      "norm_remaining": 0.017816968908066964,
+      "T_star": 249856,
+      "R1": 0.0004488975644063886,
+      "R2": 0.58428530976059,
+      "floor_method": "iid uniform over rung-3 vocab (exact generating-law floor)"
+    },
+    {
+      "rung": 2,
+      "name": "synthetic_F2_s2_corpus",
+      "q": 32,
+      "floor": 0.9389483378789367,
+      "init": 5.00144587188498,
+      "final": 5.000081017567733,
+      "norm_remaining": 0.999664035656435,
+      "T_star": null,
+      "R1": 0.03125144338325352,
+      "R2": 0.03129968579354698,
+      "floor_method": "family entropy_rate (exact for the generating law)"
+    },
+    {
+      "rung": 2,
+      "name": "synthetic_F2_s2_corpus",
+      "q": 32,
+      "floor": 0.9389483378789367,
+      "init": 5.001758321365935,
+      "final": 5.000043740328158,
+      "norm_remaining": 0.9995779814845522,
+      "T_star": null,
+      "R1": 0.03125144338325352,
+      "R2": 0.03129968579354698,
+      "floor_method": "family entropy_rate (exact for the generating law)"
+    },
+    {
+      "rung": 2,
+      "name": "synthetic_F2_s2_corpus",
+      "q": 32,
+      "floor": 0.9389483378789367,
+      "init": 5.0017757346093354,
+      "final": 5.0000994197113755,
+      "norm_remaining": 0.999587401891769,
+      "T_star": null,
+      "R1": 0.03125144338325352,
+      "R2": 0.03129968579354698,
+      "floor_method": "family entropy_rate (exact for the generating law)"
+    },
+    {
+      "rung": 3,
+      "name": "roneneldan_TinyStories",
+      "q": 4096,
+      "floor": 3.6838855029183555,
+      "init": 7.139057967451179,
+      "final": 5.048729964995609,
+      "norm_remaining": 0.3950148584730041,
+      "T_star": null,
+      "R1": 0.13316787984354828,
+      "R2": 0.2601791702955427,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 3,
+      "name": "roneneldan_TinyStories",
+      "q": 4096,
+      "floor": 3.6838855029183555,
+      "init": 7.110779204135108,
+      "final": 5.037472109657118,
+      "norm_remaining": 0.39498937660603783,
+      "T_star": null,
+      "R1": 0.13316787984354828,
+      "R2": 0.2601791702955427,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 3,
+      "name": "roneneldan_TinyStories",
+      "q": 4096,
+      "floor": 3.6838855029183555,
+      "init": 7.144381948382613,
+      "final": 5.030086185728827,
+      "norm_remaining": 0.3890195248068998,
+      "T_star": null,
+      "R1": 0.13316787984354828,
+      "R2": 0.2601791702955427,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 4,
+      "name": "enwik8",
+      "q": 256,
+      "floor": 1.1782056811140111,
+      "init": 4.46343417902604,
+      "final": 3.0838527509092626,
+      "norm_remaining": 0.5800653047440723,
+      "T_star": null,
+      "R1": 0.13034278157503362,
+      "R2": 0.25164741686873277,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 4,
+      "name": "enwik8",
+      "q": 256,
+      "floor": 1.1782056811140111,
+      "init": 4.600968403951388,
+      "final": 3.1307614918843836,
+      "norm_remaining": 0.5704619247318894,
+      "T_star": null,
+      "R1": 0.13034278157503362,
+      "R2": 0.25164741686873277,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 4,
+      "name": "enwik8",
+      "q": 256,
+      "floor": 1.1782056811140111,
+      "init": 4.548281217889928,
+      "final": 3.1277629098730966,
+      "norm_remaining": 0.5784906621482401,
+      "T_star": null,
+      "R1": 0.13034278157503362,
+      "R2": 0.25164741686873277,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 5,
+      "name": "Salesforce_wikitext2",
+      "q": 10000,
+      "floor": 4.972620197190069,
+      "init": 10.577662664459018,
+      "final": 10.559897544555493,
+      "norm_remaining": 0.9968305110965233,
+      "T_star": null,
+      "R1": 0.07878306829295821,
+      "R2": 0.3862350804956485,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 5,
+      "name": "Salesforce_wikitext2",
+      "q": 10000,
+      "floor": 4.972620197190069,
+      "init": 10.597582469003875,
+      "final": 10.558893939796384,
+      "norm_remaining": 0.9931219931196063,
+      "T_star": null,
+      "R1": 0.07878306829295821,
+      "R2": 0.3862350804956485,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 5,
+      "name": "Salesforce_wikitext2",
+      "q": 10000,
+      "floor": 4.972620197190069,
+      "init": 10.574988936177377,
+      "final": 10.563500409108418,
+      "norm_remaining": 0.9979493447139584,
+      "T_star": null,
+      "R1": 0.07878306829295821,
+      "R2": 0.3862350804956485,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 6,
+      "name": "codeparrot_python",
+      "q": 10000,
+      "floor": 2.0460361127880007,
+      "init": 9.54136641117719,
+      "final": 6.897969419801327,
+      "norm_remaining": 0.6473274844280108,
+      "T_star": null,
+      "R1": 0.09862769685425554,
+      "R2": 0.30520856592985746,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 6,
+      "name": "codeparrot_python",
+      "q": 10000,
+      "floor": 2.0460361127880007,
+      "init": 9.44157150021356,
+      "final": 6.878137412399733,
+      "norm_remaining": 0.6533808637881217,
+      "T_star": null,
+      "R1": 0.09862769685425554,
+      "R2": 0.30520856592985746,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 6,
+      "name": "codeparrot_python",
+      "q": 10000,
+      "floor": 2.0460361127880007,
+      "init": 9.525881609241454,
+      "final": 6.935304961494483,
+      "norm_remaining": 0.6536590696993293,
+      "T_star": null,
+      "R1": 0.09862769685425554,
+      "R2": 0.30520856592985746,
+      "floor_method": "Qwen/Qwen2.5-0.5B"
+    },
+    {
+      "rung": 7,
+      "name": "arithmetic_corpus",
+      "q": 16,
+      "floor": 1.4144743128663821,
+      "init": 2.3970105181661823,
+      "final": 2.208704327477212,
+      "norm_remaining": 0.8083468174778226,
+      "T_star": null,
+      "R1": 0.16912396524886025,
+      "R2": 0.2381687155320329,
+      "floor_method": "closed-form generator entropy rate"
+    },
+    {
+      "rung": 7,
+      "name": "arithmetic_corpus",
+      "q": 16,
+      "floor": 1.4144743128663821,
+      "init": 2.403230593202106,
+      "final": 2.2163546317355425,
+      "norm_remaining": 0.8109989638668983,
+      "T_star": null,
+      "R1": 0.16912396524886025,
+      "R2": 0.2381687155320329,
+      "floor_method": "closed-form generator entropy rate"
+    },
+    {
+      "rung": 7,
+      "name": "arithmetic_corpus",
+      "q": 16,
+      "floor": 1.4144743128663821,
+      "init": 2.3951217402009126,
+      "final": 2.2053924145738844,
+      "norm_remaining": 0.8065264637029375,
+      "T_star": null,
+      "R1": 0.16912396524886025,
+      "R2": 0.2381687155320329,
+      "floor_method": "closed-form generator entropy rate"
+    }
+  ],
+  "analysis_item_5_image_ladder": [
+    {
+      "name": "CIFAR10",
+      "seed": "s0",
+      "floor": 3.1937371707396194,
+      "final": 3.185243596379405,
+      "norm_remaining": -8493574.360214584,
+      "T_star": 249856,
+      "n_codes": 800000
+    },
+    {
+      "name": "CIFAR10",
+      "seed": "s1",
+      "floor": 3.1937371707396194,
+      "final": 3.183463962903939,
+      "norm_remaining": -10273207.83568042,
+      "T_star": 249856,
+      "n_codes": 800000
+    },
+    {
+      "name": "CIFAR10",
+      "seed": "s2",
+      "floor": 3.1937371707396194,
+      "final": 3.184059323845564,
+      "norm_remaining": -9677846.894055264,
+      "T_star": 249856,
+      "n_codes": 800000
+    },
+    {
+      "name": "FashionMNIST",
+      "seed": "s0",
+      "floor": 6.246750197216267,
+      "final": 6.267762815311709,
+      "norm_remaining": 0.6650368213110288,
+      "T_star": 249856,
+      "n_codes": 960000
+    },
+    {
+      "name": "FashionMNIST",
+      "seed": "s1",
+      "floor": 6.246750197216267,
+      "final": 6.268475683399536,
+      "norm_remaining": 0.6597599130869435,
+      "T_star": 249856,
+      "n_codes": 960000
+    },
+    {
+      "name": "FashionMNIST",
+      "seed": "s2",
+      "floor": 6.246750197216267,
+      "final": 6.267794374128142,
+      "norm_remaining": 0.6024661634095416,
+      "T_star": 249856,
+      "n_codes": 960000
+    },
+    {
+      "name": "MNIST",
+      "seed": "s0",
+      "floor": 4.3884733316596725,
+      "final": 4.530489784640822,
+      "norm_remaining": 0.9609685251700633,
+      "T_star": null,
+      "n_codes": 960000
+    },
+    {
+      "name": "MNIST",
+      "seed": "s1",
+      "floor": 4.3884733316596725,
+      "final": 4.530500232586862,
+      "norm_remaining": 0.929815788580628,
+      "T_star": null,
+      "n_codes": 960000
+    },
+    {
+      "name": "MNIST",
+      "seed": "s2",
+      "floor": 4.3884733316596725,
+      "final": 4.530279234880503,
+      "norm_remaining": 0.9265607716936539,
+      "T_star": null,
+      "n_codes": 960000
+    },
+    {
+      "name": "STL10_downsampled",
+      "seed": "s0",
+      "floor": 7.258709437609353,
+      "final": 7.798224214571631,
+      "norm_remaining": 0.6823186817640855,
+      "T_star": null,
+      "n_codes": 80000
+    },
+    {
+      "name": "STL10_downsampled",
+      "seed": "s1",
+      "floor": 7.258709437609353,
+      "final": 7.820183991329701,
+      "norm_remaining": 1.0413358550752776,
+      "T_star": null,
+      "n_codes": 80000
+    },
+    {
+      "name": "STL10_downsampled",
+      "seed": "s2",
+      "floor": 7.258709437609353,
+      "final": 7.792962921316436,
+      "norm_remaining": 1.0125991482598966,
+      "T_star": null,
+      "n_codes": 80000
+    },
+    {
+      "name": "SVHN",
+      "seed": "s0",
+      "floor": 3.200559464903051,
+      "final": 3.19254597973504,
+      "norm_remaining": -8013485.168010702,
+      "T_star": 249856,
+      "n_codes": 960000
+    },
+    {
+      "name": "SVHN",
+      "seed": "s1",
+      "floor": 3.200559464903051,
+      "final": 3.192382166260094,
+      "norm_remaining": -8177298.642956909,
+      "T_star": 249856,
+      "n_codes": 960000
+    },
+    {
+      "name": "SVHN",
+      "seed": "s2",
+      "floor": 3.200559464903051,
+      "final": 3.1920267211164224,
+      "norm_remaining": -8532743.786628494,
+      "T_star": 249856,
+      "n_codes": 960000
+    },
+    {
+      "name": "gaussian_noise_control",
+      "seed": "s0",
+      "floor": 8.072436255511583,
+      "final": 8.075582011479291,
+      "norm_remaining": 0.1423188732467914,
+      "T_star": 249856,
+      "n_codes": 960000
+    },
+    {
+      "name": "gaussian_noise_control",
+      "seed": "s1",
+      "floor": 8.072436255511583,
+      "final": 8.075464633320076,
+      "norm_remaining": 0.15334298395503682,
+      "T_star": 249856,
+      "n_codes": 960000
+    },
+    {
+      "name": "gaussian_noise_control",
+      "seed": "s2",
+      "floor": 8.072436255511583,
+      "final": 8.075507886956768,
+      "norm_remaining": 0.16909453438806335,
+      "T_star": 249856,
+      "n_codes": 960000
+    }
+  ],
+  "analysis_item_5_real_ladders_tabular": {
+    "rows": {
+      "iris": {
+        "best_ce": 1.478,
+        "mean_spectral_degree": 3.698401162790699,
+        "n_features": 4,
+        "enumerable": true
+      },
+      "balance-scale": {
+        "best_ce": 1.4215,
+        "mean_spectral_degree": 3.1075999999999935,
+        "n_features": 4,
+        "enumerable": true
+      },
+      "tic-tac-toe": {
+        "best_ce": 0.9328,
+        "mean_spectral_degree": 6.000000000000001,
+        "n_features": 9,
+        "enumerable": true
+      },
+      "car": {
+        "best_ce": 0.7711,
+        "mean_spectral_degree": 0.7336033950617282,
+        "n_features": 6,
+        "enumerable": true
+      },
+      "mushroom": {
+        "best_ce": 0.0865,
+        "mean_spectral_degree": NaN,
+        "n_features": 22,
+        "enumerable": false
+      },
+      "kr-vs-kp": {
+        "best_ce": 0.7424,
+        "mean_spectral_degree": NaN,
+        "n_features": 36,
+        "enumerable": false
+      },
+      "credit-g": {
+        "best_ce": 0.9226,
+        "mean_spectral_degree": NaN,
+        "n_features": 20,
+        "enumerable": false
+      },
+      "churn": {
+        "best_ce": 0.5573,
+        "mean_spectral_degree": NaN,
+        "n_features": 20,
+        "enumerable": false
+      },
+      "adult": {
+        "best_ce": 0.5016,
+        "mean_spectral_degree": NaN,
+        "n_features": 14,
+        "enumerable": false
+      },
+      "bank-marketing": {
+        "best_ce": 0.3905,
+        "mean_spectral_degree": NaN,
+        "n_features": 16,
+        "enumerable": false
+      },
+      "connect-4": {
+        "best_ce": 2.2672,
+        "mean_spectral_degree": NaN,
+        "n_features": 126,
+        "enumerable": false
+      },
+      "mini-boone": {
+        "best_ce": 0.3496,
+        "mean_spectral_degree": NaN,
+        "n_features": 50,
+        "enumerable": false
+      }
+    }
+  },
+  "figures": [
+    "fig1_f1_ladder.png",
+    "fig2_degree_vs_span.png",
+    "fig3_tabular_degree.png"
+  ]
+}

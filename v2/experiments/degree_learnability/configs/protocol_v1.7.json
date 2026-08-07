@@ -1,0 +1,45 @@
+{
+  "version": "1.7",
+  "date": "2026-08-06",
+  "amendment_note": "Exploratory, analysis-only test of an untuned geometry-aware Fourier correlator on already-audited text and matched-tabular artifacts, plus the frozen matched-entropy M6 locality controls. No learner or profile is recomputed.",
+  "source_protocol_hashes": {
+    "m6_v1": "90d42a12120d52ff9f7f9edcdb1f68ab1605681cfa1770e1ebe608553b82414d",
+    "matched_h5_v1_3": "f982f37dad2ea8877cebbe0aa64fef229946d16a5a65a161124e2de6dd2409b6",
+    "conditional_spectrum_v1_6": "ea352050f56ea9f0a4d9dd7cd4f7f13feaf7e331d9d8f070a6b9cb95b664c09e"
+  },
+  "execution": {
+    "analysis_only": true,
+    "training_cells_recomputed": 0,
+    "profiles_recomputed": 0,
+    "network_access": false
+  },
+  "joint_spectrum": {
+    "definition": "W[k,r] is squared Fourier coefficient mass whose support has categorical interaction degree k and geometric radius r",
+    "one_dimensional_radius": "maximum causal lag in the support",
+    "local_ball_cardinality": "N(k,r)=binom(r,k)*(q-1)^k",
+    "scalar_bits": "G=sum_{k>=1,r} W[k,r]*log2(N(k,r))/sum_{k>=1,r}W[k,r]",
+    "scalar_qary_units": "G/log2(q)",
+    "interpretation": "energy-weighted description/search cost of the active categorical coefficients; ordinary degree is recovered when support geometry is fixed"
+  },
+  "analyses": {
+    "text": {
+      "source": "v1.6 corrected conditional spectra and v1.4 fresh contiguous-sequence learning curves",
+      "difficulty": "median normalized curve area; higher is harder",
+      "natural_scope": "strongest selected lag pair only",
+      "natural_degree1_radius_sensitivity": "because saved W1 aggregates the two additive coordinates, report both radius 1 and radius max(pair) endpoints"
+    },
+    "matched_tabular": {
+      "source": "v1.3 exact Formula-(19) spectra for nine real datasets in three exact row/feature-count bands",
+      "cardinality": "coefficient of z^k in product_i(1+(q_i-1)z)",
+      "primary_comparison": "within-band Spearman against normalized curve area",
+      "pooled_comparison": "diagnostic only because feature count and alphabet geometry differ across bands"
+    },
+    "m6_locality_controls": {
+      "source": "eight q=32, identical-Bayes-floor families: F1 k=1,2,3,4,6,8 and copy lag 4,16",
+      "difficulty": "median final gap above the common Bayes floor at the fixed 3M-token budget; higher is harder",
+      "purpose": "test whether radius resolves same-degree copy tasks and degree-versus-span ordering"
+    }
+  },
+  "status": "post-hoc exploratory; effect sizes and exact provenance are reported, not a confirmatory p-value claim",
+  "protocol_hash": "401f44b5a9676791f5b5b43d066881bda1c99faae13aa5da9eb7079a3b7de2bd"
+}

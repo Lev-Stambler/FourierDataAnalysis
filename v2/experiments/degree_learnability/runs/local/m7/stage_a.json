@@ -1,0 +1,259 @@
+{
+  "rungs": {
+    "3": {
+      "rung": 3,
+      "name": "roneneldan/TinyStories",
+      "source": "hf:roneneldan/TinyStories",
+      "revision": "f54c09fd23315a6f9c86f9dc80f725de7d8f9c64",
+      "tokenization": "byte-level BPE vocab=4096 (fitted, hash recorded)",
+      "vocab_size": 4096,
+      "n_tokens": 20000000,
+      "sha256": "b10901e344746e8821eccd6916d06c3feccd5783428810b9fb7bfceb1ab39e21"
+    },
+    "1": {
+      "rung": 1,
+      "name": "iid_random_tokens",
+      "source": "synthetic",
+      "revision": "seed=1001",
+      "tokenization": "uniform iid over rung-3 vocab (q=4096)",
+      "vocab_size": 4096,
+      "n_tokens": 20000000,
+      "sha256": "a14f42e9dbf1a41e98e2fcf2def292a0aee423622b028c2ffa3a32c81a36331a"
+    },
+    "2": {
+      "rung": 2,
+      "name": "synthetic_F2_s2_corpus",
+      "source": "synthetic",
+      "revision": "F2_q32_L64_lags(1,16)_eta0.1+seed=1002",
+      "tokenization": "native Z_32",
+      "vocab_size": 32,
+      "n_tokens": 20000000,
+      "sha256": "bb98dede1b1fff2ad6668142dc8b1a89173172b8786d2efff847ce889f2eb2a1"
+    },
+    "4": {
+      "rung": 4,
+      "name": "enwik8",
+      "source": "url:http://mattmahoney.net/dc/enwik8.zip",
+      "revision": "origin(pinned-repo LTCB/enwik8@8d9ca88a);file_sha=2b49720ec4d78c3c",
+      "tokenization": "byte (q=256)",
+      "vocab_size": 256,
+      "n_tokens": 20000000,
+      "sha256": "4ccbf4f469b5adf1df2ea39339bc8cedfb2cac784eb64fcd244795747042c7e4"
+    },
+    "5": {
+      "rung": 5,
+      "name": "Salesforce/wikitext",
+      "source": "hf:Salesforce/wikitext:wikitext-2-raw-v1",
+      "revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+      "tokenization": "byte-level BPE vocab=10000 (fitted, hash recorded)",
+      "vocab_size": 10000,
+      "n_tokens": 2000000,
+      "sha256": "0466af06863dfb633b2da6f8257e19207becd156422c9bf3d77d1494884bf3c7"
+    },
+    "6": {
+      "rung": 6,
+      "name": "codeparrot/codeparrot-clean",
+      "source": "hf:codeparrot/codeparrot-clean",
+      "revision": "35a59fb025bc0a102f7d96eac09d145b896d487b",
+      "tokenization": "python-filtered, byte-level BPE vocab=10000 (fitted, hash recorded)",
+      "vocab_size": 10000,
+      "n_tokens": 20000000,
+      "sha256": "2b64b7fb16857d00f816cdb043f9c2e34a1b7f312ddc680540a7facc7277a3b5"
+    },
+    "7": {
+      "rung": 7,
+      "name": "arithmetic_corpus",
+      "source": "synthetic",
+      "revision": "seed=1007",
+      "tokenization": "decimal digits + ops, q=16",
+      "vocab_size": 16,
+      "n_tokens": 20000000,
+      "sha256": "9ce017701b51cb31421fbca2f7cfb5e4af7efcb67f1aa047fd05bfb0c83e4fd0"
+    }
+  },
+  "profiles": {
+    "1": {
+      "R": [
+        0.0002441915438249556,
+        0.0004488975644063886,
+        0.58428530976059
+      ],
+      "Delta": [
+        0.00020470602058143302,
+        0.5838364121961837
+      ],
+      "n_positions": 19999935,
+      "groups": [
+        0,
+        4096,
+        11683650
+      ],
+      "coverage": [
+        0.0,
+        1.0,
+        0.6964494634607562
+      ],
+      "k_max": 2,
+      "q": 4096,
+      "L": 64
+    },
+    "2": {
+      "R": [
+        0.03125003078038249,
+        0.03125144338325352,
+        0.03129968579354698,
+        0.03283971121590933
+      ],
+      "Delta": [
+        1.412602871030122e-06,
+        4.8242410293455884e-05,
+        0.0015400254223623538
+      ],
+      "n_positions": 19999935,
+      "groups": [
+        0,
+        32,
+        1024,
+        32768
+      ],
+      "coverage": [
+        0.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "k_max": 3,
+      "q": 32,
+      "L": 64
+    },
+    "3": {
+      "R": [
+        0.013304756452303907,
+        0.13316787984354828,
+        0.2601791702955427
+      ],
+      "Delta": [
+        0.11986312339124437,
+        0.12701129045199444
+      ],
+      "n_positions": 19999935,
+      "groups": [
+        0,
+        3906,
+        498251
+      ],
+      "coverage": [
+        0.0,
+        0.9999987499959375,
+        0.9897746167675044
+      ],
+      "k_max": 2,
+      "q": 4096,
+      "L": 64
+    },
+    "4": {
+      "R": [
+        0.0493034219196792,
+        0.13034278157503362,
+        0.25164741686873277
+      ],
+      "Delta": [
+        0.08103935965535441,
+        0.12130463529369914
+      ],
+      "n_positions": 19999935,
+      "groups": [
+        0,
+        202,
+        13746
+      ],
+      "coverage": [
+        0.0,
+        0.9999999499998375,
+        0.9998811996138988
+      ],
+      "k_max": 2,
+      "q": 256,
+      "L": 64
+    },
+    "5": {
+      "R": [
+        0.0068641717231617255,
+        0.07878306829295821,
+        0.3862350804956485
+      ],
+      "Delta": [
+        0.07191889656979648,
+        0.30745201220269025
+      ],
+      "n_positions": 1999935,
+      "groups": [
+        0,
+        9737,
+        498716
+      ],
+      "coverage": [
+        0.0,
+        0.999964998862463,
+        0.8521481948163315
+      ],
+      "k_max": 2,
+      "q": 10000,
+      "L": 64
+    },
+    "6": {
+      "R": [
+        0.008423398801340735,
+        0.09862769685425554,
+        0.30520856592985746
+      ],
+      "Delta": [
+        0.0902042980529148,
+        0.20658086907560191
+      ],
+      "n_positions": 19999935,
+      "groups": [
+        0,
+        9875,
+        1148369
+      ],
+      "coverage": [
+        0.0,
+        0.9999991999974,
+        0.9772832761706476
+      ],
+      "k_max": 2,
+      "q": 10000,
+      "L": 64
+    },
+    "7": {
+      "R": [
+        0.09201855940503169,
+        0.16912396524886025,
+        0.2381687155320329,
+        0.36533210245894365
+      ],
+      "Delta": [
+        0.07710540584382856,
+        0.06904475028317264,
+        0.12716338692691076
+      ],
+      "n_positions": 19999935,
+      "groups": [
+        0,
+        15,
+        137,
+        940
+      ],
+      "coverage": [
+        0.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "k_max": 3,
+      "q": 16,
+      "L": 64
+    }
+  }
+}

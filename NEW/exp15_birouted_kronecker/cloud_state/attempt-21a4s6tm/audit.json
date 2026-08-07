@@ -1,0 +1,23 @@
+{
+  "schema": "exp15-stopped-input-pipeline-preflight-audit-v1",
+  "status": "stopped_before_training",
+  "wandb_url": "https://wandb.ai/lev-tear-tear-labs/exp15-birouted-kronecker/runs/21a4s6tm",
+  "gpu_count": 8,
+  "gpu_type": "H100-80GB",
+  "exact_loss_agreement_passed_models": 8,
+  "rank12_floor_pass": {
+    "batch": 400,
+    "global_tokens_per_step": 102400,
+    "tokens_per_second": 89090.92491119182,
+    "median_gpu_utilization_percent": 100.0,
+    "peak_allocated_gib": 70.68850994110107
+  },
+  "ffn_only_upward_curve": {
+    "batch2048_tokens_per_second": 2608294,
+    "batch2048_median_gpu_utilization_percent": 48.0,
+    "batch3072_tokens_per_second": 707115,
+    "batch4096_status": "out_of_memory"
+  },
+  "correction": "Cache the immutable int32 token windows on each GPU and gather batches there; revalidate selected points with the full sweep as direct lineage.",
+  "training_cells_completed": 0
+}

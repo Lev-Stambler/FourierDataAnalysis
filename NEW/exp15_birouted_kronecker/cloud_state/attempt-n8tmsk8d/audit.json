@@ -1,0 +1,28 @@
+{
+  "schema": "exp15-stopped-preflight-audit-v1",
+  "status": "stopped_before_training",
+  "wandb_url": "https://wandb.ai/lev-tear-tear-labs/exp15-birouted-kronecker/runs/n8tmsk8d",
+  "gpu_count": 8,
+  "gpu_type": "H100-80GB",
+  "exact_loss_agreement_passed_models": 8,
+  "measured_batch": 768,
+  "measured_global_tokens_per_step": 196608,
+  "measurements": {
+    "dense-workspace-r8": {
+      "status": "complete",
+      "tokens_per_second": 238313.60603609512,
+      "median_gpu_utilization_percent": 100.0,
+      "peak_allocated_gib": 75.52168321609497
+    },
+    "ffn-only": {
+      "status": "complete",
+      "tokens_per_second": 2210572.5112593453,
+      "median_gpu_utilization_percent": 61.0,
+      "peak_allocated_gib": 18.378509521484375
+    },
+    "other_six_variants": {
+      "status": "out_of_memory"
+    }
+  },
+  "reason": "Stable but underutilized rows were incorrectly excluded from upward batch search. The node was paused before any training cell ran."
+}

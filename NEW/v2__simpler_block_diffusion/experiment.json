@@ -1,0 +1,40 @@
+{
+  "schema": "v2-sbd-experiment-v1",
+  "experiment_id": "V2-SBD-97M-DreamR32-v1",
+  "status": "systems_preflight_complete_untrained",
+  "teacher": {
+    "model_id": "Dream-org/DreamReasoner-8B",
+    "revision": "ed62b1d2c82ccd234b05ed2463b4c0ee640f2068",
+    "precision": "bfloat16",
+    "mode": "online_by_default"
+  },
+  "student": {
+    "parameters": 97832320,
+    "context_length": 2048,
+    "block_size": 32,
+    "hidden_size": 256,
+    "layers": 11
+  },
+  "hardware": {
+    "required": "8xH100-80GB",
+    "parallelism": "8-way DDP",
+    "teacher_placement": "one frozen replica per GPU",
+    "selected_physical_batch_per_gpu": 56,
+    "selected_global_contexts_per_step": 448,
+    "measured_real_target_tokens_per_step": 471883
+  },
+  "budgets": {
+    "pilot_target_tokens": 100000000,
+    "final_target_tokens": 10000000000,
+    "minimum_global_target_tokens_per_step": 100000,
+    "batch_sweep_ceiling_target_tokens": 1000000
+  },
+  "artifacts": {
+    "data_manifest": "data_manifest.lock.json",
+    "resolved_shards": "/cache/v2_sbd/resolved-shards-v1.json",
+    "token_cache": "/cache/v2_sbd/token-cache-stage0",
+    "batch_sweep": "artifacts/batch-sweep-v2/selection.json",
+    "passing_preflight": "artifacts/real-cache-preflight-b56/result.json",
+    "wandb_project": "v2-simpler-block-diffusion"
+  }
+}

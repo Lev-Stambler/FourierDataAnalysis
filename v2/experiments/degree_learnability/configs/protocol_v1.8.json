@@ -1,0 +1,115 @@
+{
+  "version": "1.8",
+  "date": "2026-08-06",
+  "amendment_note": "Prospective natural-text extension of the v1.7 geometric spectrum. Reuses only the valid contiguous enwik8 and TinyStories v1.4 cells, then adds fresh contiguous WikiText-2 and CodeParrot byte-stream profiles and students. Frozen before inspecting either new corpus profile or corrected learning curve.",
+  "source_protocol_hashes": {
+    "text_v1_4": "86781a91c742806370fdc4d6ecc5f365e7018164eb086d6fedc2fc6e0e3812d9",
+    "geometry_v1_7": "401f44b5a9676791f5b5b43d066881bda1c99faae13aa5da9eb7079a3b7de2bd"
+  },
+  "datasets": [
+    {
+      "id": "enwik8_bytes",
+      "execution": "reuse_valid_v1_4",
+      "source": "canonical enwik8 byte prefix"
+    },
+    {
+      "id": "tinystories_bytes",
+      "execution": "reuse_valid_v1_4",
+      "source": "pinned TinyStories BPE stream decoded to UTF-8 bytes"
+    },
+    {
+      "id": "wikitext2_bytes",
+      "execution": "fresh",
+      "token_ids": "dlx/data_cache/r5_wikitext2_bpe10000_n2000000.npy",
+      "tokenizer": "dlx/data_cache/r5_wikitext2_bpe10000.json"
+    },
+    {
+      "id": "codeparrot_python_bytes",
+      "execution": "fresh",
+      "token_ids": "dlx/data_cache/r6_codeparrot_py_bpe10000_n20000000.npy",
+      "tokenizer": "dlx/data_cache/r6_codeparrot_py_bpe10000.json"
+    }
+  ],
+  "data": {
+    "corpus_tokens": 5500000,
+    "q": 256,
+    "decode": "tokenizers ByteLevel decoder in deterministic 50000-id chunks; retain first 5500000 UTF-8 bytes",
+    "sequence_semantics": "contiguous circular training reads with a fixed held-out tail; tokens are never permuted"
+  },
+  "sequence_semantics": {
+    "cyclic_reuse": "contiguous circular read; tokens are never permuted"
+  },
+  "profile": {
+    "basis": "Formula-(19) categorical degree filtration",
+    "lags": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "lag_pairs": "all 10 unordered pairs",
+    "max_positions": 250000,
+    "crossfit": "alternating target positions; both directions averaged",
+    "pair_selection": "largest nonconstant conditional-function energy",
+    "level_weights": "W0=1-L0, W1=L0-L1, W2=L1-L2",
+    "memory_strategy": "evaluate additive pair priors in active-pair chunks; forbid q^3 materialization"
+  },
+  "geometry": {
+    "radius": "maximum causal lag of a support",
+    "local_ball_cardinality": "N(k,r)=binom(r,k)*(q-1)^k",
+    "complexity_bits": "G=sum_{k>=1}Wk log2(N(k,rk))/sum_{k>=1}Wk",
+    "degree1_uncertainty": "for a selected pair (a,b), report endpoints assigning aggregate W1 to radius a or radius b; W2 has radius b",
+    "primary_endpoint": "conservative upper radius b",
+    "raw_comparator": "mean nonconstant spectral degree"
+  },
+  "learner": {
+    "vocab": 256,
+    "ctx_len": 64,
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4,
+    "mlp_mult": 4,
+    "dropout": 0.0,
+    "tie_weights": true,
+    "lr": 0.001,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "tokens_per_step": 1024,
+    "student_budget_tokens": 5000000,
+    "checkpoints": 20
+  },
+  "execution": {
+    "device": "local-cpu",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "max_torch_threads": 2,
+    "max_interop_threads": 1,
+    "cell_order": "sequential",
+    "network_access": false,
+    "new_training_cells": 6
+  },
+  "analysis": {
+    "population": "four natural corpora only",
+    "difficulty": "median normalized curve area; higher means harder",
+    "primary": "Spearman geometric complexity versus difficulty at the conservative radius endpoint",
+    "comparators": [
+      "raw nonconstant spectral degree",
+      "selected-pair radius",
+      "nonconstant Fourier energy",
+      "byte unigram entropy"
+    ],
+    "radius_sensitivity": "enumerate all 2^4 degree1 radius endpoints",
+    "decision_rule": "SUPPORTED if the minimum geometry rho across radius endpoints is at least raw-degree rho + 0.20; REFUTED if the maximum geometry rho is no greater than raw-degree rho; otherwise INCONCLUSIVE",
+    "inference": "descriptive and prospective-directional only; with n=4, report exact permutation p and leave-one-out sensitivity but do not claim broad significance"
+  },
+  "exclusions": {
+    "pre_v1_4_language_cells": "invalid token permutation",
+    "m8_image_cells": "same pre-fix CorpusFamily reader; not valid sequence-locality evidence",
+    "tabular": "unordered features do not test spatial locality"
+  },
+  "protocol_hash": "4496bab7825d59635a33507106e47f44897f8836ee9de7f9446afb92b6174f79"
+}

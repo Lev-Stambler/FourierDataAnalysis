@@ -1,0 +1,210 @@
+{
+  "amendment_date": "2026-08-04",
+  "amendment_note": "Student training budget for R1/R2 ladders reduced to 5M tokens/codes per cell (from 20M) for CPU-budget tractability; difficulty read from learning curves / normalized_remaining. M7/M8 students run on local CPU. connect-4 resolved to did 1591 variant. R2 images converted to 32x32 grayscale for a uniform fixed VQ architecture. See scripts/amend_protocol_v1_2.py docstring.",
+  "budget_grid_tokens": [
+    100000,
+    300000,
+    1000000,
+    3000000
+  ],
+  "date": "2026-08-04",
+  "deviations_log": "see v2/experiments/degree_learnability/README.md deviation log (M3 margin, int64 overflow, M4 tuning, F2 unlearnable finding)",
+  "domain": {
+    "L": 64,
+    "eta": 0.1,
+    "q": 32
+  },
+  "falsification_criteria_verbatim": "H1 falsified if any family shows non-monotone `T*` in its degree knob at fixed\nentropy (beyond seed noise, per a pre-specified trend test);\nH4 falsified if model (ii) explains \u2265 90% of what model (iii) explains.\nEither falsification is written up as a negative result with the same rigor.",
+  "family_versions": {
+    "F1_k1": "03b6c9f356d0d4bf",
+    "F1_k1_entropy_matched_control": "03b6c9f356d0d4bf",
+    "F1_k2": "94f4eeccdad27c2b",
+    "F1_k3": "8285569c32f9a81f",
+    "F1_k4": "775f9d2b1d80fd6c",
+    "F1_k6": "db78e83e46829c5c",
+    "F1_k8": "0319c3480e3515ae",
+    "F2_s2_1-16": "5363aec71e060d5c",
+    "F2_s2_1-4": "cad6ce28aa918d10",
+    "F2_s3_1-16-32": "38e3d6ed41099aa6",
+    "F3_d2_M6": "fc95557e7d9cb879",
+    "F3_d4_M6": "a572e9713f8309e1",
+    "F4_r0.3_K6_M2": "ee2d09cdaf57339d",
+    "F4_r0.7_K6_M2": "e2a9d9f9e38b6207",
+    "F5_iid": "d730cbe0b876ae96",
+    "F5_max_sum": "dc4a29673beefd45",
+    "copy_lag16": "95346b033db4b030",
+    "copy_lag4": "d6ee04aa8d0bf04d"
+  },
+  "learner_config": {
+    "ctx_len": 64,
+    "d_model": 64,
+    "dropout": 0.0,
+    "grad_clip": 1.0,
+    "lr": 0.001,
+    "mlp_mult": 4,
+    "n_heads": 4,
+    "n_layers": 2,
+    "tie_weights": true,
+    "vocab": 32,
+    "weight_decay": 0.1
+  },
+  "metrics": {
+    "H1_test": "per family: Spearman rho between knob value and median T* across seeds (uncensored cells); families with >=2 censored cells are classified censored-hard and reported separately, not trend-tested. Falsification operationalized as Spearman rho < 0.8 or a pairwise median inversion exceeding 2x the seed IQR.",
+    "H4_test": "OLS of log T* on (i) degree features only, (ii) entropy + Markov span + total sensitivity only, (iii) both; adjusted R^2 comparison; censored cells excluded and flagged.",
+    "H5_test": "per ladder OLS difficulty ~ measured profile + covariates, then pooled model with domain fixed effects; report per-ladder and pooled R^2.",
+    "T_star": "first checkpoint token count where val CE <= bayes_floor + theta; None if never",
+    "censoring": "T* = None within max budget is recorded as censored, not dropped silently",
+    "secondary_scalars": {
+      "T_half": "first checkpoint where CE <= floor + (init CE - floor)/2",
+      "final_gap_bits": "val CE - bayes floor at the max budget",
+      "norm_remaining": "(final CE - floor) / (init CE - floor); fraction of the reducible gap remaining; init CE = first checkpoint (~uniform predictor, common reference by construction)",
+      "status": "added by amendment v1.1; applied uniformly to all cells; primary registered metric T*(theta=0.05) unchanged"
+    },
+    "theta": 0.05
+  },
+  "milestone_gates": "v2/PLAN.md \u00a78 milestone table (M0-M10), frozen verbatim",
+  "modal": {
+    "app": "dlx-degree-learnability",
+    "cpu_budget_usd": 5.0,
+    "gpu_cap_hours": 80,
+    "spend_limit_multiplier": 1.5,
+    "volume": "dlx-runs"
+  },
+  "pilot": {
+    "budget_tokens": 2000000,
+    "mid_family": {
+      "name": "F1_markov",
+      "params": {
+        "L": 64,
+        "eta": 0.1,
+        "k": 3,
+        "q": 32
+      },
+      "version": "8285569c32f9a81f"
+    },
+    "note": "large config underfit at the pilot budget (final CE worse than small); the literal preregistered rule selects the smallest config within 10% of the largest config's final loss; recorded as a finding, rule applied verbatim without post-hoc change.",
+    "results_final_val_ce": {
+      "large": 4.4978225400226854,
+      "mid": 3.7558374884356307,
+      "small": 3.7597110536810137
+    },
+    "rule": "smallest config with final val CE within 10% of the largest pilot config's final val CE",
+    "selected": "small"
+  },
+  "plan_section": "v2/PLAN.md \u00a79 checklist, all items",
+  "prior_art_recheck": {
+    "date": "2026-08-04",
+    "delta_since_section_0": "added neighbor: 'A Sharper Picture of Generalization in Transformers' (arXiv:2605.20988) \u2014 generalization bounds parameterized by max Fourier degree and spectral width on PARITY-style tasks; still not a data-side difficulty proxy from measured profiles on sequence laws.",
+    "verdict": "no direct collision"
+  },
+  "protocol_hash": "7b87f24b6318e11092752caa367945a8c0fd5ac86fa4bcda0d994dd83b7cd169",
+  "protocol_id": "dlx-v1.2",
+  "real_ladders": {
+    "R1_language": {
+      "datasets": [
+        {
+          "name": "iid_random_tokens",
+          "rung": 1,
+          "source": "synthetic",
+          "tokenization": "vocab-matched to rung-3"
+        },
+        {
+          "family": "F2_q32_L64_lags(1,16)_eta0.1",
+          "name": "synthetic_F2_s2_corpus",
+          "rung": 2,
+          "source": "synthetic"
+        },
+        {
+          "name": "roneneldan/TinyStories",
+          "revision": "f54c09fd23315a6f9c86f9dc80f725de7d8f9c64",
+          "rung": 3,
+          "tokenization": "char/small-BPE (fitted, hash recorded)"
+        },
+        {
+          "name": "LTCB/enwik8",
+          "revision": "8d9ca88afe67dc9713ae7aa970f3fd946cc41b10",
+          "rung": 4,
+          "tokenization": "character (byte values 0..255)"
+        },
+        {
+          "config": "wikitext-2-raw-v1",
+          "name": "Salesforce/wikitext",
+          "revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+          "rung": 5,
+          "tokenization": "~10k BPE (fitted, hash recorded)"
+        },
+        {
+          "filter": "python files only",
+          "name": "codeparrot/codeparrot-clean",
+          "revision": "35a59fb025bc0a102f7d96eac09d145b896d487b",
+          "rung": 6,
+          "tokenization": "BPE (fitted, hash recorded)"
+        },
+        {
+          "generator": "a+b mod p and chained ops, p in {17,31,47}",
+          "name": "arithmetic_corpus",
+          "rung": 7,
+          "source": "synthetic"
+        }
+      ],
+      "q_covariate": "q varies per rung and is logged; profile features are relative tail weights",
+      "teacher": {
+        "model": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987"
+      },
+      "train_token_cap": 20000000,
+      "val_tokens": 256000
+    },
+    "R2_image": {
+      "datasets": [
+        "gaussian_noise_control",
+        "MNIST",
+        "FashionMNIST",
+        "SVHN",
+        "CIFAR10",
+        "STL10_downsampled"
+      ],
+      "floor": "code-prior entropy per dataset",
+      "source": "torchvision official splits; checksums verified at download, recorded in manifests",
+      "vq_convention": {
+        "arch": "fixed tiny VQ-VAE (d=64, 2 enc/dec blocks)",
+        "codebook_K": 512,
+        "hash": "tokenizer config + data hash recorded in manifest",
+        "patch": "8x8",
+        "training": "one per dataset, 50k steps, seed 0"
+      }
+    },
+    "R3_tabular": {
+      "binning": "numerics -> 16 quantile bins; per-coordinate alphabet sizes logged",
+      "datasets": [
+        "iris",
+        "balance-scale",
+        "tic-tac-toe",
+        "car",
+        "mushroom",
+        "kr-vs-kp",
+        "credit-g",
+        "churn",
+        "adult (subset)",
+        "bank-marketing-8k",
+        "connect-4 (subsampled)",
+        "mini-boone"
+      ],
+      "extra_measurement": "coordinate-masking total influence per dataset",
+      "learner": "fixed MLP 2x256, identical across datasets, early stopping",
+      "resolution_rule": "first exact-name OpenML match resolved at download; dataset_id + version recorded in configs/openml_resolution.json and in each cell manifest BEFORE learner training",
+      "source": "OpenML / sklearn"
+    }
+  },
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "student_budget_tokens": 5000000,
+  "student_execution": "local-cpu (budget + tractability; manifest discipline unchanged)",
+  "supersedes": "32652e6d188660fc074a5636dd05cdac1a463590b6f1ff7bc6dd7f57399fc308",
+  "theta_bits": 0.05,
+  "tier_table_verbatim": "| Tier | Scale | Compute | Wall target | Est. cost |\n|---|---|---|---|---|\n| S0 smoke | q=8, L=8 (tabular toy) | Modal CPU or laptop | < 30 s | ~$0 |\n| S1 enumerable | q=16, L=16; enumerable tabular set | Modal CPU | < 5 min | <$1 |\n| S2 protocol size | q=32, L=64; full tabular ladder | Modal CPU, parallel | < 30 min | <$2 |\n| G1 GPU smoke | q=32, L=64 | 1x cheap GPU (A10G/T4) | < 10 min | <$1 |\n| G2 grid | all cells incl. real ladders | 1 GPU per cell, fanned out | <= GPU cap | ~$60-90 |",
+  "tokens_per_step": 1024
+}

@@ -1,0 +1,80 @@
+{
+  "version": "1.4",
+  "date": "2026-08-06",
+  "amendment_note": "Replaces the invalid v1.3 language evidence after discovering that cyclic CorpusFamily shuffled individual tokens and erased sequence structure. Uses contiguous cyclic reads and the inverse-likelihood categorical functional-ANOVA basis of Ferrere et al. (2026), arXiv:2603.02673, Definition 3.1 and equation (19). Tabular and image evidence are unchanged.",
+  "supersedes_language_protocol_hash": "f982f37dad2ea8877cebbe0aa64fef229946d16a5a65a161124e2de6dd2409b6",
+  "paper": {
+    "title": "Exact Functional ANOVA Decomposition for Categorical Inputs Models",
+    "arxiv": "2603.02673",
+    "basis": "inverse likelihood mechanism",
+    "formula": "phi_A^z(x) = product_i(1{x_i=z_i}-1{x_i=N_i-1}) / p_A(x_A)",
+    "text_interpretation": "each lagged token position is one categorical variable; output is the next-token one-hot vector; degree is context-position interaction order"
+  },
+  "execution": {
+    "device": "local-cpu",
+    "max_torch_threads": 2,
+    "max_interop_threads": 1,
+    "wallclock_limit_seconds": 7200,
+    "modal_or_gpu_spend": 0,
+    "cell_order": "sequential"
+  },
+  "sequence_semantics": {
+    "cyclic_reuse": "contiguous circular read; tokens are never permuted",
+    "seed_variation": "deterministic circular starting offset only",
+    "old_language_cells": "invalid for sequence learnability and never reused"
+  },
+  "learner": {
+    "vocab": 256,
+    "ctx_len": 64,
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4,
+    "mlp_mult": 4,
+    "dropout": 0.0,
+    "tie_weights": true,
+    "lr": 0.001,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "tokens_per_step": 1024,
+    "student_budget_tokens": 5000000,
+    "checkpoints": 20
+  },
+  "profile": {
+    "q": 256,
+    "lags": [1, 2, 4, 8, 16],
+    "lag_pairs": "all unordered pairs",
+    "max_positions": 250000,
+    "crossfit": "alternating target positions; both directions averaged",
+    "degree_0": "unigram projection",
+    "degree_1": "Formula-(19) constant plus single-position inverse-likelihood column span",
+    "degree_2": "Formula-(19) pair support span",
+    "solver": "nested weighted L2 projections; algebraically equivalent column spans without materializing q^2 columns",
+    "pair_smoothing": 8.0,
+    "pair_prior": "degree-1 additive projection",
+    "primary_feature": "effective_degree_best_pair",
+    "limitations": "pairwise profile measures degrees 0-2 over selected lags; it is not a full 64-position spectrum"
+  },
+  "rungs": [
+    {"id": "enwik8_bytes", "kind": "natural", "source": "cached canonical enwik8 bytes"},
+    {"id": "tinystories_bytes", "kind": "natural", "source": "cached pinned TinyStories decoded to UTF-8 bytes"},
+    {"id": "markov2_bytes", "kind": "synthetic", "eta": 0.25, "planted_degree": 2, "lags": [1, 2], "span": 2},
+    {"id": "copy_lag16_bytes", "kind": "synthetic", "eta": 0.25, "planted_degree": 1, "lags": [16], "span": 16}
+  ],
+  "preflight": {
+    "excluded_from_confirmation": true,
+    "seed": 104,
+    "budget_tokens": 1000000,
+    "gate": "copy learning minus markov2 learning >= 2.0 bits",
+    "observed_before_freeze": {"copy_learning_bits": 3.70635932665662, "markov2_learning_bits": 0.0187548800592392}
+  },
+  "confirmation": {
+    "seeds": [0, 1, 2],
+    "difficulty_primary": "normalized_curve_area; higher is harder",
+    "difficulty_secondary": "initial CE minus final CE; higher is easier",
+    "controlled_pass_rule": "profile effective degree markov2 > copy, median curve-area difference markov2-copy >= 0.03, and median learning difference copy-markov2 >= 1.0 bit",
+    "controlled_fail_rule": "profile ordering is reversed or curve-area difference <= 0 or learning difference <= 0",
+    "otherwise": "INCONCLUSIVE",
+    "natural_analysis": "descriptive Spearman across the two natural and two synthetic rungs; no standalone significance claim at n=4"
+  },
+  "protocol_hash": "86781a91c742806370fdc4d6ecc5f365e7018164eb086d6fedc2fc6e0e3812d9"
+}

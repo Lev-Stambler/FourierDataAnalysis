@@ -30,6 +30,11 @@ This directory is an ordered workspace of self-contained experiments:
     Exp12 signal against four independently AdamW/Muon-tuned, total-parameter-
     matched standard Transformer aspect ratios, with disjoint sealed
     confirmation/final WikiText holdouts and token- plus compute-matched gates.
+14. `exp14_block_kronecker` — fully factorized `16 × 4 × 4 × 8 × 16`
+    block-causal candidate. Only the outer token-group factor is causal; the
+    inner 16-token workspace is noncausal and predicts the next complete group.
+    It includes four independently tuned, total-parameter-matched block-causal
+    Transformer controls and a workspace-permutation ablation.
 
 Python import package names and remote artifact roots from experiments 1–4
 are unchanged. The shared Northflank lifecycle and launch aliases live in

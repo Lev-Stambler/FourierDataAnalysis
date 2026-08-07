@@ -28,9 +28,12 @@ class Candidate:
     spot: bool = False
 
 
-def nf(*arguments: str, check: bool = True) -> str:
+def nf(*arguments: str, check: bool = True, team: str | None = None) -> str:
+    target = [*arguments]
+    if team:
+        target.extend(("--teamId", team))
     result = subprocess.run(
-        ["northflank", *arguments],
+        ["northflank", *target],
         check=check,
         text=True,
         stdout=subprocess.PIPE,
@@ -39,8 +42,8 @@ def nf(*arguments: str, check: bool = True) -> str:
     return result.stdout
 
 
-def nf_json(*arguments: str) -> dict:
-    return json.loads(nf(*arguments, "-o", "json"))
+def nf_json(*arguments: str, team: str | None = None) -> dict:
+    return json.loads(nf(*arguments, "-o", "json", team=team))
 
 
 def managed_candidates(
@@ -79,7 +82,7 @@ def managed_candidates(
 
 def spot_inventory(team: str) -> list[dict]:
     """Return configured BYOC preemptible pools; an empty list is definitive."""
-    clusters = nf_json("list", "cloud", "clusters").get(
+    clusters = nf_json("list", "cloud", "clusters", team=team).get(
         "clusters", []
     )
     result = []
@@ -107,6 +110,7 @@ def parse_existing(values: list[str], team: str) -> list[Candidate]:
             project_id,
             "--serviceId",
             service_id,
+            team=team,
         )
         gpu = service["deployment"]["gpu"]["configuration"]
         if gpu["gpuType"] not in GPU_PRIORITY or int(gpu["gpuCount"]) != 8:
@@ -135,6 +139,8 @@ def ensure_project(candidate: Candidate, team: str) -> None:
             candidate.project_id,
             "-o",
             "json",
+            "--teamId",
+            team,
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -146,7 +152,7 @@ def ensure_project(candidate: Candidate, team: str) -> None:
         "region": candidate.region,
         "description": "Reusable H100/H200 capacity race",
     }
-    nf("create", "project", "-i", json.dumps(payload))
+    nf("create", "project", "-i", json.dumps(payload), team=team)
 
 
 def service_payload(candidate: Candidate) -> dict:
@@ -205,6 +211,8 @@ def ensure_service(candidate: Candidate, team: str) -> None:
             candidate.service_id,
             "-o",
             "json",
+            "--teamId",
+            team,
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -218,6 +226,7 @@ def ensure_service(candidate: Candidate, team: str) -> None:
             candidate.project_id,
             "-i",
             json.dumps(service_payload(candidate)),
+            team=team,
         )
     else:
         nf(
@@ -230,6 +239,7 @@ def ensure_service(candidate: Candidate, team: str) -> None:
             "-i",
             '{"instances":1}',
             check=False,
+            team=team,
         )
 
 
@@ -242,6 +252,7 @@ def status(candidate: Candidate, team: str) -> str:
         candidate.project_id,
         "--serviceId",
         candidate.service_id,
+        team=team,
     )
     containers = data.get("containers", [])
     return containers[0]["status"] if containers else "NO_CONTAINER"
@@ -256,6 +267,7 @@ def pause(candidate: Candidate, team: str) -> None:
         "--serviceId",
         candidate.service_id,
         check=False,
+        team=team,
     )
 
 

@@ -1,0 +1,119 @@
+{
+  "version": "2.0",
+  "date": "2026-08-07",
+  "amendment_note": "Confirmatory multi-corpus test of the v1.9 Parseval-normalized geometric Fourier moment. Frozen after the one-corpus pilot but before any stride-transformed TinyStories, WikiText-2, or CodeParrot learning curve or spectrum was computed.",
+  "source_protocol_hash": "fbee92bf4c75b913034be4e0bbcebf80d5fc3a4f421d6a8dbe2ed91071599445",
+  "datasets": [
+    {
+      "id": "enwik8",
+      "path": "dlx/data_cache/v19_enwik8_bytes_n5500000.npy",
+      "file_sha256": "e6ce2b767e6c5c6b4f3d95ac5323ee7288db7bc802a6508315705eece2ee0343"
+    },
+    {
+      "id": "tinystories",
+      "path": "dlx/data_cache/h5_tinystories_bytes_n5500000.npy",
+      "file_sha256": "eb3a36d52228d76f28459aab4461c2bb498ed327ed360d26f0a87a78916ce96c"
+    },
+    {
+      "id": "wikitext2",
+      "path": "dlx/data_cache/v18_wikitext2_bytes_n5500000.npy",
+      "file_sha256": "aed8b217b1d080c9c30bf32c652fdd392f5ca8dbc442e92313e1ff4d0d81f6d5"
+    },
+    {
+      "id": "codeparrot_python",
+      "path": "dlx/data_cache/v18_codeparrot_python_bytes_n5500000.npy",
+      "file_sha256": "a7613580590bc9d99da60f50b68d93f14dfa74830b3c559ae02401c74d1136f4"
+    }
+  ],
+  "intervention": {
+    "strides": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "transform": "split each fixed byte stream into s equal contiguous lanes and emit the transpose round-robin",
+    "invariants": [
+      "exact byte multiset",
+      "q=256",
+      "corpus length=5500000",
+      "learner and token budget",
+      "approximately the same pair-spectrum level masses and degree"
+    ],
+    "intended_change": "natural dependency support moves from approximately (1,2) to (s,2s)"
+  },
+  "spectrum": {
+    "target": "f(x)=P(next byte|selected context pair)",
+    "basis": "Formula-(19) Gram-orthonormalized categorical degree filtration",
+    "profile_lags": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "profile_positions": 100000,
+    "position_sampling": "uniform corpus-wide time indices with every interleaved lane represented in both cross-fit folds",
+    "level_weights": "W0=1-L0, W1=L0-L1, W2=L1-L2",
+    "parseval_total": "S=W0+W1+W2=E_D||f(X)||_2^2",
+    "primary_predictor": "G_total=sum_k Wk log2[binom(r,k)(q-1)^k]/S",
+    "comparators": [
+      "mean degree normalized by S",
+      "mean degree conditioned on nonconstant energy",
+      "absolute geometric moment",
+      "spectral entropy upper bound"
+    ]
+  },
+  "learner": {
+    "vocab": 256,
+    "ctx_len": 64,
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4,
+    "mlp_mult": 4,
+    "dropout": 0.0,
+    "tie_weights": true,
+    "lr": 0.001,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "tokens_per_step": 1024,
+    "budget_tokens": 3000000,
+    "checkpoints": 16
+  },
+  "replication": {
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "datasets": 4,
+    "strides_per_dataset": 4,
+    "total_training_cells": 48
+  },
+  "difficulty": {
+    "primary": "dataset-stride median final held-out CE divided by initial held-out CE; higher is harder",
+    "secondary": "dataset-stride median normalized held-out curve area over log1p token time",
+    "reason": "the v1.9 curves showed that area mixes acquisition speed with the final finite-budget plateau"
+  },
+  "confirmatory_test": {
+    "unit": "16 dataset-stride medians",
+    "statistic": "mean of the four within-dataset Spearman correlations between G_total and primary difficulty",
+    "null": "independently permute the four difficulty labels within each dataset",
+    "exact_space": "24^4=331776 blocked permutations",
+    "p_value": "two-sided exact tail probability",
+    "support_rule": "SUPPORTED if blocked rho>=0.70, exact two-sided p<0.05, stride-8 primary difficulty exceeds stride-1 in at least 3 of 4 datasets, and the seed-specific blocked rho is positive for all three seeds",
+    "refute_rule": "REFUTED if blocked rho<=0 or stride-8 primary difficulty fails to exceed stride-1 in at least 3 of 4 datasets",
+    "otherwise": "INCONCLUSIVE"
+  },
+  "execution": {
+    "provider": "Modal",
+    "gpu": "A10G",
+    "remote_training_cells": 48,
+    "local_training_cells": 0,
+    "retries": 0,
+    "timeout_seconds_per_cell": 1800,
+    "network_data_download": false
+  },
+  "scope": "confirmation of a causal locality effect on these four fixed real byte corpora and this learner; not a universal cross-domain law",
+  "protocol_hash": "5960946e29702cfb09dc5be144cb3e27643accf89b29793aa517dd32c232b2d0"
+}

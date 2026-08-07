@@ -1,0 +1,51 @@
+"""Exp19: conditioned pre-norm residual architecture audit."""
+
+from .model import (
+    AUDIT_MODEL_NAMES,
+    CLEAN_GROUP_R1_JOINT,
+    CLEAN_GROUP_R1_TOKEN,
+    CORRECTED_NO_ROUTER_TOKEN,
+    CORRECTED_TRANSFORMER_DEEP,
+    CORRECTED_TRANSFORMER_WIDE,
+    LEGACY_POSTNORM_R1,
+    MODEL_NAMES,
+    PRENORM_AFFINE_FREE_SCALED,
+    PRENORM_LEARNED_SCALED,
+    LanguageModel,
+    LearnedRMSNorm,
+    ModelSpec,
+    build_legacy_model,
+    build_model,
+    correctness_checks,
+    model_inventory,
+)
+from .telemetry import (
+    norm_gamma_telemetry,
+    representation_summary,
+    small_factor_spectra,
+    telemetry,
+)
+
+__all__ = [
+    "AUDIT_MODEL_NAMES",
+    "CLEAN_GROUP_R1_JOINT",
+    "CLEAN_GROUP_R1_TOKEN",
+    "CORRECTED_NO_ROUTER_TOKEN",
+    "CORRECTED_TRANSFORMER_DEEP",
+    "CORRECTED_TRANSFORMER_WIDE",
+    "LEGACY_POSTNORM_R1",
+    "MODEL_NAMES",
+    "PRENORM_AFFINE_FREE_SCALED",
+    "PRENORM_LEARNED_SCALED",
+    "LanguageModel",
+    "LearnedRMSNorm",
+    "ModelSpec",
+    "build_legacy_model",
+    "build_model",
+    "correctness_checks",
+    "model_inventory",
+    "norm_gamma_telemetry",
+    "representation_summary",
+    "small_factor_spectra",
+    "telemetry",
+]

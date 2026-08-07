@@ -1,0 +1,87 @@
+{
+  "version": "1.9",
+  "date": "2026-08-07",
+  "amendment_note": "Tests Parseval-total spectral scaling and prospectively varies locality on a fixed real byte dataset by stride interleaving. The same enwik8 bytes are used in every cell; only their dependency radius changes. Training runs remotely on Modal A10G GPUs.",
+  "source_protocol_hashes": {
+    "real_natural_v1_8": "4496bab7825d59635a33507106e47f44897f8836ee9de7f9446afb92b6174f79"
+  },
+  "parseval_metrics": {
+    "total_energy": "S=sum_k Wk=E_D||f(X)||_2^2",
+    "normalized_level_mass": "pk=Wk/S",
+    "degree_total": "D_total=sum_k kWk/S",
+    "geometric_moment_absolute": "M=sum_{k>=1}Wk log2[binom(r,k)(q-1)^k]",
+    "geometric_moment_total": "G_total=M/S",
+    "legacy_geometric_nonconstant": "G_nonconstant=M/sum_{k>=1}Wk",
+    "level_entropy": "H_level=-sum_k pk log2(pk)",
+    "spectral_entropy_upper": "H_upper=H_level+sum_k pk log2[binom(r,k)(q-1)^k]",
+    "spectral_entropy_interpretation": "upper bound obtained by spreading each known level mass uniformly across its coefficient cardinality; 2^H_upper is an effective-support upper bound"
+  },
+  "existing_real_reanalysis": {
+    "source": "v1.8 four-corpus strongest-pair spectra and held-out curves",
+    "status": "exploratory because metric variants were proposed after inspecting v1.8",
+    "difficulty": "median normalized held-out curve area, with final CE/initial CE secondary"
+  },
+  "stride_pilot": {
+    "dataset": "first 5500000 canonical enwik8 bytes",
+    "data_transform": "split the byte stream into s equal contiguous lanes and emit their transpose in round-robin order; this is an exact permutation of the same retained bytes",
+    "strides": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "expected_dependency_lags": "(s,2s)",
+    "q": 256,
+    "context_length": 64,
+    "profile_lags": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "profile_max_positions": 100000,
+    "seeds": [
+      0,
+      1
+    ],
+    "budget_tokens": 1500000,
+    "checkpoints": 12,
+    "learner": {
+      "vocab": 256,
+      "ctx_len": 64,
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 4,
+      "mlp_mult": 4,
+      "dropout": 0.0,
+      "tie_weights": true,
+      "lr": 0.001,
+      "weight_decay": 0.1,
+      "grad_clip": 1.0
+    },
+    "tokens_per_step": 1024,
+    "difficulty_primary": "median normalized held-out curve area over log1p token time; higher is harder",
+    "difficulty_secondary": "median final held-out CE divided by initial held-out CE; higher is harder",
+    "primary_prediction": "G_total increases with stride and correlates positively with difficulty",
+    "support_rule": "SUPPORTED if median difficulty is nondecreasing in all four strides and Spearman(G_total,difficulty)>=0.8 for both primary and secondary difficulty",
+    "refute_rule": "REFUTED if either difficulty metric has Spearman(G_total,difficulty)<=0",
+    "otherwise": "INCONCLUSIVE"
+  },
+  "execution": {
+    "provider": "Modal",
+    "gpu": "A10G",
+    "remote_training_cells": 8,
+    "fanout": "bounded map after a one-cell smoke run",
+    "retries": 0,
+    "timeout_seconds_per_cell": 1800,
+    "local_training_cells": 0,
+    "network_data_download": false
+  },
+  "limitations": [
+    "stride-interleaved data are controlled transformations of real data, not four independent natural corpora",
+    "level weights do not identify within-level coefficient concentration, so H_upper is a bound rather than exact coefficient entropy",
+    "the pilot has two seeds and is directional rather than a broad external-validity claim"
+  ],
+  "protocol_hash": "fbee92bf4c75b913034be4e0bbcebf80d5fc3a4f421d6a8dbe2ed91071599445"
+}

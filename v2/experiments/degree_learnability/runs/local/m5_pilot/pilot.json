@@ -1,0 +1,55 @@
+{
+  "rule": "smallest config with final val CE within 10% of the largest pilot config's final val CE",
+  "mid_family": {
+    "name": "F1_markov",
+    "version": "8285569c32f9a81f",
+    "params": {
+      "q": 32,
+      "L": 64,
+      "k": 3,
+      "eta": 0.1
+    }
+  },
+  "pilot_budget_tokens": 2000000,
+  "within_fraction": 0.1,
+  "largest_config_final_val_ce": 4.4978225400226854,
+  "threshold": 4.947604794024954,
+  "results": {
+    "small": {
+      "final_val_ce": 3.7597110536810137,
+      "final_gap_bits": 2.820762715802077,
+      "n_params": 105088,
+      "config": {
+        "d_model": 64,
+        "n_layers": 2,
+        "n_heads": 4
+      }
+    },
+    "mid": {
+      "final_val_ce": 3.7558374884356307,
+      "final_gap_bits": 2.816889150556694,
+      "n_params": 801024,
+      "config": {
+        "d_model": 128,
+        "n_layers": 4,
+        "n_heads": 4
+      }
+    },
+    "large": {
+      "final_val_ce": 4.4978225400226854,
+      "final_gap_bits": 3.5588742021437487,
+      "n_params": 4749824,
+      "config": {
+        "d_model": 256,
+        "n_layers": 6,
+        "n_heads": 8
+      }
+    }
+  },
+  "selected": "small",
+  "selected_config": {
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "version": "1.5",
+  "date": "2026-08-06",
+  "amendment_note": "Analysis-only correction to protocol v1.4. Degree is reported through total conditional-function variance and cumulative low-degree concentration. The former effective-degree scalar is retained only as a derived diagnostic. No data profile or learner cell is recomputed.",
+  "source_v1_4_protocol_hash": "86781a91c742806370fdc4d6ecc5f365e7018164eb086d6fedc2fc6e0e3812d9",
+  "paper": {
+    "title": "Exact Functional ANOVA Decomposition for Categorical Inputs Models",
+    "arxiv": "2603.02673",
+    "basis": "inverse likelihood mechanism",
+    "formula": "phi_A^z(x) = product_i(1{x_i=z_i}-1{x_i=N_i-1}) / p_A(x_A)",
+    "degree": "cardinality |A| of the interacting context-position subset"
+  },
+  "execution": {
+    "analysis_only": true,
+    "source_artifact": "runs/local/v14_text_anova/confirmation/confirmation_results.json",
+    "training_cells_reused_without_change": 12,
+    "training_cells_recomputed": 0,
+    "profiles_recomputed": 0
+  },
+  "variance_metric": {
+    "loss": "multiclass Brier risk for the next-token one-hot vector",
+    "L0": "cross-fitted constant/unigram risk",
+    "L1": "cross-fitted risk of the degree-at-most-1 additive projection",
+    "L2": "cross-fitted risk of the degree-at-most-2 pair projection",
+    "raw_output_variance": "L0 = E[||onehot(Y)-E onehot(Y)||^2]",
+    "pair_conditional_function_variance": "V_pair = L0 - min(L0,L1,L2)",
+    "low_degree_variance": "V_leq1 = L0 - min(L0,L1)",
+    "low_degree_concentration": "C_leq1 = V_leq1 / V_pair",
+    "degree2_tail": "1-C_leq1 = (V_pair-V_leq1)/V_pair",
+    "monotonicity": "risks are monotonized only when finite-sample cross-fit noise violates nesting",
+    "pair_selection": "maximize V_pair among the ten frozen lag pairs"
+  },
+  "controlled_consistency_rule": {
+    "copy_lag16": "C_leq1 >= 0.95 and degree-2 tail <= 0.05",
+    "markov2": "C_leq1 <= 0.05 and degree-2 tail >= 0.95",
+    "ordering": "copy C_leq1 minus markov2 C_leq1 >= 0.90",
+    "status": "post-hoc metric correction; consistency check, not a new independent confirmation test"
+  },
+  "scope": {
+    "controlled_generators": "the selected pair contains the complete planted parent set, so V_pair is the full conditional-function variance for the planted law",
+    "natural_text": "the estimate is the concentration of the strongest frozen two-lag conditional function only; it is not a full 64-position spectrum",
+    "effective_degree": "diagnostic identity 2-C_leq1 for a positive two-level decomposition; not a primary metric"
+  },
+  "protocol_hash": "9819a0ca3aa0068f7463ba9816919e32ed88dd77640ef06374ec5f51066649c1"
+}

@@ -1,0 +1,400 @@
+{
+  "protocol_hash": "f982f37dad2ea8877cebbe0aa64fef229946d16a5a65a161124e2de6dd2409b6",
+  "rungs": {
+    "enwik8_bytes": {
+      "id": "enwik8_bytes",
+      "source_kind": "natural",
+      "q": 256,
+      "data_sha256": "4ccbf4f469b5adf1df2ea39339bc8cedfb2cac784eb64fcd244795747042c7e4",
+      "profile": {
+        "R": [
+          0.04968854463691839,
+          0.12981500169045024,
+          0.2659298614057553,
+          0.40281277105150726
+        ],
+        "R_raw_crossfit": [
+          0.04968854463691839,
+          0.12981500169045024,
+          0.2659298614057553,
+          0.40281277105150726
+        ],
+        "Delta": [
+          0.08012645705353186,
+          0.13611485971530507,
+          0.13688290964575195
+        ],
+        "n_positions": 999935,
+        "n_fit": 499968,
+        "n_score": 499967,
+        "groups": [
+          0,
+          194,
+          4790,
+          25006
+        ],
+        "coverage": [
+          0.0,
+          0.9999879992079477,
+          0.9948416595495303,
+          0.9650696945998436
+        ],
+        "k_max": 3,
+        "q": 256,
+        "L": 64,
+        "estimator": "alternating-position cross-fit; unseen suffix -> fit marginal",
+        "monotone_projection": true
+      },
+      "source": {
+        "rung": 4,
+        "name": "enwik8",
+        "source": "url:http://mattmahoney.net/dc/enwik8.zip",
+        "revision": "origin(pinned-repo LTCB/enwik8@8d9ca88a);file_sha=2b49720ec4d78c3c",
+        "tokenization": "byte (q=256)",
+        "vocab_size": 256,
+        "n_tokens": 20000000,
+        "sha256": "4ccbf4f469b5adf1df2ea39339bc8cedfb2cac784eb64fcd244795747042c7e4"
+      }
+    },
+    "tinystories_bytes": {
+      "id": "tinystories_bytes",
+      "source_kind": "natural",
+      "source": "cached pinned TinyStories BPE ids decoded to UTF-8 bytes",
+      "source_revision": "f54c09fd23315a6f9c86f9dc80f725de7d8f9c64",
+      "tokenizer_sha256": "33df7d271923a9b312ae34bbb17efff9afa26005c19b685d7968b36b93e30678",
+      "q": 256,
+      "n_tokens": 5500000,
+      "data_sha256": "07223e1fca619281521b183bf7015ec577523bbefa075aaae698ec7f883cfd60",
+      "profile": {
+        "R": [
+          0.07179448550785612,
+          0.19097645654243633,
+          0.3243353204911477,
+          0.4592770671813117
+        ],
+        "R_raw_crossfit": [
+          0.07179448550785612,
+          0.19097645654243633,
+          0.3243353204911477,
+          0.4592770671813117
+        ],
+        "Delta": [
+          0.11918197103458021,
+          0.13335886394871138,
+          0.134941746690164
+        ],
+        "n_positions": 999935,
+        "n_fit": 499968,
+        "n_score": 499967,
+        "groups": [
+          0,
+          79,
+          986,
+          6051
+        ],
+        "coverage": [
+          0.0,
+          0.9999899993399565,
+          0.9995619710900919,
+          0.9958677272699998
+        ],
+        "k_max": 3,
+        "q": 256,
+        "L": 64,
+        "estimator": "alternating-position cross-fit; unseen suffix -> fit marginal",
+        "monotone_projection": true
+      },
+      "reference_entropy_bits": 4.443506367697649,
+      "reference_entropy_kind": "empirical-unigram-not-a-floor"
+    },
+    "markov2_bytes": {
+      "id": "markov2_bytes",
+      "source_kind": "synthetic",
+      "source": "F1Markov(q=256,k=2,lags=(1,2))",
+      "generator_seed": 1313,
+      "eta": 0.25,
+      "planted_degree": 2,
+      "span": 2,
+      "generating_entropy_bits": 2.8005080107981986,
+      "family_version": "07669282f088000b",
+      "q": 256,
+      "n_tokens": 5500000,
+      "data_sha256": "953dadc07b8dc4dd2fd7f13923eceacdbc84ed3ab2813c8f01cc7d427f1e7f53",
+      "profile": {
+        "R": [
+          0.0039062198680829777,
+          0.0039062198680829777,
+          0.5633049836033885,
+          0.5633049836033885
+        ],
+        "R_raw_crossfit": [
+          0.0039062198680829777,
+          0.003904599032486959,
+          0.5633049836033885,
+          0.4236088378057228
+        ],
+        "Delta": [
+          0.0,
+          0.5593987637353056,
+          0.0
+        ],
+        "n_positions": 999935,
+        "n_fit": 499968,
+        "n_score": 499967,
+        "groups": [
+          0,
+          256,
+          65503,
+          189967
+        ],
+        "coverage": [
+          0.0,
+          1.0,
+          0.9957517196134945,
+          0.7348464998689913
+        ],
+        "k_max": 3,
+        "q": 256,
+        "L": 64,
+        "estimator": "alternating-position cross-fit; unseen suffix -> fit marginal",
+        "monotone_projection": true
+      },
+      "reference_entropy_bits": 2.8005080107981986,
+      "reference_entropy_kind": "generating"
+    },
+    "copy_lag16_bytes": {
+      "id": "copy_lag16_bytes",
+      "source_kind": "synthetic",
+      "source": "F2SubsetSum(q=256,lags=(16,))",
+      "generator_seed": 1313,
+      "eta": 0.25,
+      "planted_degree": 1,
+      "span": 16,
+      "generating_entropy_bits": 2.8005080107981986,
+      "family_version": "dcc9cb7d000df67f",
+      "q": 256,
+      "n_tokens": 5500000,
+      "data_sha256": "96f8303c2b64ab0e8127bc9f6950397fe6e0608633cbb47ea68c103031689bcc",
+      "profile": {
+        "R": [
+          0.003907116068585258,
+          0.003907116068585258,
+          0.003948777569689328,
+          0.003948777569689328
+        ],
+        "R_raw_crossfit": [
+          0.003907116068585258,
+          0.003906385083655762,
+          0.003948777569689328,
+          0.0038991438562313266
+        ],
+        "Delta": [
+          0.0,
+          4.166150110407069e-05,
+          0.0
+        ],
+        "n_positions": 999935,
+        "n_fit": 499968,
+        "n_score": 499967,
+        "groups": [
+          0,
+          256,
+          63203,
+          286394
+        ],
+        "coverage": [
+          0.0,
+          1.0,
+          0.9120361943888297,
+          0.007318483019879312
+        ],
+        "k_max": 3,
+        "q": 256,
+        "L": 64,
+        "estimator": "alternating-position cross-fit; unseen suffix -> fit marginal",
+        "monotone_projection": true
+      },
+      "reference_entropy_bits": 2.8005080107981986,
+      "reference_entropy_kind": "generating"
+    }
+  },
+  "cells": [
+    {
+      "cell_id": "H5B/enwik8_bytes/s0",
+      "rung": "enwik8_bytes",
+      "seed": 0,
+      "execution": "reuse",
+      "source_cell": "M7/rung4/enwik8/s0",
+      "source_manifest": "runs/local/m7/M7__rung4__enwik8__s0/manifest.json",
+      "source_manifest_sha256": "272d13a2f3d9d6f77726c79bce866296eb08474f0490fdf13687856e8dbc0587",
+      "initial_ce_bits": 7.956096720827052,
+      "final_ce_bits": 3.0838527509092626,
+      "best_ce_bits": 3.0838527509092626,
+      "learning_amount_bits": 4.87224396991779,
+      "best_learning_amount_bits": 4.87224396991779,
+      "fractional_learning": 0.6123912442094231,
+      "normalized_curve_area": 0.7227682496638873,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/enwik8_bytes/s1",
+      "rung": "enwik8_bytes",
+      "seed": 1,
+      "execution": "reuse",
+      "source_cell": "M7/rung4/enwik8/s1",
+      "source_manifest": "runs/local/m7/M7__rung4__enwik8__s1/manifest.json",
+      "source_manifest_sha256": "71b307cd55ad495466ee19c38d2c5b93a3da853e15dff9c2e8ba27ff9b2c731a",
+      "initial_ce_bits": 7.956560472045103,
+      "final_ce_bits": 3.1307614918843836,
+      "best_ce_bits": 3.129334680817163,
+      "learning_amount_bits": 4.8257989801607195,
+      "best_learning_amount_bits": 4.82722579122794,
+      "fractional_learning": 0.6065182307249313,
+      "normalized_curve_area": 0.7305966232817915,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/enwik8_bytes/s2",
+      "rung": "enwik8_bytes",
+      "seed": 2,
+      "execution": "reuse",
+      "source_cell": "M7/rung4/enwik8/s2",
+      "source_manifest": "runs/local/m7/M7__rung4__enwik8__s2/manifest.json",
+      "source_manifest_sha256": "7b0ae7d2f8d44ff0b48a386876cf61b36e778fa876ab89bb5a552e5bde9f6d64",
+      "initial_ce_bits": 7.939328412367928,
+      "final_ce_bits": 3.1277629098730966,
+      "best_ce_bits": 3.1260436638059153,
+      "learning_amount_bits": 4.811565502494831,
+      "best_learning_amount_bits": 4.813284748562013,
+      "fractional_learning": 0.6060418781769185,
+      "normalized_curve_area": 0.7281930697011981,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/tinystories_bytes/s0",
+      "rung": "tinystories_bytes",
+      "seed": 0,
+      "execution": "new",
+      "initial_ce_bits": 8.014611753991312,
+      "final_ce_bits": 4.506271316733309,
+      "best_ce_bits": 4.505595166941442,
+      "learning_amount_bits": 3.5083404372580036,
+      "best_learning_amount_bits": 3.509016587049871,
+      "fractional_learning": 0.43774303047316476,
+      "normalized_curve_area": 0.7393900297131171,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/tinystories_bytes/s1",
+      "rung": "tinystories_bytes",
+      "seed": 1,
+      "execution": "new",
+      "initial_ce_bits": 8.036916527947012,
+      "final_ce_bits": 4.5100069948883625,
+      "best_ce_bits": 4.507053106868469,
+      "learning_amount_bits": 3.5269095330586495,
+      "best_learning_amount_bits": 3.5298634210785433,
+      "fractional_learning": 0.43883864175948833,
+      "normalized_curve_area": 0.7381726105128886,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/tinystories_bytes/s2",
+      "rung": "tinystories_bytes",
+      "seed": 2,
+      "execution": "new",
+      "initial_ce_bits": 7.989963802408933,
+      "final_ce_bits": 4.506330908721832,
+      "best_ce_bits": 4.505001052874036,
+      "learning_amount_bits": 3.4836328936871004,
+      "best_learning_amount_bits": 3.4849627495348967,
+      "fractional_learning": 0.4360010858418161,
+      "normalized_curve_area": 0.7403015022671227,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/markov2_bytes/s0",
+      "rung": "markov2_bytes",
+      "seed": 0,
+      "execution": "new",
+      "initial_ce_bits": 8.01781630672484,
+      "final_ce_bits": 8.000081197793891,
+      "best_ce_bits": 7.999871378959838,
+      "learning_amount_bits": 0.017735108930947874,
+      "best_learning_amount_bits": 0.017944927765000784,
+      "fractional_learning": 0.0022119624910928405,
+      "normalized_curve_area": 0.9989452349456495,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/markov2_bytes/s1",
+      "rung": "markov2_bytes",
+      "seed": 1,
+      "execution": "new",
+      "initial_ce_bits": 8.021991787513812,
+      "final_ce_bits": 8.000015328438609,
+      "best_ce_bits": 7.999861575948738,
+      "learning_amount_bits": 0.02197645907520318,
+      "best_learning_amount_bits": 0.022130211565074553,
+      "fractional_learning": 0.0027395264988190867,
+      "normalized_curve_area": 0.9986153001354874,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/markov2_bytes/s2",
+      "rung": "markov2_bytes",
+      "seed": 2,
+      "execution": "new",
+      "initial_ce_bits": 8.018443011504583,
+      "final_ce_bits": 8.000000107974008,
+      "best_ce_bits": 7.999772574926917,
+      "learning_amount_bits": 0.018442903530575094,
+      "best_learning_amount_bits": 0.01867043657766665,
+      "fractional_learning": 0.0023000604361861593,
+      "normalized_curve_area": 0.9989040383337645,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/copy_lag16_bytes/s0",
+      "rung": "copy_lag16_bytes",
+      "seed": 0,
+      "execution": "new",
+      "initial_ce_bits": 8.019346006412938,
+      "final_ce_bits": 7.99981617252891,
+      "best_ce_bits": 7.999812216927942,
+      "learning_amount_bits": 0.01952983388402796,
+      "best_learning_amount_bits": 0.01953378948499651,
+      "fractional_learning": 0.0024353399726623932,
+      "normalized_curve_area": 0.9987179058867842,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/copy_lag16_bytes/s1",
+      "rung": "copy_lag16_bytes",
+      "seed": 1,
+      "execution": "new",
+      "initial_ce_bits": 8.017117369231732,
+      "final_ce_bits": 7.999682713991841,
+      "best_ce_bits": 7.999682713991841,
+      "learning_amount_bits": 0.017434655239891406,
+      "best_learning_amount_bits": 0.017434655239891406,
+      "fractional_learning": 0.0021746788074729338,
+      "normalized_curve_area": 0.9990763240532984,
+      "half_best_learning_at": 249856
+    },
+    {
+      "cell_id": "H5B/copy_lag16_bytes/s2",
+      "rung": "copy_lag16_bytes",
+      "seed": 2,
+      "execution": "new",
+      "initial_ce_bits": 8.015944791518148,
+      "final_ce_bits": 8.000257222037048,
+      "best_ce_bits": 7.999702663979341,
+      "learning_amount_bits": 0.015687569481100283,
+      "best_learning_amount_bits": 0.01624212753880716,
+      "fractional_learning": 0.0019570455996278384,
+      "normalized_curve_area": 0.9992118111426594,
+      "half_best_learning_at": 249856
+    }
+  ]
+}

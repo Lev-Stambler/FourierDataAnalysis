@@ -1,0 +1,2953 @@
+{
+  "protocol_hash": "a38751bdc22ad8aca0534e24bbad1681e3fb6d782ceb2561a663dd54559d7db4",
+  "verdict": "GEOMETRY_SUPPORTED_METRIC_UNRESOLVED",
+  "geometry_replication": {
+    "supported": true,
+    "frozen_support_rule": "geometry replicated if mean rho>=0.70, exact p<0.01, stride-16 difficulty exceeds stride-1 in at least 5 of 6 datasets, and seed-specific blocked mean rho is positive for all three seeds",
+    "primary_exact_blocked_test": {
+      "statistic": "mean within-dataset Spearman rho",
+      "observed_rho": 0.8571428571428572,
+      "rho_by_dataset": {
+        "gutenberg_books": 0.9523809523809523,
+        "reuters_news": 1.0,
+        "brown_balanced": 0.9761904761904762,
+        "pubmed_abstracts": 1.0,
+        "cpython_source": 0.8095238095238095,
+        "linux_c_source": 0.40476190476190477
+      },
+      "exact_two_sided_p": 1.1030176004826123e-11,
+      "extreme_permutations": "47392059600446368",
+      "total_permutations": "4296582355504620109824000000",
+      "method": "exact convolution of six 8! Spearman rank-permutation distributions"
+    },
+    "stride16_minus_stride1_final_ce_fraction": {
+      "gutenberg_books": 0.14071749399505312,
+      "reuters_news": 0.23068191326929788,
+      "brown_balanced": 0.21147109519005464,
+      "pubmed_abstracts": 0.2132225510863342,
+      "cpython_source": 0.22388514323570802,
+      "linux_c_source": -0.01818520223969944
+    },
+    "positive_endpoint_directions": 5,
+    "seed_specific_blocked_rhos": {
+      "0": {
+        "mean_within_dataset_rho": 0.9047619047619048,
+        "rho_by_dataset": {
+          "gutenberg_books": 0.880952380952381,
+          "reuters_news": 1.0,
+          "brown_balanced": 0.9761904761904763,
+          "pubmed_abstracts": 1.0,
+          "cpython_source": 0.7619047619047621,
+          "linux_c_source": 0.8095238095238096
+        }
+      },
+      "1": {
+        "mean_within_dataset_rho": 0.880952380952381,
+        "rho_by_dataset": {
+          "gutenberg_books": 0.9761904761904763,
+          "reuters_news": 0.6428571428571429,
+          "brown_balanced": 1.0,
+          "pubmed_abstracts": 0.9761904761904763,
+          "cpython_source": 0.7380952380952381,
+          "linux_c_source": 0.9523809523809524
+        }
+      },
+      "2": {
+        "mean_within_dataset_rho": 0.8015873015873017,
+        "rho_by_dataset": {
+          "gutenberg_books": 0.9761904761904763,
+          "reuters_news": 0.9761904761904763,
+          "brown_balanced": 0.9523809523809524,
+          "pubmed_abstracts": 0.9523809523809524,
+          "cpython_source": 0.6904761904761906,
+          "linux_c_source": 0.261904761904762
+        }
+      }
+    },
+    "all_seed_specific_blocked_rhos_positive": true,
+    "secondary_curve_area_rho_by_dataset": {
+      "gutenberg_books": 0.9523809523809524,
+      "reuters_news": 0.9047619047619048,
+      "brown_balanced": 0.9523809523809524,
+      "pubmed_abstracts": 0.8571428571428572,
+      "cpython_source": 0.6904761904761906,
+      "linux_c_source": 0.9523809523809524
+    },
+    "secondary_mean_curve_area_rho": 0.884920634920635,
+    "mean_within_dataset_rho_by_predictor": {
+      "mean_degree_total": 0.011904761904761899,
+      "mean_degree_nonconstant": 0.126984126984127,
+      "log2_radius": 0.8571428571428572,
+      "geometric_moment_absolute": 0.8571428571428572,
+      "geometric_moment_nonconstant": 0.8571428571428572,
+      "geometric_moment_total": 0.8571428571428572,
+      "spectral_entropy_uniform_within_level_upper_bits": 0.8571428571428572
+    }
+  },
+  "predictor_selection": {
+    "selected": false,
+    "frozen_selection_rule": "G_TOTAL_SELECTED if geometry replicates, G_total has the lowest LOCO RMSE, its RMSE is at least 5% below the runner-up, it beats log2_radius RMSE in at least 5 of 6 held-out corpora, and the identifiability gate passes",
+    "primary_loco_final_ce_fraction": {
+      "mean_degree_total": {
+        "loco_rmse": 0.13351336086860624,
+        "loco_mae": 0.1102227931034439,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": -1.103976375438466,
+            "rmse": 0.09551397547670162,
+            "mae": 0.07810238870827302
+          },
+          "reuters_news": {
+            "fitted_slope": 0.6001457023802926,
+            "rmse": 0.1391338232136918,
+            "mae": 0.11188041351691723
+          },
+          "brown_balanced": {
+            "fitted_slope": 1.1549094060176115,
+            "rmse": 0.13127530078571664,
+            "mae": 0.11680735082861737
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": -9.420408423807078,
+            "rmse": 0.181158295250429,
+            "mae": 0.1679507789807954
+          },
+          "cpython_source": {
+            "fitted_slope": -0.16409245720705765,
+            "rmse": 0.14819624217322827,
+            "mae": 0.12455104301608952
+          },
+          "linux_c_source": {
+            "fitted_slope": -0.8888773774614697,
+            "rmse": 0.08037478572583048,
+            "mae": 0.06204478356997086
+          }
+        }
+      },
+      "mean_degree_nonconstant": {
+        "loco_rmse": 0.1254292058276926,
+        "loco_mae": 0.10198991419510221,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 5.960249325059142,
+            "rmse": 0.08763612130444781,
+            "mae": 0.06833519475724038
+          },
+          "reuters_news": {
+            "fitted_slope": 2.630419194414575,
+            "rmse": 0.1300405900572056,
+            "mae": 0.10086974169621869
+          },
+          "brown_balanced": {
+            "fitted_slope": 9.652244043074038,
+            "rmse": 0.14396204208812283,
+            "mae": 0.12782563158874866
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 3.818479718140964,
+            "rmse": 0.12348079594188786,
+            "mae": 0.10525616800937229
+          },
+          "cpython_source": {
+            "fitted_slope": 8.114766958293083,
+            "rmse": 0.15425073942881581,
+            "mae": 0.13004755442385732
+          },
+          "linux_c_source": {
+            "fitted_slope": 9.430584604393843,
+            "rmse": 0.10019182643668559,
+            "mae": 0.07960519469517591
+          }
+        }
+      },
+      "log2_radius": {
+        "loco_rmse": 0.08087845082590629,
+        "loco_mae": 0.05641212254552577,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.03710695922650038,
+            "rmse": 0.030247554550392162,
+            "mae": 0.02744322888603562
+          },
+          "reuters_news": {
+            "fitted_slope": 0.03414676550738627,
+            "rmse": 0.056150939472131026,
+            "mae": 0.04028748891427588
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.034714477859946614,
+            "rmse": 0.04452880486117884,
+            "mae": 0.02787868041577111
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.034322587744630734,
+            "rmse": 0.045250361411866155,
+            "mae": 0.03033046680176845
+          },
+          "cpython_source": {
+            "fitted_slope": 0.03376513604861939,
+            "rmse": 0.07228735935520852,
+            "mae": 0.06039258087049202
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.04508690421368064,
+            "rmse": 0.16101002544963117,
+            "mae": 0.15214028938481156
+          }
+        }
+      },
+      "geometric_moment_absolute": {
+        "loco_rmse": 0.0974053179048946,
+        "loco_mae": 0.06989574256274982,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.09222184105545524,
+            "rmse": 0.030822986801868322,
+            "mae": 0.024335336413130022
+          },
+          "reuters_news": {
+            "fitted_slope": 0.08547690517383037,
+            "rmse": 0.066996378189896,
+            "mae": 0.04693231838689292
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.08579083683681415,
+            "rmse": 0.06872701583694281,
+            "mae": 0.053569583401619596
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.08513487276905343,
+            "rmse": 0.06661172257960486,
+            "mae": 0.05171442788157578
+          },
+          "cpython_source": {
+            "fitted_slope": 0.08691546785883232,
+            "rmse": 0.06792387503290827,
+            "mae": 0.05585663033155323
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.13085262036421372,
+            "rmse": 0.19420099752732986,
+            "mae": 0.18696615896172736
+          }
+        }
+      },
+      "geometric_moment_nonconstant": {
+        "loco_rmse": 0.08307948341289133,
+        "loco_mae": 0.05817841171013247,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.02262871469331621,
+            "rmse": 0.02974998268520104,
+            "mae": 0.02597823570657761
+          },
+          "reuters_news": {
+            "fitted_slope": 0.021271987920101904,
+            "rmse": 0.05327083606160784,
+            "mae": 0.041344503542393087
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.021215944311374302,
+            "rmse": 0.05022278695437377,
+            "mae": 0.03152148037508949
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.02120895003394111,
+            "rmse": 0.04469561802236727,
+            "mae": 0.029693178827970578
+          },
+          "cpython_source": {
+            "fitted_slope": 0.020725600697184772,
+            "rmse": 0.07576349411233163,
+            "mae": 0.06338153017963806
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.028261470390728224,
+            "rmse": 0.16562073028600544,
+            "mae": 0.157151541629126
+          }
+        }
+      },
+      "geometric_moment_total": {
+        "loco_rmse": 0.09366824216735249,
+        "loco_mae": 0.06574806075673756,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.027793730073362485,
+            "rmse": 0.029775946850357532,
+            "mae": 0.025002168525498268
+          },
+          "reuters_news": {
+            "fitted_slope": 0.025882601550500754,
+            "rmse": 0.05928892269672231,
+            "mae": 0.04286482442239392
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.025867450558627065,
+            "rmse": 0.05907961555349903,
+            "mae": 0.042253331133526036
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.02587113663574865,
+            "rmse": 0.051218028550771885,
+            "mae": 0.03501869169840716
+          },
+          "cpython_source": {
+            "fitted_slope": 0.025323000713196896,
+            "rmse": 0.08206699538293541,
+            "mae": 0.06856253806301453
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.03805125069476317,
+            "rmse": 0.18812754988357727,
+            "mae": 0.18078681069758548
+          }
+        }
+      },
+      "spectral_entropy_uniform_within_level_upper_bits": {
+        "loco_rmse": 0.0936499699751285,
+        "loco_mae": 0.06574291960384758,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.027798378613368258,
+            "rmse": 0.029764779394607286,
+            "mae": 0.025029228648616342
+          },
+          "reuters_news": {
+            "fitted_slope": 0.025885153538231474,
+            "rmse": 0.05926380049015193,
+            "mae": 0.0428531847828868
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.025869329577072338,
+            "rmse": 0.059082523162116325,
+            "mae": 0.04225128671052973
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.02587212753667773,
+            "rmse": 0.05123655732630251,
+            "mae": 0.03503769888965449
+          },
+          "cpython_source": {
+            "fitted_slope": 0.025323800060689305,
+            "rmse": 0.08205588331210341,
+            "mae": 0.06854813628723704
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.038046720614895925,
+            "rmse": 0.18808153492867294,
+            "mae": 0.18073798230416108
+          }
+        }
+      }
+    },
+    "secondary_loco_curve_area": {
+      "mean_degree_total": {
+        "loco_rmse": 0.07421074470188414,
+        "loco_mae": 0.07228424893258015,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 1.159056580256817,
+            "rmse": 0.07747596360954598,
+            "mae": 0.07705848665885938
+          },
+          "reuters_news": {
+            "fitted_slope": 1.747948477135045,
+            "rmse": 0.07077160185916431,
+            "mae": 0.0696300930181186
+          },
+          "brown_balanced": {
+            "fitted_slope": 3.608881117782875,
+            "rmse": 0.08383359717486234,
+            "mae": 0.08256268985823503
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": -2.822639452319133,
+            "rmse": 0.07712244185517307,
+            "mae": 0.07674289374042538
+          },
+          "cpython_source": {
+            "fitted_slope": 1.2345481836763976,
+            "rmse": 0.07810611808730968,
+            "mae": 0.07613915764769062
+          },
+          "linux_c_source": {
+            "fitted_slope": -1.1017948777721578,
+            "rmse": 0.05436685086207584,
+            "mae": 0.05157217267215187
+          }
+        }
+      },
+      "mean_degree_nonconstant": {
+        "loco_rmse": 0.06603325800102418,
+        "loco_mae": 0.05975179911920728,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 5.625449197081254,
+            "rmse": 0.0669947196121794,
+            "mae": 0.0628401363059664
+          },
+          "reuters_news": {
+            "fitted_slope": 4.4725653644240975,
+            "rmse": 0.051615860517699896,
+            "mae": 0.04972786028295488
+          },
+          "brown_balanced": {
+            "fitted_slope": 8.769267253826333,
+            "rmse": 0.08883437493715975,
+            "mae": 0.08346051311994687
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 5.348952889684889,
+            "rmse": 0.04871907487774094,
+            "mae": 0.045543748950592995
+          },
+          "cpython_source": {
+            "fitted_slope": 7.723103662557285,
+            "rmse": 0.08722151131608788,
+            "mae": 0.0840717772051299
+          },
+          "linux_c_source": {
+            "fitted_slope": 5.547926110708646,
+            "rmse": 0.03372196608741116,
+            "mae": 0.03286675885065264
+          }
+        }
+      },
+      "log2_radius": {
+        "loco_rmse": 0.022925562443102888,
+        "loco_mae": 0.018889434053912326,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.02283503715614011,
+            "rmse": 0.025133613425725527,
+            "mae": 0.021214757968904218
+          },
+          "reuters_news": {
+            "fitted_slope": 0.02338196486824177,
+            "rmse": 0.01595356619833103,
+            "mae": 0.015181288173384462
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.023346229093185605,
+            "rmse": 0.021954982953218752,
+            "mae": 0.018345845422617364
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.02390550702790463,
+            "rmse": 0.01949530502957363,
+            "mae": 0.016588769390612292
+          },
+          "cpython_source": {
+            "fitted_slope": 0.022849785073001373,
+            "rmse": 0.026858684436980782,
+            "mae": 0.020194547320506077
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.024758068608175633,
+            "rmse": 0.02614950396010904,
+            "mae": 0.021811396047449545
+          }
+        }
+      },
+      "geometric_moment_absolute": {
+        "loco_rmse": 0.028391422746621032,
+        "loco_mae": 0.023790953804924634,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.061065515335547604,
+            "rmse": 0.028540846464919493,
+            "mae": 0.02533204295644751
+          },
+          "reuters_news": {
+            "fitted_slope": 0.06291641444629233,
+            "rmse": 0.015487425598759576,
+            "mae": 0.014036051709361175
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.06137824560576875,
+            "rmse": 0.030271186234380673,
+            "mae": 0.02741343882252689
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.06287881395721535,
+            "rmse": 0.01880261298793455,
+            "mae": 0.015566799391567398
+          },
+          "cpython_source": {
+            "fitted_slope": 0.06469903821254806,
+            "rmse": 0.023287840098055335,
+            "mae": 0.020997046498477556
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.07268441697855083,
+            "rmse": 0.04438232280097205,
+            "mae": 0.03940034345116728
+          }
+        }
+      },
+      "geometric_moment_nonconstant": {
+        "loco_rmse": 0.023330988426503118,
+        "loco_mae": 0.01897257753505852,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.014121561259809134,
+            "rmse": 0.025861021586375432,
+            "mae": 0.022051602158692677
+          },
+          "reuters_news": {
+            "fitted_slope": 0.014824518841042841,
+            "rmse": 0.014619552772476755,
+            "mae": 0.012799270341796138
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.01440558417812714,
+            "rmse": 0.022077177967379163,
+            "mae": 0.018121573509310897
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.014999964880319254,
+            "rmse": 0.01892149154841174,
+            "mae": 0.016349400737976246
+          },
+          "cpython_source": {
+            "fitted_slope": 0.014174403865837069,
+            "rmse": 0.027231489020136217,
+            "mae": 0.020685166602059206
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.015581063329091585,
+            "rmse": 0.0282224687317353,
+            "mae": 0.023828451860515968
+          }
+        }
+      },
+      "geometric_moment_total": {
+        "loco_rmse": 0.02694952352808265,
+        "loco_mae": 0.02173211234584776,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.018034130880496397,
+            "rmse": 0.02690740228702956,
+            "mae": 0.023080344661919296
+          },
+          "reuters_news": {
+            "fitted_slope": 0.01880746882422545,
+            "rmse": 0.014247981218837403,
+            "mae": 0.01340282244353331
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.018249385171166366,
+            "rmse": 0.02503425151795238,
+            "mae": 0.02001784654319421
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.019067265808392776,
+            "rmse": 0.01754714136251102,
+            "mae": 0.014824071591297
+          },
+          "cpython_source": {
+            "fitted_slope": 0.01802363449396539,
+            "rmse": 0.02930691267591117,
+            "mae": 0.023572972720189243
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.021010308089569992,
+            "rmse": 0.04046154463243052,
+            "mae": 0.035494616114953505
+          }
+        }
+      },
+      "spectral_entropy_uniform_within_level_upper_bits": {
+        "loco_rmse": 0.026937863533350436,
+        "loco_mae": 0.021718477050957207,
+        "per_held_out_dataset": {
+          "gutenberg_books": {
+            "fitted_slope": 0.018035807394323915,
+            "rmse": 0.02686197609222384,
+            "mae": 0.023032464342186747
+          },
+          "reuters_news": {
+            "fitted_slope": 0.01880925227666138,
+            "rmse": 0.014246255459747432,
+            "mae": 0.013400438584476126
+          },
+          "brown_balanced": {
+            "fitted_slope": 0.01825006568312964,
+            "rmse": 0.02503651927047357,
+            "mae": 0.02001816095178491
+          },
+          "pubmed_abstracts": {
+            "fitted_slope": 0.019066849238194065,
+            "rmse": 0.017549390389493158,
+            "mae": 0.01482027341923997
+          },
+          "cpython_source": {
+            "fitted_slope": 0.018024208260437276,
+            "rmse": 0.029312352939775944,
+            "mae": 0.02356862226294387
+          },
+          "linux_c_source": {
+            "fitted_slope": 0.021008671097308234,
+            "rmse": 0.040439423353396835,
+            "mae": 0.03547090274511162
+          }
+        }
+      }
+    },
+    "rmse_order": [
+      "log2_radius",
+      "geometric_moment_nonconstant",
+      "spectral_entropy_uniform_within_level_upper_bits",
+      "geometric_moment_total",
+      "geometric_moment_absolute",
+      "mean_degree_nonconstant",
+      "mean_degree_total"
+    ],
+    "winner": "log2_radius",
+    "runner_up": "geometric_moment_nonconstant",
+    "g_total_relative_rmse_improvement_over_runner_up": -0.12745335333678928,
+    "g_total_beats_log2_radius_held_out_datasets": 1,
+    "centered_predictor_correlations_with_g_total": {
+      "mean_degree_total": 0.15994616094754996,
+      "mean_degree_nonconstant": 0.16924879567684822,
+      "log2_radius": 0.956799597985095,
+      "geometric_moment_absolute": 0.9216474361034366,
+      "geometric_moment_nonconstant": 0.9773037231942758,
+      "spectral_entropy_uniform_within_level_upper_bits": 0.9999990651050371
+    },
+    "identifiability_gate_pass": false
+  },
+  "dataset_stride_rows": [
+    {
+      "dataset": "gutenberg_books",
+      "stride": 1,
+      "pair": [
+        1,
+        2
+      ],
+      "radius": 2,
+      "log2_radius": 1.0,
+      "level_weights": [
+        0.06559676171874995,
+        0.1313771447840818,
+        0.08564203804702653
+      ],
+      "total_square_energy": 0.2826159445498583,
+      "nonconstant_energy": 0.21701918283110833,
+      "level_mass_normalized_by_total": [
+        0.23210566489173282,
+        0.46486105019069307,
+        0.3030332849175741
+      ],
+      "mean_degree_total": 1.0709276200258413,
+      "mean_degree_nonconstant": 1.3946288845519985,
+      "geometric_moment_absolute": 2.550957916115097,
+      "geometric_moment_total": 9.026234949971354,
+      "geometric_moment_nonconstant": 11.754527331808907,
+      "level_entropy_total_bits": 1.5247720584695446,
+      "spectral_entropy_uniform_within_level_upper_bits": 10.551007008440898,
+      "effective_support_upper_log2": 10.551007008440898,
+      "level_cardinalities": [
+        1,
+        510,
+        65025
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        8.994353436858859,
+        15.988706873717716
+      ],
+      "low_degree_concentration_total_leq_1": 0.6969667150824259,
+      "initial_ce_bits": 8.012066152784566,
+      "final_ce_bits": 2.689137948653794,
+      "learning_amount_bits": 5.322928204130772,
+      "fractional_learning": 0.6643639858466229,
+      "normalized_curve_area": 0.6609101593295014,
+      "final_ce_fraction": 0.33563601415337707
+    },
+    {
+      "dataset": "gutenberg_books",
+      "stride": 2,
+      "pair": [
+        2,
+        4
+      ],
+      "radius": 4,
+      "log2_radius": 2.0,
+      "level_weights": [
+        0.06604606814236114,
+        0.1304688635764475,
+        0.08651359281423443
+      ],
+      "total_square_energy": 0.28302852453304306,
+      "nonconstant_energy": 0.21698245639068192,
+      "level_mass_normalized_by_total": [
+        0.23335481203291358,
+        0.4609742561874377,
+        0.3056709317796487
+      ],
+      "mean_degree_total": 1.072316119746735,
+      "mean_degree_nonconstant": 1.3987123855693877,
+      "geometric_moment_absolute": 2.910826804414758,
+      "geometric_moment_total": 10.284570465882227,
+      "geometric_moment_nonconstant": 13.415032960884856,
+      "level_entropy_total_bits": 1.5276071449477597,
+      "spectral_entropy_uniform_within_level_upper_bits": 11.812177610829988,
+      "effective_support_upper_log2": 11.812177610829988,
+      "level_cardinalities": [
+        1,
+        1020,
+        390150
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        9.994353436858859,
+        18.57366937443887
+      ],
+      "low_degree_concentration_total_leq_1": 0.6943290682203513,
+      "initial_ce_bits": 7.973441515131869,
+      "final_ce_bits": 2.757888099327527,
+      "learning_amount_bits": 5.217169622765825,
+      "fractional_learning": 0.6541858133907504,
+      "normalized_curve_area": 0.7261270278083577,
+      "final_ce_fraction": 0.34581418660924956
+    },
+    {
+      "dataset": "gutenberg_books",
+      "stride": 3,
+      "pair": [
+        3,
+        6
+      ],
+      "radius": 6,
+      "log2_radius": 2.584962500721156,
+      "level_weights": [
+        0.06604576388888894,
+        0.13003047252828026,
+        0.08709720782197239
+      ],
+      "total_square_energy": 0.2831734442391416,
+      "nonconstant_energy": 0.21712768035025265,
+      "level_mass_normalized_by_total": [
+        0.23323431357183663,
+        0.45919020718082865,
+        0.3075754792473347
+      ],
+      "mean_degree_total": 1.0743411656754982,
+      "mean_degree_nonconstant": 1.401133598818328,
+      "geometric_moment_absolute": 3.108484437917711,
+      "geometric_moment_total": 10.977316203748886,
+      "geometric_moment_nonconstant": 14.316389476014102,
+      "level_entropy_total_bits": 1.5286040601273223,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.50592026387621,
+      "effective_support_upper_log2": 12.50592026387621,
+      "level_cardinalities": [
+        1,
+        1530,
+        975375
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.579315937580015,
+        19.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.6924245207526653,
+      "initial_ce_bits": 7.972742147682134,
+      "final_ce_bits": 3.0560197451263984,
+      "learning_amount_bits": 4.916722402555736,
+      "fractional_learning": 0.6166915110863261,
+      "normalized_curve_area": 0.735469142757411,
+      "final_ce_fraction": 0.383308488913674
+    },
+    {
+      "dataset": "gutenberg_books",
+      "stride": 4,
+      "pair": [
+        4,
+        8
+      ],
+      "radius": 8,
+      "log2_radius": 3.0,
+      "level_weights": [
+        0.06576630338541656,
+        0.13002975357886182,
+        0.08418575734120559
+      ],
+      "total_square_energy": 0.27998181430548397,
+      "nonconstant_energy": 0.2142155109200674,
+      "level_mass_normalized_by_total": [
+        0.2348949111161196,
+        0.4644221407787161,
+        0.3006829481051643
+      ],
+      "mean_degree_total": 1.0657880369890447,
+      "mean_degree_nonconstant": 1.392995619129647,
+      "geometric_moment_absolute": 3.180325280145527,
+      "geometric_moment_total": 11.359042329354727,
+      "geometric_moment_nonconstant": 14.846381881899472,
+      "level_entropy_total_bits": 1.5260784500297464,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.885120779384474,
+      "effective_support_upper_log2": 12.885120779384474,
+      "level_cardinalities": [
+        1,
+        2040,
+        1820700
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.994353436858859,
+        20.79606179577532
+      ],
+      "low_degree_concentration_total_leq_1": 0.6993170518948356,
+      "initial_ce_bits": 7.9735873564198,
+      "final_ce_bits": 2.925444196228934,
+      "learning_amount_bits": 5.0481431601908655,
+      "fractional_learning": 0.6331081525213915,
+      "normalized_curve_area": 0.7323785455757501,
+      "final_ce_fraction": 0.3668918474786085
+    },
+    {
+      "dataset": "gutenberg_books",
+      "stride": 6,
+      "pair": [
+        6,
+        12
+      ],
+      "radius": 12,
+      "log2_radius": 3.584962500721156,
+      "level_weights": [
+        0.06587828255208339,
+        0.12936345738518507,
+        0.08642658742974951
+      ],
+      "total_square_energy": 0.28166832736701797,
+      "nonconstant_energy": 0.21579004481493458,
+      "level_mass_normalized_by_total": [
+        0.23388601468933715,
+        0.4592758390496017,
+        0.30683814626106115
+      ],
+      "mean_degree_total": 1.072952131571724,
+      "mean_degree_nonconstant": 1.4005123939052448,
+      "geometric_moment_absolute": 3.4021860731673246,
+      "geometric_moment_total": 12.078695907950722,
+      "geometric_moment_nonconstant": 15.766186415527653,
+      "level_entropy_total_bits": 1.5288120853440519,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.607507993294774,
+      "effective_support_upper_log2": 13.607507993294774,
+      "level_cardinalities": [
+        1,
+        3060,
+        4291650
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.579315937580015,
+        22.033100993076168
+      ],
+      "low_degree_concentration_total_leq_1": 0.6931618537389388,
+      "initial_ce_bits": 7.974138904781116,
+      "final_ce_bits": 3.2046941892570477,
+      "learning_amount_bits": 4.7694447155240685,
+      "fractional_learning": 0.5981140750714056,
+      "normalized_curve_area": 0.7358016394772083,
+      "final_ce_fraction": 0.40188592492859443
+    },
+    {
+      "dataset": "gutenberg_books",
+      "stride": 8,
+      "pair": [
+        8,
+        16
+      ],
+      "radius": 16,
+      "log2_radius": 4.0,
+      "level_weights": [
+        0.06655223046875003,
+        0.13325290173503723,
+        0.08601943335576578
+      ],
+      "total_square_energy": 0.28582456555955305,
+      "nonconstant_energy": 0.21927233509080302,
+      "level_mass_normalized_by_total": [
+        0.2328429340510395,
+        0.4662052104379856,
+        0.3009518555109749
+      ],
+      "mean_degree_total": 1.0681089214599353,
+      "mean_degree_nonconstant": 1.3922949665316613,
+      "geometric_moment_absolute": 3.5677487205502074,
+      "geometric_moment_total": 12.482302609524472,
+      "geometric_moment_nonconstant": 16.27085659972912,
+      "level_entropy_total_bits": 1.524211075470249,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.006513684994722,
+      "effective_support_upper_log2": 14.006513684994722,
+      "level_cardinalities": [
+        1,
+        4080,
+        7803000
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.994353436858859,
+        22.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.6990481444890251,
+      "initial_ce_bits": 7.973034518188601,
+      "final_ce_bits": 3.309595609090096,
+      "learning_amount_bits": 4.658983784519231,
+      "fractional_learning": 0.5846693060817919,
+      "normalized_curve_area": 0.739827879016254,
+      "final_ce_fraction": 0.41533069391820815
+    },
+    {
+      "dataset": "gutenberg_books",
+      "stride": 12,
+      "pair": [
+        12,
+        24
+      ],
+      "radius": 24,
+      "log2_radius": 4.584962500721156,
+      "level_weights": [
+        0.06611276866319449,
+        0.12960304021931923,
+        0.08684209210192173
+      ],
+      "total_square_energy": 0.28255790098443545,
+      "nonconstant_energy": 0.21644513232124096,
+      "level_mass_normalized_by_total": [
+        0.23397954342404417,
+        0.45867781353053844,
+        0.30734264304541736
+      ],
+      "mean_degree_total": 1.0733630996213732,
+      "mean_degree_nonconstant": 1.4012198896348174,
+      "geometric_moment_absolute": 3.7229715719939436,
+      "geometric_moment_total": 13.1759598971505,
+      "geometric_moment_nonconstant": 17.200532680348886,
+      "level_entropy_total_bits": 1.5291955119160008,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.705155409066501,
+      "effective_support_upper_log2": 14.705155409066501,
+      "level_cardinalities": [
+        1,
+        6120,
+        17946900
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.579315937580015,
+        24.097231330495884
+      ],
+      "low_degree_concentration_total_leq_1": 0.6926573569545826,
+      "initial_ce_bits": 7.970981905250553,
+      "final_ce_bits": 4.071030823598166,
+      "learning_amount_bits": 3.899951081652387,
+      "fractional_learning": 0.4892685904961666,
+      "normalized_curve_area": 0.7490126088957199,
+      "final_ce_fraction": 0.5107314095038333
+    },
+    {
+      "dataset": "gutenberg_books",
+      "stride": 16,
+      "pair": [
+        16,
+        32
+      ],
+      "radius": 32,
+      "log2_radius": 5.0,
+      "level_weights": [
+        0.06622905295138881,
+        0.13132173126605118,
+        0.08482860002029735
+      ],
+      "total_square_energy": 0.28237938423773734,
+      "nonconstant_energy": 0.21615033128634853,
+      "level_mass_normalized_by_total": [
+        0.23453926401238298,
+        0.4650542447372518,
+        0.30040649125036517
+      ],
+      "mean_degree_total": 1.0658672272379823,
+      "mean_degree_nonconstant": 1.3924518621621695,
+      "geometric_moment_absolute": 3.822312547560677,
+      "geometric_moment_total": 13.53608925056173,
+      "geometric_moment_nonconstant": 17.683584035302765,
+      "level_entropy_total_bits": 1.5255541147498057,
+      "spectral_entropy_uniform_within_level_upper_bits": 15.061643365311536,
+      "effective_support_upper_log2": 15.061643365311536,
+      "level_cardinalities": [
+        1,
+        8160,
+        32252400
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.994353436858859,
+        24.94290318410459
+      ],
+      "low_degree_concentration_total_leq_1": 0.6995935087496348,
+      "initial_ce_bits": 7.975424303113665,
+      "final_ce_bits": 3.80093753086729,
+      "learning_amount_bits": 4.178299455633353,
+      "fractional_learning": 0.5236464918515698,
+      "normalized_curve_area": 0.7428095225349951,
+      "final_ce_fraction": 0.4763535081484302
+    },
+    {
+      "dataset": "reuters_news",
+      "stride": 1,
+      "pair": [
+        1,
+        2
+      ],
+      "radius": 2,
+      "log2_radius": 1.0,
+      "level_weights": [
+        0.06501118098958347,
+        0.09038772029283737,
+        0.11014800286330151
+      ],
+      "total_square_energy": 0.26554690414572235,
+      "nonconstant_energy": 0.20053572315613888,
+      "level_mass_normalized_by_total": [
+        0.24481995449627886,
+        0.34038325765317873,
+        0.41479678785054236
+      ],
+      "mean_degree_total": 1.1699768333542635,
+      "mean_degree_nonconstant": 1.5492687344166571,
+      "geometric_moment_absolute": 2.5741032331724667,
+      "geometric_moment_total": 9.69359157642408,
+      "geometric_moment_nonconstant": 12.83613309718512,
+      "level_entropy_total_bits": 1.5528463911625665,
+      "spectral_entropy_uniform_within_level_upper_bits": 11.246437967586646,
+      "effective_support_upper_log2": 11.246437967586646,
+      "level_cardinalities": [
+        1,
+        510,
+        65025
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        8.994353436858859,
+        15.988706873717716
+      ],
+      "low_degree_concentration_total_leq_1": 0.5852032121494576,
+      "initial_ce_bits": 7.984504729105245,
+      "final_ce_bits": 2.9440946398234376,
+      "learning_amount_bits": 5.040560466612156,
+      "fractional_learning": 0.631663471583393,
+      "normalized_curve_area": 0.6881353012710909,
+      "final_ce_fraction": 0.368336528416607
+    },
+    {
+      "dataset": "reuters_news",
+      "stride": 2,
+      "pair": [
+        2,
+        4
+      ],
+      "radius": 4,
+      "log2_radius": 2.0,
+      "level_weights": [
+        0.06606936241319439,
+        0.08957169170483203,
+        0.11120819476973043
+      ],
+      "total_square_energy": 0.26684924888775685,
+      "nonconstant_energy": 0.20077988647456246,
+      "level_mass_normalized_by_total": [
+        0.24759058790150365,
+        0.33566402033422255,
+        0.4167453917642738
+      ],
+      "mean_degree_total": 1.1691548038627702,
+      "mean_degree_nonconstant": 1.5538811517548088,
+      "geometric_moment_absolute": 2.960755386216625,
+      "geometric_moment_total": 11.09523597520782,
+      "geometric_moment_nonconstant": 14.746274829634066,
+      "level_entropy_total_bits": 1.5535312858876233,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.648767261095443,
+      "effective_support_upper_log2": 12.648767261095443,
+      "level_cardinalities": [
+        1,
+        1020,
+        390150
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        9.994353436858859,
+        18.57366937443887
+      ],
+      "low_degree_concentration_total_leq_1": 0.5832546082357262,
+      "initial_ce_bits": 7.970902621248505,
+      "final_ce_bits": 3.113229558957597,
+      "learning_amount_bits": 4.850392864697234,
+      "fractional_learning": 0.6090686633120397,
+      "normalized_curve_area": 0.7349019226979264,
+      "final_ce_fraction": 0.39093133668796026
+    },
+    {
+      "dataset": "reuters_news",
+      "stride": 3,
+      "pair": [
+        3,
+        6
+      ],
+      "radius": 6,
+      "log2_radius": 2.584962500721156,
+      "level_weights": [
+        0.06625536935763887,
+        0.09034886761619298,
+        0.11041742753740547
+      ],
+      "total_square_energy": 0.2670216645112373,
+      "nonconstant_energy": 0.20076629515359845,
+      "level_mass_normalized_by_total": [
+        0.24812731760516227,
+        0.33835781745114074,
+        0.413514864943697
+      ],
+      "mean_degree_total": 1.1653875473385347,
+      "mean_degree_nonconstant": 1.5499799030157397,
+      "geometric_moment_absolute": 3.1526499069970146,
+      "geometric_moment_total": 11.806719551268241,
+      "geometric_moment_nonconstant": 15.70308355087713,
+      "level_entropy_total_bits": 1.5547408440806025,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.361460395348843,
+      "effective_support_upper_log2": 13.361460395348843,
+      "level_cardinalities": [
+        1,
+        1530,
+        975375
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.579315937580015,
+        19.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.5864851350563031,
+      "initial_ce_bits": 7.974354313051322,
+      "final_ce_bits": 3.1958455528831684,
+      "learning_amount_bits": 4.778508760168153,
+      "fractional_learning": 0.5992345677878081,
+      "normalized_curve_area": 0.7434407453455215,
+      "final_ce_fraction": 0.40076543221219174
+    },
+    {
+      "dataset": "reuters_news",
+      "stride": 4,
+      "pair": [
+        4,
+        8
+      ],
+      "radius": 8,
+      "log2_radius": 3.0,
+      "level_weights": [
+        0.06628537760416675,
+        0.0899207954282607,
+        0.11171994739614932
+      ],
+      "total_square_energy": 0.2679261204285768,
+      "nonconstant_energy": 0.20164074282441002,
+      "level_mass_normalized_by_total": [
+        0.24740169976012838,
+        0.335617875869746,
+        0.4169804243701256
+      ],
+      "mean_degree_total": 1.1695787246099971,
+      "mean_degree_nonconstant": 1.554054432805952,
+      "geometric_moment_absolute": 3.31195593613287,
+      "geometric_moment_total": 12.361452219869562,
+      "geometric_moment_nonconstant": 16.42503340218768,
+      "level_entropy_total_bits": 1.553374783202048,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.914827003071611,
+      "effective_support_upper_log2": 13.914827003071611,
+      "level_cardinalities": [
+        1,
+        2040,
+        1820700
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.994353436858859,
+        20.79606179577532
+      ],
+      "low_degree_concentration_total_leq_1": 0.5830195756298744,
+      "initial_ce_bits": 7.972551074957026,
+      "final_ce_bits": 3.3199265209360997,
+      "learning_amount_bits": 4.647911713439333,
+      "fractional_learning": 0.5833340959894204,
+      "normalized_curve_area": 0.7505931372302862,
+      "final_ce_fraction": 0.41666590401057957
+    },
+    {
+      "dataset": "reuters_news",
+      "stride": 6,
+      "pair": [
+        6,
+        12
+      ],
+      "radius": 12,
+      "log2_radius": 3.584962500721156,
+      "level_weights": [
+        0.06567076822916651,
+        0.08977562198201061,
+        0.11231307773410792
+      ],
+      "total_square_energy": 0.26775946794528505,
+      "nonconstant_energy": 0.20208869971611854,
+      "level_mass_normalized_by_total": [
+        0.24526030296185797,
+        0.3352845845972315,
+        0.41945511244091055
+      ],
+      "mean_degree_total": 1.1741948094790526,
+      "mean_degree_nonconstant": 1.5557612963608467,
+      "geometric_moment_absolute": 3.5141456749812683,
+      "geometric_moment_total": 13.124262988524318,
+      "geometric_moment_nonconstant": 17.389125071900203,
+      "level_entropy_total_bits": 1.5516334507656415,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.67589643928996,
+      "effective_support_upper_log2": 14.67589643928996,
+      "level_cardinalities": [
+        1,
+        3060,
+        4291650
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.579315937580015,
+        22.033100993076168
+      ],
+      "low_degree_concentration_total_leq_1": 0.5805448875590894,
+      "initial_ce_bits": 7.973576263538819,
+      "final_ce_bits": 3.6170005809213213,
+      "learning_amount_bits": 4.352700483536932,
+      "fractional_learning": 0.5461560538259423,
+      "normalized_curve_area": 0.7598574604413011,
+      "final_ce_fraction": 0.45384394617405766
+    },
+    {
+      "dataset": "reuters_news",
+      "stride": 8,
+      "pair": [
+        8,
+        16
+      ],
+      "radius": 16,
+      "log2_radius": 4.0,
+      "level_weights": [
+        0.06580056163194448,
+        0.08943381292713759,
+        0.10988147710772633
+      ],
+      "total_square_energy": 0.2651158516668084,
+      "nonconstant_energy": 0.19931529003486392,
+      "level_mass_normalized_by_total": [
+        0.2481955010168201,
+        0.3373386101391477,
+        0.4144658888440322
+      ],
+      "mean_degree_total": 1.166270387827212,
+      "mean_degree_nonconstant": 1.5512947706546047,
+      "geometric_moment_absolute": 3.5885028306474926,
+      "geometric_moment_total": 13.53560267364715,
+      "geometric_moment_nonconstant": 18.00415226558784,
+      "level_entropy_total_bits": 1.5544923308837693,
+      "spectral_entropy_uniform_within_level_upper_bits": 15.09009500453092,
+      "effective_support_upper_log2": 15.09009500453092,
+      "level_cardinalities": [
+        1,
+        4080,
+        7803000
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.994353436858859,
+        22.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.5855341111559679,
+      "initial_ce_bits": 7.975367806812858,
+      "final_ce_bits": 3.948958827885626,
+      "learning_amount_bits": 4.030180644451978,
+      "fractional_learning": 0.5050896350946072,
+      "normalized_curve_area": 0.769016466705418,
+      "final_ce_fraction": 0.4949103649053927
+    },
+    {
+      "dataset": "reuters_news",
+      "stride": 12,
+      "pair": [
+        12,
+        24
+      ],
+      "radius": 24,
+      "log2_radius": 4.584962500721156,
+      "level_weights": [
+        0.06608887239583328,
+        0.08886106578217023,
+        0.11060879662861411
+      ],
+      "total_square_energy": 0.2655587348066176,
+      "nonconstant_energy": 0.19946986241078435,
+      "level_mass_normalized_by_total": [
+        0.24886725132185847,
+        0.33461925418073596,
+        0.41651349449740555
+      ],
+      "mean_degree_total": 1.167646243175547,
+      "mean_degree_nonconstant": 1.5545138262582672,
+      "geometric_moment_absolute": 3.7831771805714878,
+      "geometric_moment_total": 14.246103346314076,
+      "geometric_moment_nonconstant": 18.966159272624786,
+      "level_entropy_total_bits": 1.5541570242045306,
+      "spectral_entropy_uniform_within_level_upper_bits": 15.800260370518606,
+      "effective_support_upper_log2": 15.800260370518606,
+      "level_cardinalities": [
+        1,
+        6120,
+        17946900
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.579315937580015,
+        24.097231330495884
+      ],
+      "low_degree_concentration_total_leq_1": 0.5834865055025944,
+      "initial_ce_bits": 7.973411848124594,
+      "final_ce_bits": 4.773648874420073,
+      "learning_amount_bits": 3.201490625423764,
+      "fractional_learning": 0.40143380883637875,
+      "normalized_curve_area": 0.7635186701847838,
+      "final_ce_fraction": 0.5985661911636213
+    },
+    {
+      "dataset": "reuters_news",
+      "stride": 16,
+      "pair": [
+        16,
+        32
+      ],
+      "radius": 32,
+      "log2_radius": 5.0,
+      "level_weights": [
+        0.06644466579861108,
+        0.08994925287836897,
+        0.1108776076222997
+      ],
+      "total_square_energy": 0.26727152629927975,
+      "nonconstant_energy": 0.20082686050066867,
+      "level_mass_normalized_by_total": [
+        0.24860360816815577,
+        0.3365463359446957,
+        0.41485005588714857
+      ],
+      "mean_degree_total": 1.1662464477189929,
+      "mean_degree_nonconstant": 1.5521054670967709,
+      "geometric_moment_absolute": 3.9344418154910787,
+      "geometric_moment_total": 14.720766817058736,
+      "geometric_moment_nonconstant": 19.591213076190964,
+      "level_entropy_total_bits": 1.5545568053215808,
+      "spectral_entropy_uniform_within_level_upper_bits": 16.275323622380316,
+      "effective_support_upper_log2": 16.275323622380316,
+      "level_cardinalities": [
+        1,
+        8160,
+        32252400
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.994353436858859,
+        24.94290318410459
+      ],
+      "low_degree_concentration_total_leq_1": 0.5851499441128515,
+      "initial_ce_bits": 7.973143125232621,
+      "final_ce_bits": 4.7760597702155305,
+      "learning_amount_bits": 3.1970833550170905,
+      "fractional_learning": 0.4009815583140951,
+      "normalized_curve_area": 0.763174638831121,
+      "final_ce_fraction": 0.5990184416859049
+    },
+    {
+      "dataset": "brown_balanced",
+      "stride": 1,
+      "pair": [
+        1,
+        2
+      ],
+      "radius": 2,
+      "log2_radius": 1.0,
+      "level_weights": [
+        0.07306599522569446,
+        0.11158156613026948,
+        0.07212752366477937
+      ],
+      "total_square_energy": 0.2567750850207433,
+      "nonconstant_energy": 0.18370908979504885,
+      "level_mass_normalized_by_total": [
+        0.2845525110810182,
+        0.43454981670536874,
+        0.280897672213613
+      ],
+      "mean_degree_total": 0.9963451611325947,
+      "mean_degree_nonconstant": 1.3926181537628155,
+      "geometric_moment_absolute": 2.1568298762171785,
+      "geometric_moment_total": 8.399685179903422,
+      "geometric_moment_nonconstant": 11.740463570002987,
+      "level_entropy_total_bits": 1.5530373778494961,
+      "spectral_entropy_uniform_within_level_upper_bits": 9.952722557752917,
+      "effective_support_upper_log2": 9.952722557752917,
+      "level_cardinalities": [
+        1,
+        510,
+        65025
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        8.994353436858859,
+        15.988706873717716
+      ],
+      "low_degree_concentration_total_leq_1": 0.7191023277863869,
+      "initial_ce_bits": 8.0044535987181,
+      "final_ce_bits": 2.7569572002340688,
+      "learning_amount_bits": 5.2474963984840315,
+      "fractional_learning": 0.6557081502518064,
+      "normalized_curve_area": 0.6600533092730236,
+      "final_ce_fraction": 0.34429184974819366
+    },
+    {
+      "dataset": "brown_balanced",
+      "stride": 2,
+      "pair": [
+        2,
+        4
+      ],
+      "radius": 4,
+      "log2_radius": 2.0,
+      "level_weights": [
+        0.07345009288194437,
+        0.11131006798691279,
+        0.06995671933917813
+      ],
+      "total_square_energy": 0.2547168802080353,
+      "nonconstant_energy": 0.18126678732609092,
+      "level_mass_normalized_by_total": [
+        0.2883597381608764,
+        0.4369952548727919,
+        0.2746450069663317
+      ],
+      "mean_degree_total": 0.9862852688054553,
+      "mean_degree_nonconstant": 1.38593236174771,
+      "geometric_moment_absolute": 2.4118251360683036,
+      "geometric_moment_total": 9.468650582162008,
+      "geometric_moment_nonconstant": 13.305389098828883,
+      "level_entropy_total_bits": 1.5512793827823401,
+      "spectral_entropy_uniform_within_level_upper_bits": 11.019929964944348,
+      "effective_support_upper_log2": 11.019929964944348,
+      "level_cardinalities": [
+        1,
+        1020,
+        390150
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        9.994353436858859,
+        18.57366937443887
+      ],
+      "low_degree_concentration_total_leq_1": 0.7253549930336683,
+      "initial_ce_bits": 7.970625213232664,
+      "final_ce_bits": 3.1211548204789947,
+      "learning_amount_bits": 4.850397551224471,
+      "fractional_learning": 0.6084633613450092,
+      "normalized_curve_area": 0.7240051019756754,
+      "final_ce_fraction": 0.39153663865499083
+    },
+    {
+      "dataset": "brown_balanced",
+      "stride": 3,
+      "pair": [
+        3,
+        6
+      ],
+      "radius": 6,
+      "log2_radius": 2.584962500721156,
+      "level_weights": [
+        0.07367448741319449,
+        0.11042207321164343,
+        0.07133481710456024
+      ],
+      "total_square_energy": 0.25543137772939817,
+      "nonconstant_energy": 0.18175689031620368,
+      "level_mass_normalized_by_total": [
+        0.2884316252298675,
+        0.43229643199365914,
+        0.2792719427764734
+      ],
+      "mean_degree_total": 0.990840317546606,
+      "mean_degree_nonconstant": 1.3924737982722888,
+      "geometric_moment_absolute": 2.5874388056489055,
+      "geometric_moment_total": 10.12968269070692,
+      "geometric_moment_nonconstant": 14.235712336118432,
+      "level_entropy_total_bits": 1.554330267427067,
+      "spectral_entropy_uniform_within_level_upper_bits": 11.684012958133987,
+      "effective_support_upper_log2": 11.684012958133987,
+      "level_cardinalities": [
+        1,
+        1530,
+        975375
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.579315937580015,
+        19.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.7207280572235266,
+      "initial_ce_bits": 7.972400160180893,
+      "final_ce_bits": 3.1571525091310892,
+      "learning_amount_bits": 4.815247651049804,
+      "fractional_learning": 0.6039897087830757,
+      "normalized_curve_area": 0.7262061814264741,
+      "final_ce_fraction": 0.39601029121692427
+    },
+    {
+      "dataset": "brown_balanced",
+      "stride": 4,
+      "pair": [
+        4,
+        8
+      ],
+      "radius": 8,
+      "log2_radius": 3.0,
+      "level_weights": [
+        0.07255692100694433,
+        0.11051466030154589,
+        0.07270760651930441
+      ],
+      "total_square_energy": 0.25577918782779463,
+      "nonconstant_energy": 0.1832222668208503,
+      "level_mass_normalized_by_total": [
+        0.28367015167705456,
+        0.4320705732162648,
+        0.28425927510668064
+      ],
+      "mean_degree_total": 1.000589123429626,
+      "mean_degree_nonconstant": 1.396827349540413,
+      "geometric_moment_absolute": 2.7270691135079614,
+      "geometric_moment_total": 10.661810042746646,
+      "geometric_moment_nonconstant": 14.883939385895792,
+      "level_entropy_total_bits": 1.5545733576826057,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.216383400429251,
+      "effective_support_upper_log2": 12.216383400429251,
+      "level_cardinalities": [
+        1,
+        2040,
+        1820700
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.994353436858859,
+        20.79606179577532
+      ],
+      "low_degree_concentration_total_leq_1": 0.7157407248933194,
+      "initial_ce_bits": 7.966490406340621,
+      "final_ce_bits": 3.3517873389043404,
+      "learning_amount_bits": 4.606960666468414,
+      "fractional_learning": 0.578854948461538,
+      "normalized_curve_area": 0.7276009524157381,
+      "final_ce_fraction": 0.42114505153846205
+    },
+    {
+      "dataset": "brown_balanced",
+      "stride": 6,
+      "pair": [
+        6,
+        12
+      ],
+      "radius": 12,
+      "log2_radius": 3.584962500721156,
+      "level_weights": [
+        0.07291345659722215,
+        0.11097225282079004,
+        0.06988492952925562
+      ],
+      "total_square_energy": 0.2537706389472678,
+      "nonconstant_energy": 0.18085718235004566,
+      "level_mass_normalized_by_total": [
+        0.2873203019060577,
+        0.4372935075591999,
+        0.27538619053474245
+      ],
+      "mean_degree_total": 0.9880658886286847,
+      "mean_degree_nonconstant": 1.3864094785795935,
+      "geometric_moment_absolute": 2.824764485929033,
+      "geometric_moment_total": 11.131171429631006,
+      "geometric_moment_nonconstant": 15.618757570057431,
+      "level_entropy_total_bits": 1.5511483184488992,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.682319748079905,
+      "effective_support_upper_log2": 12.682319748079905,
+      "level_cardinalities": [
+        1,
+        3060,
+        4291650
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.579315937580015,
+        22.033100993076168
+      ],
+      "low_degree_concentration_total_leq_1": 0.7246138094652576,
+      "initial_ce_bits": 7.96873778963077,
+      "final_ce_bits": 3.400157803424807,
+      "learning_amount_bits": 4.568579986205963,
+      "fractional_learning": 0.5733128767457722,
+      "normalized_curve_area": 0.7275740680619446,
+      "final_ce_fraction": 0.42668712325422775
+    },
+    {
+      "dataset": "brown_balanced",
+      "stride": 8,
+      "pair": [
+        8,
+        16
+      ],
+      "radius": 16,
+      "log2_radius": 4.0,
+      "level_weights": [
+        0.07353385112847222,
+        0.11215508606654168,
+        0.07200171256673404
+      ],
+      "total_square_energy": 0.25769064976174794,
+      "nonconstant_energy": 0.18415679863327572,
+      "level_mass_normalized_by_total": [
+        0.28535707910418606,
+        0.4352314923736522,
+        0.2794114285221617
+      ],
+      "mean_degree_total": 0.9940543494179757,
+      "mean_degree_nonconstant": 1.390980474797002,
+      "geometric_moment_absolute": 2.9937499700534964,
+      "geometric_moment_total": 11.61761194215396,
+      "geometric_moment_nonconstant": 16.25652700455094,
+      "level_entropy_total_bits": 1.552585180397788,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.170197122551748,
+      "effective_support_upper_log2": 13.170197122551748,
+      "level_cardinalities": [
+        1,
+        4080,
+        7803000
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.994353436858859,
+        22.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.7205885714778383,
+      "initial_ce_bits": 7.966340609451719,
+      "final_ce_bits": 4.299451860111729,
+      "learning_amount_bits": 3.66688874933999,
+      "fractional_learning": 0.46029776143256856,
+      "normalized_curve_area": 0.7332667160000801,
+      "final_ce_fraction": 0.5397022385674315
+    },
+    {
+      "dataset": "brown_balanced",
+      "stride": 12,
+      "pair": [
+        12,
+        24
+      ],
+      "radius": 24,
+      "log2_radius": 4.584962500721156,
+      "level_weights": [
+        0.0736269309895834,
+        0.11093051471798498,
+        0.07193356115573535
+      ],
+      "total_square_energy": 0.2564910068633037,
+      "nonconstant_energy": 0.18286407587372033,
+      "level_mass_normalized_by_total": [
+        0.2870546296729331,
+        0.4324928038397274,
+        0.2804525664873395
+      ],
+      "mean_degree_total": 0.9933979368144065,
+      "mean_degree_nonconstant": 1.3933717479064078,
+      "geometric_moment_absolute": 3.1288296553520305,
+      "geometric_moment_total": 12.198593992106447,
+      "geometric_moment_nonconstant": 17.11013844792945,
+      "level_entropy_total_bits": 1.5542621863183417,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.75285617842479,
+      "effective_support_upper_log2": 13.75285617842479,
+      "level_cardinalities": [
+        1,
+        6120,
+        17946900
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.579315937580015,
+        24.097231330495884
+      ],
+      "low_degree_concentration_total_leq_1": 0.7195474335126605,
+      "initial_ce_bits": 7.967154603338252,
+      "final_ce_bits": 3.729177597812132,
+      "learning_amount_bits": 4.23797700552612,
+      "fractional_learning": 0.5319310615298466,
+      "normalized_curve_area": 0.7310254280248623,
+      "final_ce_fraction": 0.46806893847015346
+    },
+    {
+      "dataset": "brown_balanced",
+      "stride": 16,
+      "pair": [
+        16,
+        32
+      ],
+      "radius": 32,
+      "log2_radius": 5.0,
+      "level_weights": [
+        0.07290508246527772,
+        0.11188940384323176,
+        0.07194552189275061
+      ],
+      "total_square_energy": 0.2567400082012601,
+      "nonconstant_energy": 0.18383492573598237,
+      "level_mass_normalized_by_total": [
+        0.2839646340126583,
+        0.4358082116890834,
+        0.2802271542982583
+      ],
+      "mean_degree_total": 0.9962625202855999,
+      "mean_degree_nonconstant": 1.3913593763792,
+      "geometric_moment_absolute": 3.2484606464791432,
+      "geometric_moment_total": 12.652724712591949,
+      "geometric_moment_nonconstant": 17.670530414576795,
+      "level_entropy_total_bits": 1.5522515529737997,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.20497626556575,
+      "effective_support_upper_log2": 14.20497626556575,
+      "level_cardinalities": [
+        1,
+        8160,
+        32252400
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.994353436858859,
+        24.94290318410459
+      ],
+      "low_degree_concentration_total_leq_1": 0.7197728457017417,
+      "initial_ce_bits": 7.9708908404369225,
+      "final_ce_bits": 4.429925767262533,
+      "learning_amount_bits": 3.540965073174389,
+      "fractional_learning": 0.44423705506175165,
+      "normalized_curve_area": 0.7386976193385274,
+      "final_ce_fraction": 0.5557629449382483
+    },
+    {
+      "dataset": "pubmed_abstracts",
+      "stride": 1,
+      "pair": [
+        1,
+        2
+      ],
+      "radius": 2,
+      "log2_radius": 1.0,
+      "level_weights": [
+        0.06233357855902777,
+        0.09086153035857847,
+        0.08753317296140817
+      ],
+      "total_square_energy": 0.2407282818790144,
+      "nonconstant_energy": 0.17839470331998664,
+      "level_mass_normalized_by_total": [
+        0.258937496136642,
+        0.37744435198621074,
+        0.36361815187714724
+      ],
+      "mean_degree_total": 1.1046806557405051,
+      "mean_degree_nonconstant": 1.4906713670999518,
+      "geometric_moment_absolute": 2.2167829620653245,
+      "geometric_moment_total": 9.208651948836817,
+      "geometric_moment_nonconstant": 12.426282399702643,
+      "level_entropy_total_bits": 1.5660152182950173,
+      "spectral_entropy_uniform_within_level_upper_bits": 10.774667167131835,
+      "effective_support_upper_log2": 10.774667167131835,
+      "level_cardinalities": [
+        1,
+        510,
+        65025
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        8.994353436858859,
+        15.988706873717716
+      ],
+      "low_degree_concentration_total_leq_1": 0.6363818481228528,
+      "initial_ce_bits": 8.019616793096723,
+      "final_ce_bits": 2.810695845227242,
+      "learning_amount_bits": 5.203669973573337,
+      "fractional_learning": 0.6492927938685126,
+      "normalized_curve_area": 0.6781049733916592,
+      "final_ce_fraction": 0.3507072061314875
+    },
+    {
+      "dataset": "pubmed_abstracts",
+      "stride": 2,
+      "pair": [
+        2,
+        4
+      ],
+      "radius": 4,
+      "log2_radius": 2.0,
+      "level_weights": [
+        0.061780347222222254,
+        0.09114909345825473,
+        0.08926889955855766
+      ],
+      "total_square_energy": 0.24219834023903464,
+      "nonconstant_energy": 0.18041799301681238,
+      "level_mass_normalized_by_total": [
+        0.2550816292186351,
+        0.3763407022867963,
+        0.36857766849456863
+      ],
+      "mean_degree_total": 1.1134960392759337,
+      "mean_degree_nonconstant": 1.4947893392774803,
+      "geometric_moment_absolute": 2.5690272812917194,
+      "geometric_moment_total": 10.607121744749572,
+      "geometric_moment_nonconstant": 14.239307501066833,
+      "level_entropy_total_bits": 1.5640934259038208,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.171215170653392,
+      "effective_support_upper_log2": 12.171215170653392,
+      "level_cardinalities": [
+        1,
+        1020,
+        390150
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        9.994353436858859,
+        18.57366937443887
+      ],
+      "low_degree_concentration_total_leq_1": 0.6314223315054314,
+      "initial_ce_bits": 7.9808273960644955,
+      "final_ce_bits": 3.2643455547912215,
+      "learning_amount_bits": 4.711543187471099,
+      "fractional_learning": 0.5907232836017086,
+      "normalized_curve_area": 0.7314371153583535,
+      "final_ce_fraction": 0.4092767163982915
+    },
+    {
+      "dataset": "pubmed_abstracts",
+      "stride": 3,
+      "pair": [
+        3,
+        6
+      ],
+      "radius": 6,
+      "log2_radius": 2.584962500721156,
+      "level_weights": [
+        0.0619953463541667,
+        0.09065858759513357,
+        0.08749014808236089
+      ],
+      "total_square_energy": 0.24014408203166115,
+      "nonconstant_energy": 0.17814873567749445,
+      "level_mass_normalized_by_total": [
+        0.2581589595282764,
+        0.37751747545950737,
+        0.3643235650122162
+      ],
+      "mean_degree_total": 1.1061646054839398,
+      "mean_degree_nonconstant": 1.4911073196766647,
+      "geometric_moment_absolute": 2.6997746094020867,
+      "geometric_moment_total": 11.242311642916697,
+      "geometric_moment_nonconstant": 15.15460998998911,
+      "level_entropy_total_bits": 1.5656272513324576,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.807938894249155,
+      "effective_support_upper_log2": 12.807938894249155,
+      "level_cardinalities": [
+        1,
+        1530,
+        975375
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.579315937580015,
+        19.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.6356764349877838,
+      "initial_ce_bits": 7.983582644122643,
+      "final_ce_bits": 3.3094232824739316,
+      "learning_amount_bits": 4.678560655658268,
+      "fractional_learning": 0.5856998075977902,
+      "normalized_curve_area": 0.7385080435846915,
+      "final_ce_fraction": 0.4143001924022097
+    },
+    {
+      "dataset": "pubmed_abstracts",
+      "stride": 4,
+      "pair": [
+        4,
+        8
+      ],
+      "radius": 8,
+      "log2_radius": 3.0,
+      "level_weights": [
+        0.06172649696180543,
+        0.08982028510246565,
+        0.08862490462925954
+      ],
+      "total_square_energy": 0.24017168669353062,
+      "nonconstant_energy": 0.17844518973172518,
+      "level_mass_normalized_by_total": [
+        0.2570098824370214,
+        0.3739836545224425,
+        0.3690064630405362
+      ],
+      "mean_degree_total": 1.1119965806035148,
+      "mean_degree_nonconstant": 1.496650566835107,
+      "geometric_moment_absolute": 2.830564953530711,
+      "geometric_moment_total": 11.785589685859323,
+      "geometric_moment_nonconstant": 15.862377449267125,
+      "level_entropy_total_bits": 1.5651667059755043,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.350756391834828,
+      "effective_support_upper_log2": 13.350756391834828,
+      "level_cardinalities": [
+        1,
+        2040,
+        1820700
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.994353436858859,
+        20.79606179577532
+      ],
+      "low_degree_concentration_total_leq_1": 0.6309935369594638,
+      "initial_ce_bits": 7.979491434832595,
+      "final_ce_bits": 3.3249005171730284,
+      "learning_amount_bits": 4.660887890438257,
+      "fractional_learning": 0.5836478068960539,
+      "normalized_curve_area": 0.734490853011762,
+      "final_ce_fraction": 0.4163521931039461
+    },
+    {
+      "dataset": "pubmed_abstracts",
+      "stride": 6,
+      "pair": [
+        6,
+        12
+      ],
+      "radius": 12,
+      "log2_radius": 3.584962500721156,
+      "level_weights": [
+        0.06187128211805559,
+        0.08986811470593037,
+        0.08846157713281477
+      ],
+      "total_square_energy": 0.24020097395680073,
+      "nonconstant_energy": 0.17832969183874514,
+      "level_mass_normalized_by_total": [
+        0.25758131242708,
+        0.3741371786531258,
+        0.3682815089197942
+      ],
+      "mean_degree_total": 1.1107001964927143,
+      "mean_degree_nonconstant": 1.496056356183278,
+      "geometric_moment_absolute": 2.9896941558687535,
+      "geometric_moment_total": 12.446636275531668,
+      "geometric_moment_nonconstant": 16.764982460532643,
+      "level_entropy_total_bits": 1.5654599340638296,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.012096209595498,
+      "effective_support_upper_log2": 14.012096209595498,
+      "level_cardinalities": [
+        1,
+        3060,
+        4291650
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.579315937580015,
+        22.033100993076168
+      ],
+      "low_degree_concentration_total_leq_1": 0.6317184910802057,
+      "initial_ce_bits": 7.981582055936483,
+      "final_ce_bits": 3.5181747491996407,
+      "learning_amount_bits": 4.463407306736842,
+      "fractional_learning": 0.5592133583863967,
+      "normalized_curve_area": 0.7360142295614601,
+      "final_ce_fraction": 0.44078664161360315
+    },
+    {
+      "dataset": "pubmed_abstracts",
+      "stride": 8,
+      "pair": [
+        8,
+        16
+      ],
+      "radius": 16,
+      "log2_radius": 4.0,
+      "level_weights": [
+        0.06144170355902778,
+        0.09111934230172203,
+        0.08719816131209268
+      ],
+      "total_square_energy": 0.2397592071728425,
+      "nonconstant_energy": 0.1783175036138147,
+      "level_mass_normalized_by_total": [
+        0.2562642089266438,
+        0.38004522694318915,
+        0.36369056413016704
+      ],
+      "mean_degree_total": 1.1074263552035233,
+      "mean_degree_nonconstant": 1.4890050586449395,
+      "geometric_moment_absolute": 3.089371597968028,
+      "geometric_moment_total": 12.885309533664326,
+      "geometric_moment_nonconstant": 17.325116914258363,
+      "level_entropy_total_bits": 1.5645328711950703,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.449842404859396,
+      "effective_support_upper_log2": 14.449842404859396,
+      "level_cardinalities": [
+        1,
+        4080,
+        7803000
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.994353436858859,
+        22.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.6363094358698329,
+      "initial_ce_bits": 7.979436916332271,
+      "final_ce_bits": 3.7043755497745794,
+      "learning_amount_bits": 4.277858148426023,
+      "fractional_learning": 0.5359224385262437,
+      "normalized_curve_area": 0.744846653910306,
+      "final_ce_fraction": 0.46407756147375634
+    },
+    {
+      "dataset": "pubmed_abstracts",
+      "stride": 12,
+      "pair": [
+        12,
+        24
+      ],
+      "radius": 24,
+      "log2_radius": 4.584962500721156,
+      "level_weights": [
+        0.06172185503472227,
+        0.09074740165956807,
+        0.0890390716084054
+      ],
+      "total_square_energy": 0.24150832830269575,
+      "nonconstant_energy": 0.17978647326797348,
+      "level_mass_normalized_by_total": [
+        0.2555682260255756,
+        0.37575268023812963,
+        0.3686790937362947
+      ],
+      "mean_degree_total": 1.113110867710719,
+      "mean_degree_nonconstant": 1.4952490028306624,
+      "geometric_moment_absolute": 3.287135341990513,
+      "geometric_moment_total": 13.61085708758898,
+      "geometric_moment_nonconstant": 18.283552050609536,
+      "level_entropy_total_bits": 1.5643681433400096,
+      "spectral_entropy_uniform_within_level_upper_bits": 15.17522523092899,
+      "effective_support_upper_log2": 15.17522523092899,
+      "level_cardinalities": [
+        1,
+        6120,
+        17946900
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.579315937580015,
+        24.097231330495884
+      ],
+      "low_degree_concentration_total_leq_1": 0.6313209062637053,
+      "initial_ce_bits": 7.980831437656792,
+      "final_ce_bits": 4.484700177770527,
+      "learning_amount_bits": 3.4961312598862646,
+      "fractional_learning": 0.4380660445213894,
+      "normalized_curve_area": 0.7468245127986792,
+      "final_ce_fraction": 0.5619339554786106
+    },
+    {
+      "dataset": "pubmed_abstracts",
+      "stride": 16,
+      "pair": [
+        16,
+        32
+      ],
+      "radius": 32,
+      "log2_radius": 5.0,
+      "level_weights": [
+        0.06213413845486104,
+        0.09088966243818453,
+        0.08820613003526034
+      ],
+      "total_square_energy": 0.2412299309283059,
+      "nonconstant_energy": 0.17909579247344487,
+      "level_mass_normalized_by_total": [
+        0.25757225985911114,
+        0.3767760579643707,
+        0.36565168217651817
+      ],
+      "mean_degree_total": 1.108079422317407,
+      "mean_degree_nonconstant": 1.4925081087448715,
+      "geometric_moment_absolute": 3.3811693591926035,
+      "geometric_moment_total": 14.016375771369328,
+      "geometric_moment_nonconstant": 18.879111075118868,
+      "level_entropy_total_bits": 1.5653682347539042,
+      "spectral_entropy_uniform_within_level_upper_bits": 15.581744006123232,
+      "effective_support_upper_log2": 15.581744006123232,
+      "level_cardinalities": [
+        1,
+        8160,
+        32252400
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.994353436858859,
+        24.94290318410459
+      ],
+      "low_degree_concentration_total_leq_1": 0.6343483178234818,
+      "initial_ce_bits": 7.981936512179912,
+      "final_ce_bits": 4.503231394392321,
+      "learning_amount_bits": 3.4822159716223036,
+      "fractional_learning": 0.4360702427821783,
+      "normalized_curve_area": 0.7439620847370221,
+      "final_ce_fraction": 0.5639297572178217
+    },
+    {
+      "dataset": "cpython_source",
+      "stride": 1,
+      "pair": [
+        1,
+        2
+      ],
+      "radius": 2,
+      "log2_radius": 1.0,
+      "level_weights": [
+        0.09708993923611109,
+        0.15638966942267007,
+        0.11528942022382194
+      ],
+      "total_square_energy": 0.3687690288826031,
+      "nonconstant_energy": 0.271679089646492,
+      "level_mass_normalized_by_total": [
+        0.2632811641755834,
+        0.42408569368350185,
+        0.3126331421409147
+      ],
+      "mean_degree_total": 1.0493519779653313,
+      "mean_degree_nonconstant": 1.4243588285496547,
+      "geometric_moment_absolute": 3.249952706260565,
+      "geometric_moment_total": 8.812976285205288,
+      "geometric_moment_nonconstant": 11.962469067786532,
+      "level_entropy_total_bits": 1.5561669540078418,
+      "spectral_entropy_uniform_within_level_upper_bits": 10.36914323921313,
+      "effective_support_upper_log2": 10.36914323921313,
+      "level_cardinalities": [
+        1,
+        510,
+        65025
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        8.994353436858859,
+        15.988706873717716
+      ],
+      "low_degree_concentration_total_leq_1": 0.6873668578590852,
+      "initial_ce_bits": 7.787164182277295,
+      "final_ce_bits": 2.9407417090578796,
+      "learning_amount_bits": 4.880958975771948,
+      "fractional_learning": 0.626491870181535,
+      "normalized_curve_area": 0.6906096099135798,
+      "final_ce_fraction": 0.3735081298184651
+    },
+    {
+      "dataset": "cpython_source",
+      "stride": 2,
+      "pair": [
+        2,
+        4
+      ],
+      "radius": 4,
+      "log2_radius": 2.0,
+      "level_weights": [
+        0.09815395399305571,
+        0.15761131053402166,
+        0.11623256047338448
+      ],
+      "total_square_energy": 0.37199782500046186,
+      "nonconstant_energy": 0.27384387100740615,
+      "level_mass_normalized_by_total": [
+        0.263856257742727,
+        0.42368879585203484,
+        0.3124549464052382
+      ],
+      "mean_degree_total": 1.0485986886625112,
+      "mean_degree_nonconstant": 1.4244482815912318,
+      "geometric_moment_absolute": 3.734088291900644,
+      "geometric_moment_total": 10.037930441921288,
+      "geometric_moment_nonconstant": 13.635829343792963,
+      "level_entropy_total_bits": 1.5564828430217332,
+      "spectral_entropy_uniform_within_level_upper_bits": 11.594413284943021,
+      "effective_support_upper_log2": 11.594413284943021,
+      "level_cardinalities": [
+        1,
+        1020,
+        390150
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        9.994353436858859,
+        18.57366937443887
+      ],
+      "low_degree_concentration_total_leq_1": 0.6875450535947618,
+      "initial_ce_bits": 7.956261824171881,
+      "final_ce_bits": 3.7414746153227996,
+      "learning_amount_bits": 4.220178778962305,
+      "fractional_learning": 0.5300631125177543,
+      "normalized_curve_area": 0.7614900058785341,
+      "final_ce_fraction": 0.4699368874822458
+    },
+    {
+      "dataset": "cpython_source",
+      "stride": 3,
+      "pair": [
+        3,
+        6
+      ],
+      "radius": 6,
+      "log2_radius": 2.584962500721156,
+      "level_weights": [
+        0.09746902343749997,
+        0.15861973571059684,
+        0.11632301994495997
+      ],
+      "total_square_energy": 0.3724117790930568,
+      "nonconstant_energy": 0.2749427556555568,
+      "level_mass_normalized_by_total": [
+        0.2617237931487253,
+        0.42592566781020524,
+        0.31235053904106946
+      ],
+      "mean_degree_total": 1.0506267458923442,
+      "mean_degree_nonconstant": 1.4230808688434304,
+      "geometric_moment_absolute": 3.9924042792591776,
+      "geometric_moment_total": 10.720402799777101,
+      "geometric_moment_nonconstant": 14.52085642242121,
+      "level_entropy_total_bits": 1.554958963911504,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.275361763688606,
+      "effective_support_upper_log2": 12.275361763688606,
+      "level_cardinalities": [
+        1,
+        1530,
+        975375
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.579315937580015,
+        19.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.6876494609589305,
+      "initial_ce_bits": 7.963860017687,
+      "final_ce_bits": 3.3453854997042862,
+      "learning_amount_bits": 4.621727225858482,
+      "fractional_learning": 0.5801006443688821,
+      "normalized_curve_area": 0.7678242656522227,
+      "final_ce_fraction": 0.41989935563111797
+    },
+    {
+      "dataset": "cpython_source",
+      "stride": 4,
+      "pair": [
+        4,
+        8
+      ],
+      "radius": 8,
+      "log2_radius": 3.0,
+      "level_weights": [
+        0.09753356510416666,
+        0.16005183684461544,
+        0.11654933644564391
+      ],
+      "total_square_energy": 0.374134738394426,
+      "nonconstant_energy": 0.27660117329025935,
+      "level_mass_normalized_by_total": [
+        0.26069101608347134,
+        0.4277919701641903,
+        0.3115170137523383
+      ],
+      "mean_degree_total": 1.050825997668867,
+      "mean_degree_nonconstant": 1.4213624080449563,
+      "geometric_moment_absolute": 4.183433665468391,
+      "geometric_moment_total": 11.181623185864305,
+      "geometric_moment_nonconstant": 15.124424873926275,
+      "level_entropy_total_bits": 1.5538499907101841,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.735473176574489,
+      "effective_support_upper_log2": 12.735473176574489,
+      "level_cardinalities": [
+        1,
+        2040,
+        1820700
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.994353436858859,
+        20.79606179577532
+      ],
+      "low_degree_concentration_total_leq_1": 0.6884829862476617,
+      "initial_ce_bits": 7.917568995398115,
+      "final_ce_bits": 2.8585451593199314,
+      "learning_amount_bits": 5.071820656670089,
+      "fractional_learning": 0.6393047557659345,
+      "normalized_curve_area": 0.7311466925599398,
+      "final_ce_fraction": 0.3606952442340655
+    },
+    {
+      "dataset": "cpython_source",
+      "stride": 6,
+      "pair": [
+        6,
+        12
+      ],
+      "radius": 12,
+      "log2_radius": 3.584962500721156,
+      "level_weights": [
+        0.09791885763888886,
+        0.15908634012938216,
+        0.11578079583068024
+      ],
+      "total_square_energy": 0.37278599359895126,
+      "nonconstant_energy": 0.2748671359600624,
+      "level_mass_normalized_by_total": [
+        0.2626677485748872,
+        0.42674977832061367,
+        0.31058247310449905
+      ],
+      "mean_degree_total": 1.0479147245296119,
+      "mean_degree_nonconstant": 1.4212245870219382,
+      "geometric_moment_absolute": 4.39312096130754,
+      "geometric_moment_total": 11.784565506057412,
+      "geometric_moment_nonconstant": 15.982707230397493,
+      "level_entropy_total_bits": 1.5548202148499786,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.33938572090739,
+      "effective_support_upper_log2": 13.33938572090739,
+      "level_cardinalities": [
+        1,
+        3060,
+        4291650
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.579315937580015,
+        22.033100993076168
+      ],
+      "low_degree_concentration_total_leq_1": 0.689417526895501,
+      "initial_ce_bits": 7.963147321581824,
+      "final_ce_bits": 3.893243500294761,
+      "learning_amount_bits": 4.069903821287062,
+      "fractional_learning": 0.5110923679958497,
+      "normalized_curve_area": 0.7803119952800956,
+      "final_ce_fraction": 0.48890763200415027
+    },
+    {
+      "dataset": "cpython_source",
+      "stride": 8,
+      "pair": [
+        8,
+        16
+      ],
+      "radius": 16,
+      "log2_radius": 4.0,
+      "level_weights": [
+        0.09841375911458328,
+        0.15757437019039688,
+        0.11596261309090228
+      ],
+      "total_square_energy": 0.37195074239588244,
+      "nonconstant_energy": 0.27353698328129916,
+      "level_mass_normalized_by_total": [
+        0.264588150787551,
+        0.4236431124599935,
+        0.31176873675245553
+      ],
+      "mean_degree_total": 1.0471805859649046,
+      "mean_degree_nonconstant": 1.423937603244125,
+      "geometric_moment_absolute": 4.545035999474576,
+      "geometric_moment_total": 12.219456722140665,
+      "geometric_moment_nonconstant": 16.6158007043624,
+      "level_entropy_total_bits": 1.556678865558056,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.77613558769872,
+      "effective_support_upper_log2": 13.77613558769872,
+      "level_cardinalities": [
+        1,
+        4080,
+        7803000
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.994353436858859,
+        22.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.6882312632475445,
+      "initial_ce_bits": 7.940062004365184,
+      "final_ce_bits": 3.9774056612472517,
+      "learning_amount_bits": 3.9626563431179322,
+      "fractional_learning": 0.49907120888217177,
+      "normalized_curve_area": 0.7642390513246464,
+      "final_ce_fraction": 0.5009287911178282
+    },
+    {
+      "dataset": "cpython_source",
+      "stride": 12,
+      "pair": [
+        12,
+        24
+      ],
+      "radius": 24,
+      "log2_radius": 4.584962500721156,
+      "level_weights": [
+        0.09894461414930555,
+        0.15868852506778097,
+        0.11500596531108587
+      ],
+      "total_square_energy": 0.3726391045281724,
+      "nonconstant_energy": 0.27369449037886684,
+      "level_mass_normalized_by_total": [
+        0.2655239692962098,
+        0.42585043582237286,
+        0.30862559488141733
+      ],
+      "mean_degree_total": 1.0431016255852075,
+      "mean_degree_nonconstant": 1.4201983209522657,
+      "geometric_moment_absolute": 4.767518442984424,
+      "geometric_moment_total": 12.793929528735191,
+      "geometric_moment_nonconstant": 17.41912464655352,
+      "level_entropy_total_bits": 1.5558903374051882,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.349819866140379,
+      "effective_support_upper_log2": 14.349819866140379,
+      "level_cardinalities": [
+        1,
+        6120,
+        17946900
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.579315937580015,
+        24.097231330495884
+      ],
+      "low_degree_concentration_total_leq_1": 0.6913744051185826,
+      "initial_ce_bits": 7.954670124738145,
+      "final_ce_bits": 4.9719915641545995,
+      "learning_amount_bits": 2.9946264533129607,
+      "fractional_learning": 0.3758968293379901,
+      "normalized_curve_area": 0.7798720979106268,
+      "final_ce_fraction": 0.6241031706620098
+    },
+    {
+      "dataset": "cpython_source",
+      "stride": 16,
+      "pair": [
+        16,
+        32
+      ],
+      "radius": 32,
+      "log2_radius": 5.0,
+      "level_weights": [
+        0.09749303906250006,
+        0.15659368859988332,
+        0.11740764615717969
+      ],
+      "total_square_energy": 0.3714943738195631,
+      "nonconstant_energy": 0.274001334757063,
+      "level_mass_normalized_by_total": [
+        0.26243476599689497,
+        0.4215237151234537,
+        0.3160415188796513
+      ],
+      "mean_degree_total": 1.0536067528827564,
+      "mean_degree_nonconstant": 1.42849297161737,
+      "geometric_moment_absolute": 4.963321286820442,
+      "geometric_moment_total": 13.36042114390447,
+      "geometric_moment_nonconstant": 18.114223024574155,
+      "level_entropy_total_bits": 1.5570442770419617,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.917465420946431,
+      "effective_support_upper_log2": 14.917465420946431,
+      "level_cardinalities": [
+        1,
+        8160,
+        32252400
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.994353436858859,
+        24.94290318410459
+      ],
+      "low_degree_concentration_total_leq_1": 0.6839584811203486,
+      "initial_ce_bits": 7.940822769621275,
+      "final_ce_bits": 4.743794105087158,
+      "learning_amount_bits": 3.197028664534117,
+      "fractional_learning": 0.40260672694582683,
+      "normalized_curve_area": 0.777902119958167,
+      "final_ce_fraction": 0.5973932730541731
+    },
+    {
+      "dataset": "linux_c_source",
+      "stride": 1,
+      "pair": [
+        1,
+        2
+      ],
+      "radius": 2,
+      "log2_radius": 1.0,
+      "level_weights": [
+        0.03345541579861111,
+        0.13505596931933872,
+        0.12925247848066368
+      ],
+      "total_square_energy": 0.2977638635986135,
+      "nonconstant_energy": 0.2643084478000024,
+      "level_mass_normalized_by_total": [
+        0.11235552694100283,
+        0.45356735934013315,
+        0.43407711371886404
+      ],
+      "mean_degree_total": 1.3217215867778613,
+      "mean_degree_nonconstant": 1.489021367105401,
+      "geometric_moment_absolute": 3.2813211129445374,
+      "geometric_moment_total": 11.019876869168272,
+      "geometric_moment_nonconstant": 12.414741716569937,
+      "level_entropy_total_bits": 1.3943160545646598,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.414192923732932,
+      "effective_support_upper_log2": 12.414192923732932,
+      "level_cardinalities": [
+        1,
+        510,
+        65025
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        8.994353436858859,
+        15.988706873717716
+      ],
+      "low_degree_concentration_total_leq_1": 0.565922886281136,
+      "initial_ce_bits": 7.990180844514321,
+      "final_ce_bits": 4.727579150807186,
+      "learning_amount_bits": 3.2611075514321017,
+      "fractional_learning": 0.4081393919476833,
+      "normalized_curve_area": 0.7703701533897703,
+      "final_ce_fraction": 0.5918606080523167
+    },
+    {
+      "dataset": "linux_c_source",
+      "stride": 2,
+      "pair": [
+        2,
+        4
+      ],
+      "radius": 4,
+      "log2_radius": 2.0,
+      "level_weights": [
+        0.033777319010416695,
+        0.13467261561893318,
+        0.1311727095346451
+      ],
+      "total_square_energy": 0.299622644163995,
+      "nonconstant_energy": 0.2658453251535783,
+      "level_mass_normalized_by_total": [
+        0.11273286471608959,
+        0.4494740909676429,
+        0.43779304431626753
+      ],
+      "mean_degree_total": 1.325060179600178,
+      "mean_degree_nonconstant": 1.4934174014866235,
+      "geometric_moment_absolute": 3.7823242566076605,
+      "geometric_moment_total": 12.62362618540089,
+      "geometric_moment_nonconstant": 14.227537213312365,
+      "level_entropy_total_bits": 1.3952606684531723,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.018886853854063,
+      "effective_support_upper_log2": 14.018886853854063,
+      "level_cardinalities": [
+        1,
+        1020,
+        390150
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        9.994353436858859,
+        18.57366937443887
+      ],
+      "low_degree_concentration_total_leq_1": 0.5622069556837325,
+      "initial_ce_bits": 8.009664673039245,
+      "final_ce_bits": 3.3458707057580317,
+      "learning_amount_bits": 4.660308652870153,
+      "fractional_learning": 0.5818356751633913,
+      "normalized_curve_area": 0.7548342634979415,
+      "final_ce_fraction": 0.4181643248366087
+    },
+    {
+      "dataset": "linux_c_source",
+      "stride": 3,
+      "pair": [
+        3,
+        6
+      ],
+      "radius": 6,
+      "log2_radius": 2.584962500721156,
+      "level_weights": [
+        0.033464446614583254,
+        0.13466418482081122,
+        0.13010455424163125
+      ],
+      "total_square_energy": 0.2982331856770257,
+      "nonconstant_energy": 0.26476873906244247,
+      "level_mass_normalized_by_total": [
+        0.11220899692505673,
+        0.45153990665092175,
+        0.4362510964240215
+      ],
+      "mean_degree_total": 1.3240420994989648,
+      "mean_degree_nonconstant": 1.491389409121096,
+      "geometric_moment_absolute": 4.013162796813645,
+      "geometric_moment_total": 13.456459540890044,
+      "geometric_moment_nonconstant": 15.157238014670567,
+      "level_entropy_total_bits": 1.3941442830933775,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.850603823983421,
+      "effective_support_upper_log2": 14.850603823983421,
+      "level_cardinalities": [
+        1,
+        1530,
+        975375
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.579315937580015,
+        19.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.5637489035759785,
+      "initial_ce_bits": 8.00100930216927,
+      "final_ce_bits": 4.498331866643216,
+      "learning_amount_bits": 3.5026774355260546,
+      "fractional_learning": 0.4377794479724442,
+      "normalized_curve_area": 0.8182969307776025,
+      "final_ce_fraction": 0.5622205520275557
+    },
+    {
+      "dataset": "linux_c_source",
+      "stride": 4,
+      "pair": [
+        4,
+        8
+      ],
+      "radius": 8,
+      "log2_radius": 3.0,
+      "level_weights": [
+        0.033273382378472216,
+        0.13484852969888628,
+        0.13037318028412948
+      ],
+      "total_square_energy": 0.29849509236148797,
+      "nonconstant_energy": 0.26522170998301575,
+      "level_mass_normalized_by_total": [
+        0.11147045036900302,
+        0.45176129574545904,
+        0.43676825388553797
+      ],
+      "mean_degree_total": 1.325297803516535,
+      "mean_degree_nonconstant": 1.4915630032416212,
+      "geometric_moment_absolute": 4.193821109650828,
+      "geometric_moment_total": 14.049882952755432,
+      "geometric_moment_nonconstant": 15.812510634666337,
+      "level_entropy_total_bits": 1.392682455820085,
+      "spectral_entropy_uniform_within_level_upper_bits": 15.442565408575517,
+      "effective_support_upper_log2": 15.442565408575517,
+      "level_cardinalities": [
+        1,
+        2040,
+        1820700
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.994353436858859,
+        20.79606179577532
+      ],
+      "low_degree_concentration_total_leq_1": 0.563231746114462,
+      "initial_ce_bits": 7.993970396234758,
+      "final_ce_bits": 4.226767692290835,
+      "learning_amount_bits": 3.767202703943923,
+      "fractional_learning": 0.4712555235028533,
+      "normalized_curve_area": 0.818633728149111,
+      "final_ce_fraction": 0.5287444764971466
+    },
+    {
+      "dataset": "linux_c_source",
+      "stride": 6,
+      "pair": [
+        6,
+        12
+      ],
+      "radius": 12,
+      "log2_radius": 3.584962500721156,
+      "level_weights": [
+        0.033488179687500064,
+        0.13506081206947718,
+        0.13091501160838537
+      ],
+      "total_square_energy": 0.2994640033653626,
+      "nonconstant_energy": 0.26597582367786254,
+      "level_mass_normalized_by_total": [
+        0.11182706205474265,
+        0.451008503698842,
+        0.4371644342464154
+      ],
+      "mean_degree_total": 1.3253373721916728,
+      "mean_degree_nonconstant": 1.492206433645426,
+      "geometric_moment_absolute": 4.44837548601589,
+      "geometric_moment_total": 14.854458085196391,
+      "geometric_moment_nonconstant": 16.72473619784163,
+      "level_entropy_total_bits": 1.3934197234063137,
+      "spectral_entropy_uniform_within_level_upper_bits": 16.247877808602706,
+      "effective_support_upper_log2": 16.247877808602706,
+      "level_cardinalities": [
+        1,
+        3060,
+        4291650
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.579315937580015,
+        22.033100993076168
+      ],
+      "low_degree_concentration_total_leq_1": 0.5628355657535846,
+      "initial_ce_bits": 7.996046656787299,
+      "final_ce_bits": 4.207060845263406,
+      "learning_amount_bits": 3.7992070844299697,
+      "fractional_learning": 0.47452909617720873,
+      "normalized_curve_area": 0.8203370824141755,
+      "final_ce_fraction": 0.5254709038227913
+    },
+    {
+      "dataset": "linux_c_source",
+      "stride": 8,
+      "pair": [
+        8,
+        16
+      ],
+      "radius": 16,
+      "log2_radius": 4.0,
+      "level_weights": [
+        0.03350489843750004,
+        0.1343939702768423,
+        0.13216165451418949
+      ],
+      "total_square_energy": 0.30006052322853183,
+      "nonconstant_energy": 0.2665556247910318,
+      "level_mass_normalized_by_total": [
+        0.11166046795160078,
+        0.44788954185247914,
+        0.44044999019592007
+      ],
+      "mean_degree_total": 1.3287895222443193,
+      "mean_degree_nonconstant": 1.495812664308992,
+      "geometric_moment_absolute": 4.637888821920195,
+      "geometric_moment_total": 15.456511146545894,
+      "geometric_moment_nonconstant": 17.399328284879008,
+      "level_entropy_total_bits": 1.3931987931107823,
+      "spectral_entropy_uniform_within_level_upper_bits": 16.849709939656677,
+      "effective_support_upper_log2": 16.849709939656677,
+      "level_cardinalities": [
+        1,
+        4080,
+        7803000
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.994353436858859,
+        22.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.55955000980408,
+      "initial_ce_bits": 7.9940004931986595,
+      "final_ce_bits": 5.36684188873895,
+      "learning_amount_bits": 2.6271586044597095,
+      "fractional_learning": 0.3286412862614796,
+      "normalized_curve_area": 0.8286774915707068,
+      "final_ce_fraction": 0.6713587137385204
+    },
+    {
+      "dataset": "linux_c_source",
+      "stride": 12,
+      "pair": [
+        12,
+        24
+      ],
+      "radius": 24,
+      "log2_radius": 4.584962500721156,
+      "level_weights": [
+        0.03322747612847221,
+        0.13379309578309606,
+        0.13087811392366233
+      ],
+      "total_square_energy": 0.2978986858352306,
+      "nonconstant_energy": 0.2646712097067584,
+      "level_mass_normalized_by_total": [
+        0.1115395189989207,
+        0.4491228130395236,
+        0.43933766796155566
+      ],
+      "mean_degree_total": 1.327798148962635,
+      "mean_degree_nonconstant": 1.4944932018434054,
+      "geometric_moment_absolute": 4.836825809439955,
+      "geometric_moment_total": 16.236479177069047,
+      "geometric_moment_nonconstant": 18.274846798784427,
+      "level_entropy_total_bits": 1.3929249595500213,
+      "spectral_entropy_uniform_within_level_upper_bits": 17.62940413661907,
+      "effective_support_upper_log2": 17.62940413661907,
+      "level_cardinalities": [
+        1,
+        6120,
+        17946900
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.579315937580015,
+        24.097231330495884
+      ],
+      "low_degree_concentration_total_leq_1": 0.5606623320384443,
+      "initial_ce_bits": 7.998836731332245,
+      "final_ce_bits": 4.794497514266579,
+      "learning_amount_bits": 3.210730866293659,
+      "fractional_learning": 0.40107923392798434,
+      "normalized_curve_area": 0.8251087232129218,
+      "final_ce_fraction": 0.5989207660720157
+    },
+    {
+      "dataset": "linux_c_source",
+      "stride": 16,
+      "pair": [
+        16,
+        32
+      ],
+      "radius": 32,
+      "log2_radius": 5.0,
+      "level_weights": [
+        0.033490071614583394,
+        0.13558161440021876,
+        0.13132964287407278
+      ],
+      "total_square_energy": 0.30040132888887494,
+      "nonconstant_energy": 0.26691125727429155,
+      "level_mass_normalized_by_total": [
+        0.11148443230413307,
+        0.4513349355068046,
+        0.43718063218906233
+      ],
+      "mean_degree_total": 1.3256961998849293,
+      "mean_degree_nonconstant": 1.4920348591333927,
+      "geometric_moment_absolute": 5.0375379844673835,
+      "geometric_moment_total": 16.769359853034736,
+      "geometric_moment_nonconstant": 18.873456428593247,
+      "level_entropy_total_bits": 1.3927301913566832,
+      "spectral_entropy_uniform_within_level_upper_bits": 18.16209004439142,
+      "effective_support_upper_log2": 18.16209004439142,
+      "level_cardinalities": [
+        1,
+        8160,
+        32252400
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.994353436858859,
+        24.94290318410459
+      ],
+      "low_degree_concentration_total_leq_1": 0.5628193678109377,
+      "initial_ce_bits": 7.989056679916955,
+      "final_ce_bits": 4.585432308190034,
+      "learning_amount_bits": 3.4059313470055956,
+      "fractional_learning": 0.4263245941873828,
+      "normalized_curve_area": 0.830972138789974,
+      "final_ce_fraction": 0.5736754058126172
+    }
+  ],
+  "spectrum_invariance": {
+    "gutenberg_books": {
+      "nonconstant_energy_range": [
+        0.2142155109200674,
+        0.21927233509080302
+      ],
+      "nonconstant_degree_range": [
+        1.3922949665316613,
+        1.4012198896348174
+      ]
+    },
+    "reuters_news": {
+      "nonconstant_energy_range": [
+        0.19931529003486392,
+        0.20208869971611854
+      ],
+      "nonconstant_degree_range": [
+        1.5492687344166571,
+        1.5557612963608467
+      ]
+    },
+    "brown_balanced": {
+      "nonconstant_energy_range": [
+        0.18085718235004566,
+        0.18415679863327572
+      ],
+      "nonconstant_degree_range": [
+        1.38593236174771,
+        1.396827349540413
+      ]
+    },
+    "pubmed_abstracts": {
+      "nonconstant_energy_range": [
+        0.17814873567749445,
+        0.18041799301681238
+      ],
+      "nonconstant_degree_range": [
+        1.4890050586449395,
+        1.496650566835107
+      ]
+    },
+    "cpython_source": {
+      "nonconstant_energy_range": [
+        0.271679089646492,
+        0.27660117329025935
+      ],
+      "nonconstant_degree_range": [
+        1.4201983209522657,
+        1.42849297161737
+      ]
+    },
+    "linux_c_source": {
+      "nonconstant_energy_range": [
+        0.2643084478000024,
+        0.26691125727429155
+      ],
+      "nonconstant_degree_range": [
+        1.489021367105401,
+        1.495812664308992
+      ]
+    }
+  },
+  "compute": {
+    "remote_gpu_training_cells": 144,
+    "remote_cpu_profile_cells": 48,
+    "local_training_cells": 0,
+    "local_profile_cells": 0,
+    "training_cell_wallclock_seconds": 1408.62188107,
+    "profile_cell_wallclock_seconds": 18.690632777,
+    "gpu_names": [
+      "NVIDIA A10"
+    ]
+  },
+  "scope": "out-of-corpus validation of locality and comparison of scalar geometry summaries on six fixed real byte corpora for this learner; not a universal cross-domain law"
+}

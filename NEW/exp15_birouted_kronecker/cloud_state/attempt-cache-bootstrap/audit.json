@@ -1,0 +1,13 @@
+{
+  "schema": "exp15-cache-bootstrap-audit-v1",
+  "status": "stopped_before_wandb_or_training",
+  "gpu_count": 8,
+  "gpu_type": "H100-80GB",
+  "failure": "tar extraction returned exit status 2 because the local corpus cache snapshot was truncated",
+  "corrupt_snapshot_bytes": 27852800,
+  "corrupt_snapshot_recovery_path": "/tmp/exp10-corrupt-20260804.tar",
+  "correction": "Download to a candidate file, validate with tar -tf, and atomically replace the local snapshot only after validation.",
+  "service_paused": true,
+  "wandb_run_created": false,
+  "training_cells_completed": 0
+}

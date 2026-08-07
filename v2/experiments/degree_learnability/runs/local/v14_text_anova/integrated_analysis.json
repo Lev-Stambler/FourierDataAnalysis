@@ -1,0 +1,136 @@
+{
+  "protocol_hash": "86781a91c742806370fdc4d6ecc5f365e7018164eb086d6fedc2fc6e0e3812d9",
+  "controlled_text_verdict": "PASS",
+  "conclusion": "NARROW_CAUSAL_TEXT_EFFECT_CONFIRMED; NATURAL-DATASET PROXY NOT ESTABLISHED",
+  "synthetic_matched_contrast": {
+    "markov2": {
+      "rung": "markov2_bytes",
+      "n_seeds": 3,
+      "initial_ce_bits": 8.018443011504583,
+      "final_ce_bits": 7.548339528252077,
+      "best_ce_bits": 7.548339528252077,
+      "learning_amount_bits": 0.47365225926173515,
+      "fractional_learning": 0.05904422141131737,
+      "normalized_curve_area": 0.9945384239337036,
+      "source_kind": "synthetic",
+      "planted_degree": 2,
+      "span": 2,
+      "effective_degree_best_pair": 2.0,
+      "best_pair": [
+        1,
+        2
+      ],
+      "best_pair_gain": 0.16790637771345973,
+      "max_degree2_gain": 0.16790637771345973
+    },
+    "copy_lag16": {
+      "rung": "copy_lag16_bytes",
+      "n_seeds": 3,
+      "initial_ce_bits": 8.017117369231732,
+      "final_ce_bits": 4.130113055544972,
+      "best_ce_bits": 4.130113055544972,
+      "learning_amount_bits": 3.885831735973176,
+      "fractional_learning": 0.48476278680023627,
+      "normalized_curve_area": 0.8198245881836794,
+      "source_kind": "synthetic",
+      "planted_degree": 1,
+      "span": 16,
+      "effective_degree_best_pair": 1.0,
+      "best_pair": [
+        1,
+        16
+      ],
+      "best_pair_gain": 0.5554597050523984,
+      "max_degree2_gain": -0.011080322950002663
+    },
+    "curve_area_markov_minus_copy": 0.1747138357500242,
+    "learning_copy_minus_markov_bits": 3.412179476711441,
+    "profile_order_correct": true,
+    "rule": "profile effective degree markov2 > copy, median curve-area difference markov2-copy >= 0.03, and median learning difference copy-markov2 >= 1.0 bit"
+  },
+  "rungs": [
+    {
+      "rung": "enwik8_bytes",
+      "n_seeds": 3,
+      "initial_ce_bits": 7.995422359764667,
+      "final_ce_bits": 3.1133761311717953,
+      "best_ce_bits": 3.0847620446822055,
+      "learning_amount_bits": 4.900324544726571,
+      "fractional_learning": 0.6112901609839809,
+      "normalized_curve_area": 0.6843886644089398,
+      "source_kind": "natural",
+      "planted_degree": null,
+      "span": null,
+      "effective_degree_best_pair": 1.5384976886332424,
+      "best_pair": [
+        1,
+        2
+      ],
+      "best_pair_gain": 0.23024563530477293,
+      "max_degree2_gain": 0.12398674242951269
+    },
+    {
+      "rung": "tinystories_bytes",
+      "n_seeds": 3,
+      "initial_ce_bits": 8.014611753991312,
+      "final_ce_bits": 2.073231637089924,
+      "best_ce_bits": 2.072106806059787,
+      "learning_amount_bits": 5.924413168480518,
+      "fractional_learning": 0.7413185191338252,
+      "normalized_curve_area": 0.6530205646075818,
+      "source_kind": "natural",
+      "planted_degree": null,
+      "span": null,
+      "effective_degree_best_pair": 1.4002868659422116,
+      "best_pair": [
+        1,
+        2
+      ],
+      "best_pair_gain": 0.2494334128586374,
+      "max_degree2_gain": 0.0998449190944537
+    },
+    {
+      "rung": "markov2_bytes",
+      "n_seeds": 3,
+      "initial_ce_bits": 8.018443011504583,
+      "final_ce_bits": 7.548339528252077,
+      "best_ce_bits": 7.548339528252077,
+      "learning_amount_bits": 0.47365225926173515,
+      "fractional_learning": 0.05904422141131737,
+      "normalized_curve_area": 0.9945384239337036,
+      "source_kind": "synthetic",
+      "planted_degree": 2,
+      "span": 2,
+      "effective_degree_best_pair": 2.0,
+      "best_pair": [
+        1,
+        2
+      ],
+      "best_pair_gain": 0.16790637771345973,
+      "max_degree2_gain": 0.16790637771345973
+    },
+    {
+      "rung": "copy_lag16_bytes",
+      "n_seeds": 3,
+      "initial_ce_bits": 8.017117369231732,
+      "final_ce_bits": 4.130113055544972,
+      "best_ce_bits": 4.130113055544972,
+      "learning_amount_bits": 3.885831735973176,
+      "fractional_learning": 0.48476278680023627,
+      "normalized_curve_area": 0.8198245881836794,
+      "source_kind": "synthetic",
+      "planted_degree": 1,
+      "span": 16,
+      "effective_degree_best_pair": 1.0,
+      "best_pair": [
+        1,
+        16
+      ],
+      "best_pair_gain": 0.5554597050523984,
+      "max_degree2_gain": -0.011080322950002663
+    }
+  ],
+  "effective_degree_vs_curve_area_spearman": 0.39999999999999997,
+  "natural_scope": "two natural corpora are descriptive anchors; n=2 cannot establish external validity",
+  "invalidated_evidence": "all pre-v1.4 language student cells shuffled token indices"
+}

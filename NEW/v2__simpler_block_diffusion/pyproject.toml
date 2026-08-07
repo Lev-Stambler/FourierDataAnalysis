@@ -1,0 +1,35 @@
+[project]
+name = "v2-simpler-block-diffusion"
+version = "0.1.0"
+description = "Online DreamReasoner distillation into a causal-block Monarch diffusion LM"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.6",
+    "transformers>=4.51",
+    "safetensors>=0.5",
+    "huggingface-hub>=0.30",
+    "wandb>=0.19",
+    "nvidia-ml-py>=13.0.0",
+    "zstandard>=0.23",
+]
+
+[project.optional-dependencies]
+data = ["datasets>=3.5"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+v2-sbd = "v2_simpler_block_diffusion.cli:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

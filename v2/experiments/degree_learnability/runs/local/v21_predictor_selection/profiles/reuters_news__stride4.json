@@ -1,0 +1,121 @@
+{
+  "q": 256,
+  "lags": [
+    4,
+    8
+  ],
+  "max_tokens": 96000,
+  "pairs": [
+    {
+      "lags": [
+        4,
+        8
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9337146223958332,
+      "degree1_additive_brier": 0.8437938269675725,
+      "degree2_pair_brier": 0.7320738795714232,
+      "degree1_gain": 0.0899207954282607,
+      "degree2_incremental_gain": 0.11171994739614932,
+      "total_pair_gain": 0.20164074282441002,
+      "positive_hierarchical_gain": 0.20164074282441002,
+      "effective_degree": 1.554054432805952,
+      "interaction_fraction": 0.5540544328059519,
+      "variance_concentration": {
+        "observed_output_variance": 0.9337146223958332,
+        "pair_function_variance": 0.20164074282441002,
+        "pair_variance_fraction_of_observed": 0.21595543005101153,
+        "degree1_variance": 0.0899207954282607,
+        "degree2_incremental_variance": 0.11171994739614932,
+        "concentration_leq_1": 0.44594556719404804,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.554054432805952,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.06628537760416675,
+          0.0899207954282607,
+          0.11171994739614932
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.06628537760416675,
+          0.00017631528515345236,
+          1.718107610859659e-06
+        ],
+        "total_square_energy": 0.2679261204285768,
+        "nonconstant_energy": 0.20164074282441002,
+        "mean_spectral_degree": 1.1695787246099971,
+        "mean_nonconstant_spectral_degree": 1.554054432805952,
+        "cumulative_concentration": [
+          0.24740169976012838,
+          0.5830195756298744,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.7320738795714232,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Formula-(19) categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9340064470486111,
+          "degree1_additive_brier": 0.8434340030174426,
+          "degree2_pair_brier": 0.7323392455116391,
+          "backfit_iterations": 29
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9334227977430555,
+          "degree1_additive_brier": 0.8441536509177024,
+          "degree2_pair_brier": 0.7318085136312075,
+          "backfit_iterations": 28
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Formula-(19) column-span equivalent"
+    }
+  ],
+  "best_pair_by_function_variance": [
+    4,
+    8
+  ],
+  "best_pair_by_total_gain": [
+    4,
+    8
+  ],
+  "best_pair_total_gain": 0.20164074282441002,
+  "best_pair_positive_hierarchical_gain": 0.20164074282441002,
+  "effective_degree_best_pair": 1.554054432805952,
+  "concentration_leq_1_best_pair": 0.44594556719404804,
+  "tail_above_degree_1_best_pair": 0.554054432805952,
+  "pair_function_variance_best_pair": 0.20164074282441002,
+  "primary_degree_metric": "cumulative variance concentration",
+  "max_positive_degree2_gain": 0.11171994739614932,
+  "max_interaction_fraction": 0.5540544328059519,
+  "paper": "https://arxiv.org/abs/2603.02673",
+  "memory_strategy": "pair priors evaluated in active-pair chunks; no q-by-q-by-q array",
+  "cell_id": "V21P/reuters_news/stride4",
+  "protocol_hash": "a38751bdc22ad8aca0534e24bbad1681e3fb6d782ceb2561a663dd54559d7db4",
+  "dataset": "reuters_news",
+  "stride": 4,
+  "expected_pair": [
+    4,
+    8
+  ],
+  "data_sha256": "6b209b4a609d3b61819f8def8eae6351e2b981cb62b1bde076b04c268653ff95",
+  "byte_counts_preserved": true,
+  "position_sampling": "uniform corpus-wide time indices with every interleaved lane represented in both cross-fit folds",
+  "position_sha256": "a0394ea0f375663615f195a38aba24b30e055e886274b72e3927aeae68a25f60",
+  "remote": {
+    "compute": "Modal CPU",
+    "wallclock_seconds": 0.5250962960000001
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "schema": "v3-dllm-monarch-live-audit-v1",
+  "status": "active_finite_learning_checkpoint_resume_verified",
+  "wandb_id": "furcfgms",
+  "wandb_url": "https://wandb.ai/lev-tear-tear-labs/v3-dllm-monarch/runs/furcfgms",
+  "upstream": {
+    "repository": "https://github.com/ZHZisZZ/dllm.git",
+    "commit": "ca176752fbceec49c6b4777a2c18ae88e4eb10ed"
+  },
+  "teacher": {
+    "model": "Dream-org/DreamReasoner-8B",
+    "revision": "ed62b1d2c82ccd234b05ed2463b4c0ee640f2068",
+    "parameters": 8190735360,
+    "dtype": "bfloat16",
+    "frozen": true
+  },
+  "student": {
+    "architecture_id": "V3-DLLM-MONARCH-96M-deep-v2.0",
+    "parameters": 95572992,
+    "width": 128,
+    "layers": 44,
+    "block_size": 32,
+    "query_heads": 4,
+    "kv_heads": 2,
+    "head_dim": 32,
+    "monarch_expansion": 3
+  },
+  "optimizer_routing": {
+    "dense_muon": {"tensors": 222, "parameters": 6881280, "learning_rate": 0.02},
+    "monarch_muon": {"tensors": 264, "parameters": 69206016, "learning_rate": 0.02},
+    "adamw": {"tensors": 136, "parameters": 19485696, "learning_rate": 0.0003},
+    "total": {"tensors": 622, "parameters": 95572992}
+  },
+  "batch": {
+    "world_size": 8,
+    "physical_contexts_per_gpu": 80,
+    "global_contexts_update": 640,
+    "raw_corpus_tokens_update": 327680,
+    "gradient_accumulation": 1,
+    "observed_selected_tokens_update_range": [107184, 132016]
+  },
+  "systems": {
+    "torch_compile": false,
+    "preflight_last_selected_tokens_per_second": 20933.055928422615,
+    "quality_step10_last_selected_tokens_per_second": 20082.015199809553,
+    "preflight_peak_allocated_gib": 71.69077157974243,
+    "preflight_peak_reserved_gib": 71.873046875,
+    "quality_gpu_utilization_mean_percent_including_eval_and_save": 90.32159197012137,
+    "quality_min_rank_median_gpu_utilization_percent": 100.0,
+    "observed_hot_gpu_utilization_percent": 100,
+    "observed_live_device_memory_mib": 76677,
+    "observed_live_power_watts_range": [660.27, 676.13]
+  },
+  "heldout": {
+    "contexts": 128,
+    "sequence_length": 512,
+    "source_file": "data/CC-MAIN-2013-20/train-00001-of-00014.parquet",
+    "training_source_file": "data/CC-MAIN-2013-20/train-00000-of-00014.parquet",
+    "token_ids_sha256": "3062acf0ada281a2357c922851e61f0b2b0f23d54b9af754922f4aaeef1c1920",
+    "metrics": [
+      {"step": 0, "full_kl": 8.474270939826965, "student_ce": 11.954490303993225, "teacher_ce": 5.87776905298233},
+      {"step": 5, "full_kl": 8.11967158317566, "student_ce": 11.587466359138489, "teacher_ce": 5.87776905298233},
+      {"step": 10, "full_kl": 7.862571656703949, "student_ce": 11.330590963363647, "teacher_ce": 5.87776905298233},
+      {"step": 20, "full_kl": 7.346152126789093, "student_ce": 10.81204092502594, "teacher_ce": 5.87776905298233},
+      {"step": 60, "full_kl": 5.73128205537796, "student_ce": 9.18383502960205, "teacher_ce": 5.87776905298233}
+    ]
+  },
+  "checkpoint": "/cache/v3_dllm_monarch/outputs/deep-v2-quality-b80-r1-continuation-step10/milestones/checkpoint-60",
+  "finite_endpoint_step": 300,
+  "resume_command": "cd /root/fda/NEW/v3__dllm_monarch && ./run_h100.sh train --architecture deep-v2 --output /cache/v3_dllm_monarch/outputs/deep-v2-quality-b80-r1-continuation-step60 --run-name deep-v2-quality-b80-r1 --wandb-id furcfgms --microbatch 80 --gradient-accumulation 1 --max-steps 300 --logging-steps 1 --eval-steps 10 --save-steps 10 --resume /cache/v3_dllm_monarch/outputs/deep-v2-quality-b80-r1-continuation-step10/milestones/checkpoint-60",
+  "d3llm_gate": "Do not add pseudo-trajectories until the ordinary fixed-holdout run finishes, generation from a trained checkpoint is non-degenerate, benchmark quality is measured, and the experimental validation KL target of 0.2 is either reached or its capacity/optimization floor is demonstrated."
+}
