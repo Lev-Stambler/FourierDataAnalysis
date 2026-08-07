@@ -3,6 +3,20 @@
 Date: 2026-08-04/05 · Protocols: v1 (90d42a12), v1.1 (32652e6d), v1.2 (7b87f24b)
 Analysis artifact: `runs/m10_analysis.json` · Figures: `runs/figures/fig1–fig3`
 
+## Current synthesis (through v2.2)
+
+The current positive result is **locality rank**: moving an approximately stable
+low-degree pair dependency farther from the target makes fixed-budget held-out CE
+worse. The v2.0/v2.1/v2.2 blocked mean rho values are `0.850/0.857/0.867`. The
+specific Parseval-weighted `G_total` law is not selected: it is rank-equivalent to
+radius in these interventions, and v2.1 leave-one-corpus-out prediction favors
+`log2(radius)`. See `LOCALITY_MATH.md` for the exact definition and
+`NOVELTY_ASSESSMENT.md` for the critical novelty audit.
+
+Attribution correction: Ferrere et al. Definition 3.1 is the general
+inverse-likelihood basis. Their Formula (19) is a toy binary example. Frozen
+protocols/artifacts retain the old label for provenance.
+
 ## Falsification criteria (verbatim from PLAN §7 item 6)
 
 > H1 falsified if any family shows non-monotone `T*` in its degree knob at fixed
@@ -160,7 +174,7 @@ reuse permuted individual token indices before windows were constructed. Protoco
 preserves contiguous token order and retrains every q=256 language cell from scratch.
 
 The text profile now uses the inverse-likelihood categorical functional-ANOVA basis
-from Ferrere et al. (arXiv:2603.02673, Definition 3.1 / equation 19). Each
+from Ferrere et al. (arXiv:2603.02673, Definition 3.1). Each
 context position is one categorical variable; cross-fitted nested projections measure
 degree-1 additive and degree-2 interaction gain over the frozen lag pairs.
 
@@ -194,7 +208,8 @@ text concentration claim is made.
 The degree correlator is now computed from absolute squared Fourier coefficient
 mass of `f(x)=P(next token|x)`. For a two-variable categorical slice, the nested
 projection identities are `W0=1-L0`, `W1=L0-L1`, and `W2=L1-L2`; equivalently,
-`Wk=|Lambda_k| E[|fhat(alpha)|^2]` in a Gram-orthonormalized Formula-(19) basis.
+`Wk=|Lambda_k| E[|fhat(alpha)|^2]` in a Gram-orthonormalized
+Definition-3.1 filtration.
 Their sum is the measured total square energy `E||f||^2`.
 
 The exact copy spectrum is `(0.003906, 0.560303, 0)` with nonconstant mean degree
@@ -352,8 +367,8 @@ The mechanism is specifically geometric. Every profile recovers `(s,2s)`; within
 each corpus, nonconstant spectral energy and mean nonconstant degree remain nearly
 fixed across strides. Degree alone has blocked `rho=-0.30`, whereas every
 geometry-aware moment has `rho=0.85`. Geometry variants have identical within-
-intervention ranks, but `G_total` remains the theoretically preferred quantity
-because `p_k=W_k/sum_j W_j` uses the complete Parseval mass, including `W0`.
+intervention ranks, so this rank test cannot prefer one of them. `G_total` was the
+frozen v2.0 predictor; the later v2.1 out-of-corpus test favored log radius.
 
 This establishes a causal locality effect for these four byte corpora and the fixed
 d64 two-layer Transformer: spreading the same measured low-degree Fourier mass over
@@ -373,8 +388,10 @@ eight strides `1/2/3/4/6/8/12/16` and three seeds. Every corpus contains exactly
 The pair `(s,2s)` is preregistered rather than selected after profiling.
 
 The geometry effect replicates decisively. The mean within-corpus Spearman
-correlation between `G_total` and median final held-out `CE/initial_CE` is
-`rho=0.857`. Exact convolution of the six independent `8!` rank-permutation nulls
+locality-rank correlation with median final held-out `CE/initial_CE` is
+`rho=0.857`. The frozen score was `G_total`, whose ranks are identical to
+`log2(radius)` in every block. Exact convolution of the six independent `8!`
+rank-permutation nulls
 gives two-sided `p=1.10e-11`. Per-corpus rho is `0.952`, `1.000`, `0.976`, `1.000`,
 `0.810`, and `0.405`. Five of six stride-16 endpoints are harder than stride 1;
 Linux C is the exception. All three seed-specific blocked means are positive
@@ -400,3 +417,130 @@ All 144 training cells ran on Modal A10 GPUs (1,408.6 aggregate cell-seconds); a
 48 profiles ran on Modal CPU (18.7 aggregate cell-seconds). Local training and
 profiling cells: zero. Audit PASS; 67 tests PASS. Artifacts:
 `runs/local/v21_predictor_selection/{integrated_analysis.json,audit.json,data_manifest.json}`.
+
+<!-- HARD_DOMAIN_H100_V2_2_ADDENDUM -->
+## Hard-domain single-H100 stress test (protocol v2.2, 2026-08-07)
+
+**Frozen endpoint verdict: SUPPORTED. Cleanliness diagnostic: FALSE.** Protocol
+v2.2 was frozen before inspecting any new profile or curve. It uses exactly 8M
+pinned bytes from each of mathlib Lean formal mathematics, Rust source, and RFC
+9000–9113 technical prose. A larger fixed Transformer (`d_model=256`, four layers,
+eight heads) trains for 8M tokens at strides `1/4/8/16`, with three seeds.
+
+Mean within-domain Spearman locality-rank correlation with median final held-out
+`CE/initial_CE` is `rho=0.867`. The frozen implementation uses `G_total`, which is
+strictly rank-equivalent to `log2(radius)` in every domain. The domain correlations
+are `1.0`, `0.8`, and
+`0.8`; the exact two-sided blocked test over all `24^3=13,824` permutations gives
+`p=0.005787`. Stride 16 is harder than stride 1 in all domains by `+0.205`,
+`+0.110`, and `+0.124` final-CE fraction. Seed-specific blocked means are
+`0.733`, `0.867`, and `0.867`, all positive. The measured pair energy and degree
+remain stable across strides in every domain.
+
+The larger learner does not make every aspect cleaner. Curve-area rho is `1.0`
+for mathlib, `1.0` for Rust, but `0.0` for RFCs, yielding mean `0.667` versus
+v2.1's `0.885`. RFC stride 8 learns faster early than stride 4 even though the
+final finite-budget ordering is mostly restored. Consequently, the preregistered
+comparison-only cleanliness rule returns false: endpoint rho improves slightly
+from `0.857` to `0.867`, but integrated learning dynamics become less monotone.
+
+All 36 training cells ran sequentially under a one-container cap on a single
+NVIDIA H100 80GB HBM3 (190.3 aggregate cell-seconds). All 12 profiles ran on
+Modal CPU (5.8 aggregate cell-seconds); local training/profile cells: zero. Audit
+PASS; 67 tests PASS. Artifacts:
+`runs/local/v22_hard_h100/{integrated_analysis.json,audit.json,data_manifest.json}`.
+
+<!-- POSITIONAL_ROBUSTNESS_V2_3_ADDENDUM -->
+## Positional-geometry robustness (protocol v2.3, 2026-08-07)
+
+**Frozen verdict: MIXED.** The six v2.1 corpora and strides `1/4/8/16` were
+crossed with four Transformer configurations. Three pass the frozen endpoint
+gate: learned absolute d64/l2 has mean within-corpus locality `rho=0.800`
+(`p=0.000232`), ALiBi d64/l2 has `rho=0.933` (`p=1.67e-6`), and learned absolute
+d128/l4 has `rho=0.733` (`p=0.00109`). Sinusoidal d64/l2 does not pass:
+`rho=0.433`, `p=0.0765`. All configuration-level rhos are positive, but the
+four-of-four robustness requirement fails.
+
+The important conclusion is an interaction. Locality is a property of the data
+descriptor, but its effect on fixed-budget learning depends on the learner's
+positional geometry. ALiBi has the strongest and most uniform radius penalty;
+sinusoidal positions can respond differently on individual code corpora. This
+rules out interpreting the earlier rhos as an architecture-independent hardness
+law. The 216 new cells ran sequentially on one H100; 72 exact v2.1 cells were
+reused. Audit PASS. Artifacts:
+`runs/local/v23_transformer_robustness/{integrated_analysis.json,audit.json}`.
+
+<!-- SPECTRUM_PREDICTOR_V2_4_ADDENDUM -->
+## Frozen spectrum prediction, exact factorial, and images (protocol v2.4, 2026-08-07)
+
+**Confirmatory verdict: PREDICTIVE_NOT_UNIQUELY_FOURIER.** Protocol v2.4 replaces
+the selected strongest-pair score with a resolved dyadic lower-bound surface over
+all 21 pairs from lags `1/2/4/8/16/32/64`. Pair-conditional degree-0/1/2 energy is
+estimated with cross-fitted nested Brier projections. A monotone lower envelope
+over supports yields resolved nonconstant energy, low-degree concentration,
+energy-weighted log radius, radius quantiles, and spectral entropies. It remains a
+lower bound on the 64-position spectrum, not the complete spectrum.
+
+Grouped leave-one-corpus-out development experiments covered 13 corpora and 124
+dataset/configuration/stride rows. A compact ridge combining four Fourier features
+with unigram entropy, held-out bigram CE, lag-1 mutual information, and zlib rate
+improved development RMSE over the controls by 27.6% for endpoint CE and 10.3%
+for curve area. Those models were serialized and their predictions were hash-locked
+before the new outcomes. The primary prediction lock hash is
+`9062e1535dad87863002eee35a3c3cdf2d9ba3050db012b7e89f897b64792067`.
+
+The improvement did not replicate on 12 independent 2M-byte corpora crossed with
+learned absolute, sinusoidal, and ALiBi d64/l2 Transformers. For final
+`CE/initial_CE`, Fourier-only ridge has RMSE `0.0953`, `R^2=0.260`; the four simple
+controls have RMSE `0.0724`, `R^2=0.572`; their combination has RMSE `0.0788`,
+`R^2=0.493`. The combined model is 8.8% worse than controls alone, with a 95%
+corpus-bootstrap improvement interval `[-20.5%, +1.36%]`. Curve area agrees:
+Fourier-only `R^2=0.075`, controls `0.411`, combined `0.356`, a 4.6% RMSE
+degradation. The locked intervention-delta predictions get direction mostly right
+(88.9% endpoint and 83.3% area sign accuracy) but not magnitude (endpoint
+`R^2=-0.443`, area `R^2=-0.190`).
+
+Audit caveat: the Fourier-only and combined predictions were frozen before every
+confirmatory cell. The supplementary control-only/configuration-only prediction
+file—needed to apply the explicit 5% comparison gate—was frozen after three of 270
+cells had begun but before aggregate analysis. Its timing is recorded in the
+artifact, and the result is a negative Fourier comparison rather than a favorable
+claim. This does not invalidate the primary locked predictions, but it prevents
+describing every baseline as preregistered before training began.
+
+An exact q=16 block-iid factorial then holds nonconstant Fourier energy at
+`p^2(1-1/q)` while crossing pure degree `1/2`, radius `2/8/32`, signal probability
+`0.35/0.70`, and the three positional encodings. Across the balanced regression,
+degree 2 adds `0.130` normalized endpoint CE at fixed energy. Locality is strongly
+visible for ALiBi degree-1 tasks—for signal 0.70, endpoint ratio changes from
+`0.594` at radius 2 to `0.992` at radius 32—but is nearly absent for learned
+absolute positions; sinusoidal does not learn these modular targets at this budget.
+The mean within-cell radius Spearman across every architecture/degree/signal block
+is only `0.042`. Degree and energy are causal difficulty factors here; locality is
+learner-dependent.
+
+For images, the categorical text basis is not forced onto continuous pixels. The
+panel uses an orthonormal spatial DCT-II spectrum plus rank-Gaussianized
+product-Hermite degree-2 patch correlations. Six freshly profiled datasets were
+trained as corrected contiguous VQ-code sequences; invalid historical M8 curves
+were not reused. DCT high-frequency tail correlates with normalized curve area at
+`rho=0.943` (nominal `p=0.0048`), while DCT low-frequency concentration and
+log-Hermite degree-2 energy each give `rho=-0.829` (nominal `p=0.0416`). This is
+exploratory because n=6, several features were inspected, and VQ tokenization is a
+shared confound.
+
+The final claim is therefore narrower than the development hypothesis. A
+data-derived degree/energy/locality spectrum is interpretable and predictive, and
+the exact controls show real causal degree and architecture-locality effects. The
+current resolved text summaries do not provide a unique or superior natural-data
+hardness predictor over ordinary sequential statistics. The descriptors are
+model-agnostic; the mapping from descriptors to hardness is not.
+
+All 270 natural confirmation, 108 exact-factorial, and 18 corrected-image training
+cells ran remotely and sequentially with maximum H100 concurrency one; local
+training cells: zero. Protocol hash
+`a4ef4ad6a76c87b24f3708fc22ee06f2fb6dbf9c18c5c6739519e0a541f840b3`;
+manifest hash
+`b315b9cc5561ff9558dc168bb3acb84cff8a745623329e0f1d9d0212263e1c49`.
+Audit PASS. Artifacts:
+`runs/local/v24_spectrum_predictor/{confirmatory_analysis.json,factorial_analysis.json,image_analysis.json,audit.json}`.

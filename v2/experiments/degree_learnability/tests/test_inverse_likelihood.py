@@ -43,7 +43,7 @@ def test_chunked_pair_prior_scoring_is_chunk_size_invariant():
     assert np.isclose(one_pair_at_a_time, all_pairs_at_once, atol=1e-14)
 
 
-def test_formula_19_constant_and_binary_contrasts():
+def test_definition_3_1_reproduces_formula_19_binary_example():
     X = np.array([[0, 0], [0, 1], [1, 0]], dtype=np.int64)
     constant = inverse_likelihood_column(X, InverseLikelihoodTerm((), ()))
     first = inverse_likelihood_column(X, InverseLikelihoodTerm((0,), (0,)))
@@ -51,6 +51,18 @@ def test_formula_19_constant_and_binary_contrasts():
     assert np.array_equal(constant, np.ones(3))
     assert np.allclose(first, [1.5, 1.5, -3.0])
     assert np.allclose(second, [1.5, -3.0, 1.5])
+
+
+def test_definition_3_1_retains_probabilities_on_deduplicated_support():
+    support = np.array([[0], [1]], dtype=np.int64)
+    term = InverseLikelihoodTerm((0,), (0,))
+    column = inverse_likelihood_column(
+        support,
+        term,
+        cardinalities=(2,),
+        sample_weights=np.array([0.75, 0.25]),
+    )
+    assert np.allclose(column, [4.0 / 3.0, -4.0])
 
 
 def test_exact_rank_selected_basis_reconstructs_sparse_support():

@@ -1,4 +1,4 @@
-"""Corrected q=256 language run with contiguous streams and Formula-(19) profiles."""
+"""Corrected q=256 language run with contiguous Definition-3.1 profiles."""
 
 from __future__ import annotations
 
@@ -190,4 +190,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

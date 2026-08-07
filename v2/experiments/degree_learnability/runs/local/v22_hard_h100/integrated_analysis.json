@@ -1,0 +1,676 @@
+{
+  "protocol_hash": "25e09ad9ed37bb447e6267fd1c11e75ecbd55757405ad3680b4f7a3be6337328",
+  "verdict": "SUPPORTED",
+  "support_rule": "SUPPORTED if mean rho>=0.80, exact p<0.05, stride-16 difficulty exceeds stride-1 in all 3 datasets, and every seed-specific blocked mean rho is positive",
+  "primary_exact_blocked_test": {
+    "statistic": "mean within-dataset Spearman rho",
+    "observed_rho": 0.8666666666666666,
+    "rho_by_dataset": {
+      "mathlib_lean": 1.0,
+      "rust_source": 0.7999999999999999,
+      "rfc_technical": 0.7999999999999999
+    },
+    "exact_two_sided_p": 0.005787037037037037,
+    "extreme_permutations": 80,
+    "total_permutations": 13824
+  },
+  "stride16_minus_stride1_final_ce_fraction": {
+    "mathlib_lean": 0.20517668063911926,
+    "rust_source": 0.10959437183642207,
+    "rfc_technical": 0.12424806232396568
+  },
+  "positive_endpoint_directions": 3,
+  "seed_specific_blocked_rhos": {
+    "0": {
+      "mean_within_dataset_rho": 0.7333333333333333,
+      "rho_by_dataset": [
+        1.0,
+        0.7999999999999999,
+        0.39999999999999997
+      ]
+    },
+    "1": {
+      "mean_within_dataset_rho": 0.8666666666666666,
+      "rho_by_dataset": [
+        1.0,
+        0.7999999999999999,
+        0.7999999999999999
+      ]
+    },
+    "2": {
+      "mean_within_dataset_rho": 0.8666666666666666,
+      "rho_by_dataset": [
+        1.0,
+        0.7999999999999999,
+        0.7999999999999999
+      ]
+    }
+  },
+  "all_seed_specific_blocked_rhos_positive": true,
+  "secondary_curve_area_rho_by_dataset": {
+    "mathlib_lean": 1.0,
+    "rust_source": 1.0,
+    "rfc_technical": 0.0
+  },
+  "secondary_mean_curve_area_rho": 0.6666666666666666,
+  "cleanliness_diagnostic": {
+    "cleaner_than_v2_1": false,
+    "frozen_rule": "all three per-domain final rhos>=0.80 and both mean final rho and mean area rho exceed the recorded v2.1 values",
+    "v2_1_final_rho": 0.8571428571428572,
+    "v2_2_final_rho": 0.8666666666666666,
+    "v2_1_area_rho": 0.884920634920635,
+    "v2_2_area_rho": 0.6666666666666666,
+    "interpretation": "comparison-only because both domains and learner changed"
+  },
+  "dataset_stride_rows": [
+    {
+      "dataset": "mathlib_lean",
+      "stride": 1,
+      "pair": [
+        1,
+        2
+      ],
+      "radius": 2,
+      "log2_radius": 1.0,
+      "level_weights": [
+        0.04834524001736118,
+        0.11378704781014548,
+        0.13292968826617146
+      ],
+      "total_square_energy": 0.2950619760936781,
+      "nonconstant_energy": 0.24671673607631694,
+      "level_mass_normalized_by_total": [
+        0.16384774703065172,
+        0.3856377880897119,
+        0.45051446487963637
+      ],
+      "mean_degree_total": 1.2866667178489846,
+      "mean_degree_nonconstant": 1.5387947748508326,
+      "geometric_moment_absolute": 3.148814745043694,
+      "geometric_moment_total": 10.671706286017649,
+      "geometric_moment_nonconstant": 12.762874522098373,
+      "level_entropy_total_bits": 1.475953150652184,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.147659436669834,
+      "effective_support_upper_log2": 12.147659436669834,
+      "level_cardinalities": [
+        1,
+        510,
+        65025
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        8.994353436858859,
+        15.988706873717716
+      ],
+      "low_degree_concentration_total_leq_1": 0.5494855351203636,
+      "initial_ce_bits": 8.027429964925417,
+      "final_ce_bits": 3.705607891459337,
+      "learning_amount_bits": 4.22463820310785,
+      "fractional_learning": 0.5325924765507752,
+      "normalized_curve_area": 0.7869487128373555,
+      "final_ce_fraction": 0.4674075234492247
+    },
+    {
+      "dataset": "mathlib_lean",
+      "stride": 4,
+      "pair": [
+        4,
+        8
+      ],
+      "radius": 8,
+      "log2_radius": 3.0,
+      "level_weights": [
+        0.0481582222222221,
+        0.11304730755466152,
+        0.1309863968398547
+      ],
+      "total_square_energy": 0.2921919266167383,
+      "nonconstant_energy": 0.24403370439451622,
+      "level_mass_normalized_by_total": [
+        0.1648170871106585,
+        0.38689401471021195,
+        0.44828889817912954
+      ],
+      "mean_degree_total": 1.283471811068471,
+      "mean_degree_nonconstant": 1.5367553517447574,
+      "geometric_moment_absolute": 3.9668832574288,
+      "geometric_moment_total": 13.576293169222547,
+      "geometric_moment_nonconstant": 16.25547285474859,
+      "level_entropy_total_bits": 1.4776344131250818,
+      "spectral_entropy_uniform_within_level_upper_bits": 15.05392758234763,
+      "effective_support_upper_log2": 15.05392758234763,
+      "level_cardinalities": [
+        1,
+        2040,
+        1820700
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.994353436858859,
+        20.79606179577532
+      ],
+      "low_degree_concentration_total_leq_1": 0.5517111018208705,
+      "initial_ce_bits": 8.036273828780738,
+      "final_ce_bits": 4.051290697927796,
+      "learning_amount_bits": 3.9740312756459986,
+      "fractional_learning": 0.4945116804523992,
+      "normalized_curve_area": 0.8054832844490969,
+      "final_ce_fraction": 0.5054883195476009
+    },
+    {
+      "dataset": "mathlib_lean",
+      "stride": 8,
+      "pair": [
+        8,
+        16
+      ],
+      "radius": 16,
+      "log2_radius": 4.0,
+      "level_weights": [
+        0.04719101519097224,
+        0.11391497906124626,
+        0.1318888091676097
+      ],
+      "total_square_energy": 0.2929948034198282,
+      "nonconstant_energy": 0.24580378822885596,
+      "level_mass_normalized_by_total": [
+        0.16106434189330276,
+        0.3887952200231315,
+        0.4501404380835658
+      ],
+      "mean_degree_total": 1.289076096190263,
+      "mean_degree_nonconstant": 1.5365613366577346,
+      "geometric_moment_absolute": 4.38600960602334,
+      "geometric_moment_total": 14.969581558546235,
+      "geometric_moment_nonconstant": 17.843539506151707,
+      "level_entropy_total_bits": 1.4725467298968433,
+      "spectral_entropy_uniform_within_level_upper_bits": 16.44212828844308,
+      "effective_support_upper_log2": 16.44212828844308,
+      "level_cardinalities": [
+        1,
+        4080,
+        7803000
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.994353436858859,
+        22.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.5498595619164343,
+      "initial_ce_bits": 8.01336049421496,
+      "final_ce_bits": 4.333766225572841,
+      "learning_amount_bits": 3.5369793752406435,
+      "fractional_learning": 0.44938301332914093,
+      "normalized_curve_area": 0.8107804720258031,
+      "final_ce_fraction": 0.550616986670859
+    },
+    {
+      "dataset": "mathlib_lean",
+      "stride": 16,
+      "pair": [
+        16,
+        32
+      ],
+      "radius": 32,
+      "log2_radius": 5.0,
+      "level_weights": [
+        0.04789042144097222,
+        0.1142825932526258,
+        0.13020967015695106
+      ],
+      "total_square_energy": 0.2923826848505491,
+      "nonconstant_energy": 0.24449226340957686,
+      "level_mass_normalized_by_total": [
+        0.16379363047935389,
+        0.3908664882499494,
+        0.44533988127069674
+      ],
+      "mean_degree_total": 1.2815462507913429,
+      "mean_degree_nonconstant": 1.532571740066973,
+      "geometric_moment_absolute": 4.732835604764424,
+      "geometric_moment_total": 16.187126837499303,
+      "geometric_moment_nonconstant": 19.357813367026306,
+      "level_entropy_total_bits": 1.4769531607437043,
+      "spectral_entropy_uniform_within_level_upper_bits": 17.664079998243007,
+      "effective_support_upper_log2": 17.664079998243007,
+      "level_cardinalities": [
+        1,
+        8160,
+        32252400
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.994353436858859,
+        24.94290318410459
+      ],
+      "low_degree_concentration_total_leq_1": 0.5546601187293033,
+      "initial_ce_bits": 8.018988540473119,
+      "final_ce_bits": 5.393445025087663,
+      "learning_amount_bits": 2.6255435153854556,
+      "fractional_learning": 0.3274157959116561,
+      "normalized_curve_area": 0.814515021966262,
+      "final_ce_fraction": 0.672584204088344
+    },
+    {
+      "dataset": "rust_source",
+      "stride": 1,
+      "pair": [
+        1,
+        2
+      ],
+      "radius": 2,
+      "log2_radius": 1.0,
+      "level_weights": [
+        0.10337745572916668,
+        0.18357873095731247,
+        0.10175992282605772
+      ],
+      "total_square_energy": 0.3887161095125369,
+      "nonconstant_energy": 0.2853386537833702,
+      "level_mass_normalized_by_total": [
+        0.2659459003610771,
+        0.4722694183874355,
+        0.26178468125148735
+      ],
+      "mean_degree_total": 0.9958387808904102,
+      "mean_degree_nonconstant": 1.356628593696647,
+      "geometric_moment_absolute": 3.2781815672780645,
+      "geometric_moment_total": 8.433356598956022,
+      "geometric_moment_nonconstant": 11.488739866863142,
+      "level_entropy_total_bits": 1.5254869516794936,
+      "spectral_entropy_uniform_within_level_upper_bits": 9.958843550635516,
+      "effective_support_upper_log2": 9.958843550635516,
+      "level_cardinalities": [
+        1,
+        510,
+        65025
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        8.994353436858859,
+        15.988706873717716
+      ],
+      "low_degree_concentration_total_leq_1": 0.7382153187485126,
+      "initial_ce_bits": 7.90634291385437,
+      "final_ce_bits": 3.1370458454360675,
+      "learning_amount_bits": 4.769297068418303,
+      "fractional_learning": 0.6032241607002666,
+      "normalized_curve_area": 0.7263532138897719,
+      "final_ce_fraction": 0.39677583929973337
+    },
+    {
+      "dataset": "rust_source",
+      "stride": 4,
+      "pair": [
+        4,
+        8
+      ],
+      "radius": 8,
+      "log2_radius": 3.0,
+      "level_weights": [
+        0.10305541840277777,
+        0.18387634179757661,
+        0.09913600767086062
+      ],
+      "total_square_energy": 0.386067767871215,
+      "nonconstant_energy": 0.28301234946843723,
+      "level_mass_normalized_by_total": [
+        0.266936084747575,
+        0.4762799619649013,
+        0.2567839532875237
+      ],
+      "mean_degree_total": 0.9898478685399487,
+      "mean_degree_nonconstant": 1.3502886282420574,
+      "geometric_moment_absolute": 4.083240032108894,
+      "geometric_moment_total": 10.576485197466646,
+      "geometric_moment_nonconstant": 14.427780412332412,
+      "level_entropy_total_bits": 1.521954025206313,
+      "spectral_entropy_uniform_within_level_upper_bits": 12.098439222672958,
+      "effective_support_upper_log2": 12.098439222672958,
+      "level_cardinalities": [
+        1,
+        2040,
+        1820700
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.994353436858859,
+        20.79606179577532
+      ],
+      "low_degree_concentration_total_leq_1": 0.7432160467124763,
+      "initial_ce_bits": 7.949699568154233,
+      "final_ce_bits": 3.4012456366871766,
+      "learning_amount_bits": 4.548453931467057,
+      "fractional_learning": 0.5721541917996179,
+      "normalized_curve_area": 0.7486432651669994,
+      "final_ce_fraction": 0.42784580820038215
+    },
+    {
+      "dataset": "rust_source",
+      "stride": 8,
+      "pair": [
+        8,
+        16
+      ],
+      "radius": 16,
+      "log2_radius": 4.0,
+      "level_weights": [
+        0.10290913802083335,
+        0.18382233668845727,
+        0.10056314538538325
+      ],
+      "total_square_energy": 0.38729462009467386,
+      "nonconstant_energy": 0.2843854820738405,
+      "level_mass_normalized_by_total": [
+        0.26571280023377886,
+        0.47463178456628713,
+        0.259655415199934
+      ],
+      "mean_degree_total": 0.9939426149661552,
+      "mean_degree_nonconstant": 1.3536156088279925,
+      "geometric_moment_absolute": 4.507283372823691,
+      "geometric_moment_total": 11.637867243603564,
+      "geometric_moment_nonconstant": 15.849203482382332,
+      "level_entropy_total_bits": 1.5234601553866038,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.161327398990167,
+      "effective_support_upper_log2": 13.161327398990167,
+      "level_cardinalities": [
+        1,
+        4080,
+        7803000
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.994353436858859,
+        22.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.740344584800066,
+      "initial_ce_bits": 7.92876833363965,
+      "final_ce_bits": 3.3498378295654847,
+      "learning_amount_bits": 4.580174454587857,
+      "fractional_learning": 0.5776653146940108,
+      "normalized_curve_area": 0.7505630200069174,
+      "final_ce_fraction": 0.4223346853059891
+    },
+    {
+      "dataset": "rust_source",
+      "stride": 16,
+      "pair": [
+        16,
+        32
+      ],
+      "radius": 32,
+      "log2_radius": 5.0,
+      "level_weights": [
+        0.10391662890625009,
+        0.1821066288307458,
+        0.10195876612834787
+      ],
+      "total_square_energy": 0.38798202386534375,
+      "nonconstant_energy": 0.28406539495909366,
+      "level_mass_normalized_by_total": [
+        0.267838772196096,
+        0.46936872749019226,
+        0.26279250031371176
+      ],
+      "mean_degree_total": 0.9949537281176157,
+      "mean_degree_nonconstant": 1.358927091922021,
+      "geometric_moment_absolute": 4.9095055305317254,
+      "geometric_moment_total": 12.653951030049937,
+      "geometric_moment_nonconstant": 17.28301165032337,
+      "level_entropy_total_bits": 1.5278876697400627,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.18183869979,
+      "effective_support_upper_log2": 14.18183869979,
+      "level_cardinalities": [
+        1,
+        8160,
+        32252400
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.994353436858859,
+        24.94290318410459
+      ],
+      "low_degree_concentration_total_leq_1": 0.7372074996862883,
+      "initial_ce_bits": 7.9627690457412506,
+      "final_ce_bits": 4.03210904292044,
+      "learning_amount_bits": 3.9306600028208107,
+      "fractional_learning": 0.49362978886384457,
+      "normalized_curve_area": 0.7707508548325541,
+      "final_ce_fraction": 0.5063702111361554
+    },
+    {
+      "dataset": "rfc_technical",
+      "stride": 1,
+      "pair": [
+        1,
+        2
+      ],
+      "radius": 2,
+      "log2_radius": 1.0,
+      "level_weights": [
+        0.08413723784722227,
+        0.12662436453341752,
+        0.11398946108644115
+      ],
+      "total_square_energy": 0.32475106346708094,
+      "nonconstant_energy": 0.24061382561985867,
+      "level_mass_normalized_by_total": [
+        0.25908225503240273,
+        0.3899120858344874,
+        0.3510056591331099
+      ],
+      "mean_degree_total": 1.091923404100707,
+      "mean_degree_nonconstant": 1.4737444358934344,
+      "geometric_moment_absolute": 2.9614483683353727,
+      "geometric_moment_total": 9.119133704193601,
+      "geometric_moment_nonconstant": 12.307889460242864,
+      "level_entropy_total_bits": 1.5648016618719534,
+      "spectral_entropy_uniform_within_level_upper_bits": 10.683935366065555,
+      "effective_support_upper_log2": 10.683935366065555,
+      "level_cardinalities": [
+        1,
+        510,
+        65025
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        8.994353436858859,
+        15.988706873717716
+      ],
+      "low_degree_concentration_total_leq_1": 0.6489943408668901,
+      "initial_ce_bits": 7.982362685188749,
+      "final_ce_bits": 3.6559392588944952,
+      "learning_amount_bits": 4.314334163825828,
+      "fractional_learning": 0.540483354863224,
+      "normalized_curve_area": 0.7629886369117875,
+      "final_ce_fraction": 0.4595166451367759
+    },
+    {
+      "dataset": "rfc_technical",
+      "stride": 4,
+      "pair": [
+        4,
+        8
+      ],
+      "radius": 8,
+      "log2_radius": 3.0,
+      "level_weights": [
+        0.08322391493055559,
+        0.12606757109941646,
+        0.11457020987457223
+      ],
+      "total_square_energy": 0.3238616959045443,
+      "nonconstant_energy": 0.2406377809739887,
+      "level_mass_normalized_by_total": [
+        0.25697362788801426,
+        0.3892636044757016,
+        0.35376276763628417
+      ],
+      "mean_degree_total": 1.0967891397482699,
+      "mean_degree_nonconstant": 1.476110648173557,
+      "geometric_moment_absolute": 3.7686405980998696,
+      "geometric_moment_total": 11.636574024520169,
+      "geometric_moment_nonconstant": 15.661051156830748,
+      "level_entropy_total_bits": 1.5639474780013836,
+      "spectral_entropy_uniform_within_level_upper_bits": 13.200521502521552,
+      "effective_support_upper_log2": 13.200521502521552,
+      "level_cardinalities": [
+        1,
+        2040,
+        1820700
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        10.994353436858859,
+        20.79606179577532
+      ],
+      "low_degree_concentration_total_leq_1": 0.6462372323637158,
+      "initial_ce_bits": 7.977009123241366,
+      "final_ce_bits": 3.9026202093981155,
+      "learning_amount_bits": 4.074388913843251,
+      "fractional_learning": 0.5107664853951764,
+      "normalized_curve_area": 0.7714252996901655,
+      "final_ce_fraction": 0.4892335146048235
+    },
+    {
+      "dataset": "rfc_technical",
+      "stride": 8,
+      "pair": [
+        8,
+        16
+      ],
+      "radius": 16,
+      "log2_radius": 4.0,
+      "level_weights": [
+        0.08306788151041666,
+        0.12613066722225896,
+        0.11359559328018087
+      ],
+      "total_square_energy": 0.3227941420128565,
+      "nonconstant_energy": 0.23972626050243984,
+      "level_mass_normalized_by_total": [
+        0.25734011463909456,
+        0.39074645666040414,
+        0.3519134287005013
+      ],
+      "mean_degree_total": 1.0945733140614067,
+      "mean_degree_nonconstant": 1.4738554426290096,
+      "geometric_moment_absolute": 4.113694779922924,
+      "geometric_moment_total": 12.744019312962255,
+      "geometric_moment_nonconstant": 17.159967253070537,
+      "level_entropy_total_bits": 1.5639004733564053,
+      "spectral_entropy_uniform_within_level_upper_bits": 14.30791978631866,
+      "effective_support_upper_log2": 14.30791978631866,
+      "level_cardinalities": [
+        1,
+        4080,
+        7803000
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        11.994353436858859,
+        22.895597469326233
+      ],
+      "low_degree_concentration_total_leq_1": 0.6480865712994986,
+      "initial_ce_bits": 7.97163509535853,
+      "final_ce_bits": 3.7173930026097115,
+      "learning_amount_bits": 4.159516327423708,
+      "fractional_learning": 0.5332662528203845,
+      "normalized_curve_area": 0.7593535703171914,
+      "final_ce_fraction": 0.4667337471796155
+    },
+    {
+      "dataset": "rfc_technical",
+      "stride": 16,
+      "pair": [
+        16,
+        32
+      ],
+      "radius": 32,
+      "log2_radius": 5.0,
+      "level_weights": [
+        0.08334680598958333,
+        0.1265119135290399,
+        0.11478100276558134
+      ],
+      "total_square_energy": 0.32463972228420457,
+      "nonconstant_energy": 0.24129291629462124,
+      "level_mass_normalized_by_total": [
+        0.2567363149621527,
+        0.38969942630213794,
+        0.3535642587357094
+      ],
+      "mean_degree_total": 1.0968279437735566,
+      "mean_degree_nonconstant": 1.4756915558409203,
+      "geometric_moment_absolute": 4.506911957726007,
+      "geometric_moment_total": 13.882811154515615,
+      "geometric_moment_nonconstant": 18.678177656168813,
+      "level_entropy_total_bits": 1.5637773197028824,
+      "spectral_entropy_uniform_within_level_upper_bits": 15.446588474218498,
+      "effective_support_upper_log2": 15.446588474218498,
+      "level_cardinalities": [
+        1,
+        8160,
+        32252400
+      ],
+      "level_search_cost_bits": [
+        0.0,
+        12.994353436858859,
+        24.94290318410459
+      ],
+      "low_degree_concentration_total_leq_1": 0.6464357412642906,
+      "initial_ce_bits": 7.960555285059345,
+      "final_ce_bits": 4.649252361198471,
+      "learning_amount_bits": 3.3134640578516157,
+      "fractional_learning": 0.41623529253925834,
+      "normalized_curve_area": 0.7669743087923064,
+      "final_ce_fraction": 0.5837647074607416
+    }
+  ],
+  "spectrum_invariance": {
+    "mathlib_lean": {
+      "nonconstant_energy_range": [
+        0.24403370439451622,
+        0.24671673607631694
+      ],
+      "nonconstant_degree_range": [
+        1.532571740066973,
+        1.5387947748508326
+      ]
+    },
+    "rust_source": {
+      "nonconstant_energy_range": [
+        0.28301234946843723,
+        0.2853386537833702
+      ],
+      "nonconstant_degree_range": [
+        1.3502886282420574,
+        1.358927091922021
+      ]
+    },
+    "rfc_technical": {
+      "nonconstant_energy_range": [
+        0.23972626050243984,
+        0.24129291629462124
+      ],
+      "nonconstant_degree_range": [
+        1.4737444358934344,
+        1.476110648173557
+      ]
+    }
+  },
+  "compute": {
+    "remote_h100_training_cells": 36,
+    "maximum_concurrent_h100s": 1,
+    "remote_cpu_profile_cells": 12,
+    "local_training_cells": 0,
+    "local_profile_cells": 0,
+    "training_cell_wallclock_seconds": 190.28336601000004,
+    "profile_cell_wallclock_seconds": 5.753436421,
+    "gpu_names": [
+      "NVIDIA H100 80GB HBM3"
+    ]
+  },
+  "scope": "hard-domain stress test of the causal locality effect under a moderately larger fixed Transformer; not directly pooled with v2.0/v2.1 learner results"
+}

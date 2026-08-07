@@ -1,0 +1,1762 @@
+{
+  "cell_id": "V24P/cpython_source/stride4",
+  "protocol_hash": "a4ef4ad6a76c87b24f3708fc22ee06f2fb6dbf9c18c5c6739519e0a541f840b3",
+  "dataset": "cpython_source",
+  "stride": 4,
+  "data_sha256": "42c8a333344c455e8961ece23684632ae1309934d2a28439aaaf6c1b52f887c9",
+  "byte_counts_preserved": true,
+  "position_sha256": "20389a6da03b905477ee7e43dfe76f05e516f1b64ff56f1e3277c5d212e972d3",
+  "remote": {
+    "compute": "Modal CPU",
+    "wallclock_seconds": 5.972050469000001
+  },
+  "q": 256,
+  "lags": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+    64
+  ],
+  "radii": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+    64
+  ],
+  "n_positions": 96000,
+  "smoothing": 8.0,
+  "pairs": [
+    {
+      "lags": [
+        1,
+        2
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.9061755197834963,
+      "degree2_pair_brier": 0.916627535588769,
+      "degree1_gain": -0.0032294876654407334,
+      "degree2_incremental_gain": -0.010452015805272663,
+      "total_pair_gain": -0.013681503470713396,
+      "positive_hierarchical_gain": 0.0,
+      "effective_degree": null,
+      "interaction_fraction": null,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.0,
+        "pair_variance_fraction_of_observed": 0.0,
+        "degree1_variance": 0.0,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": null,
+        "concentration_leq_2": null,
+        "tail_above_degree_1": null,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.0,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.0,
+          0.0
+        ],
+        "total_square_energy": 0.09705396788194443,
+        "nonconstant_energy": 0.0,
+        "mean_spectral_degree": 0.0,
+        "mean_nonconstant_spectral_degree": null,
+        "cumulative_concentration": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.9029460321180556,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.90538012914175,
+          "degree2_pair_brier": 0.9158813057555799,
+          "backfit_iterations": 7
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.9069709104252426,
+          "degree2_pair_brier": 0.917373765421958,
+          "backfit_iterations": 7
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        1,
+        4
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.7796415977011941,
+      "degree2_pair_brier": 0.7897201239510239,
+      "degree1_gain": 0.12330443441686145,
+      "degree2_incremental_gain": -0.010078526249829745,
+      "total_pair_gain": 0.11322590816703171,
+      "positive_hierarchical_gain": 0.12330443441686145,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.12330443441686145,
+        "pair_variance_fraction_of_observed": 0.13655792265637867,
+        "degree1_variance": 0.12330443441686145,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.12330443441686145,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.0002417734008173754,
+          0.0
+        ],
+        "total_square_energy": 0.22035840229880588,
+        "nonconstant_energy": 0.12330443441686145,
+        "mean_spectral_degree": 0.5595631168611429,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.4404368831388571,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.7796415977011941,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.7780230071506524,
+          "degree2_pair_brier": 0.7881709456044337,
+          "backfit_iterations": 7
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.7812601882517357,
+          "degree2_pair_brier": 0.7912693022976139,
+          "backfit_iterations": 7
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        1,
+        8
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8270235897366869,
+      "degree2_pair_brier": 0.8369718068871908,
+      "degree1_gain": 0.0759224423813687,
+      "degree2_incremental_gain": -0.009948217150503869,
+      "total_pair_gain": 0.06597422523086482,
+      "positive_hierarchical_gain": 0.0759224423813687,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.0759224423813687,
+        "pair_variance_fraction_of_observed": 0.08408303451234639,
+        "degree1_variance": 0.0759224423813687,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.0759224423813687,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.0001488675340811151,
+          0.0
+        ],
+        "total_square_energy": 0.17297641026331312,
+        "nonconstant_energy": 0.0759224423813687,
+        "mean_spectral_degree": 0.4389178979133389,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.5610821020866611,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8270235897366869,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8261515795944571,
+          "degree2_pair_brier": 0.836115080145198,
+          "backfit_iterations": 7
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8278955998789167,
+          "degree2_pair_brier": 0.8378285336291834,
+          "backfit_iterations": 8
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        1,
+        16
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8604300278650685,
+      "degree2_pair_brier": 0.8706842885303173,
+      "degree1_gain": 0.04251600425298707,
+      "degree2_incremental_gain": -0.010254260665248816,
+      "total_pair_gain": 0.032261743587738256,
+      "positive_hierarchical_gain": 0.04251600425298707,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.04251600425298707,
+        "pair_variance_fraction_of_observed": 0.04708587528011676,
+        "degree1_variance": 0.04251600425298707,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.04251600425298707,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          8.336471422154327e-05,
+          0.0
+        ],
+        "total_square_energy": 0.1395699721349315,
+        "nonconstant_energy": 0.04251600425298707,
+        "mean_spectral_degree": 0.3046214282530919,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.6953785717469081,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8604300278650685,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8602019015878415,
+          "degree2_pair_brier": 0.8705645817428262,
+          "backfit_iterations": 8
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8606581541422956,
+          "degree2_pair_brier": 0.8708039953178084,
+          "backfit_iterations": 7
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        1,
+        32
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8878885286258891,
+      "degree2_pair_brier": 0.8983701011153855,
+      "degree1_gain": 0.015057503492166502,
+      "degree2_incremental_gain": -0.010481572489496438,
+      "total_pair_gain": 0.004575931002670064,
+      "positive_hierarchical_gain": 0.015057503492166502,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.015057503492166502,
+        "pair_variance_fraction_of_observed": 0.016675972822922613,
+        "degree1_variance": 0.015057503492166502,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.015057503492166502,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          2.9524516651306868e-05,
+          0.0
+        ],
+        "total_square_energy": 0.11211147137411093,
+        "nonconstant_energy": 0.015057503492166502,
+        "mean_spectral_degree": 0.13430832106306312,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.8656916789369369,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8878885286258891,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8875638348731036,
+          "degree2_pair_brier": 0.8978397125464156,
+          "backfit_iterations": 7
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8882132223786745,
+          "degree2_pair_brier": 0.8989004896843553,
+          "backfit_iterations": 7
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        1,
+        64
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.899080346123285,
+      "degree2_pair_brier": 0.9093827590164534,
+      "degree1_gain": 0.0038656859947705513,
+      "degree2_incremental_gain": -0.010302412893168356,
+      "total_pair_gain": -0.006436726898397804,
+      "positive_hierarchical_gain": 0.0038656859947705513,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.0038656859947705513,
+        "pair_variance_fraction_of_observed": 0.004281192737181365,
+        "degree1_variance": 0.0038656859947705513,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.0038656859947705513,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          7.579776460334414e-06,
+          0.0
+        ],
+        "total_square_energy": 0.10091965387671498,
+        "nonconstant_energy": 0.0038656859947705513,
+        "mean_spectral_degree": 0.03830459029806953,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.9616954097019305,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.899080346123285,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8981270214454474,
+          "degree2_pair_brier": 0.9084992539494113,
+          "backfit_iterations": 7
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.9000336708011226,
+          "degree2_pair_brier": 0.9102662640834955,
+          "backfit_iterations": 7
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        2,
+        4
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.7796586229812232,
+      "degree2_pair_brier": 0.7891297087816678,
+      "degree1_gain": 0.12328740913683234,
+      "degree2_incremental_gain": -0.009471085800444534,
+      "total_pair_gain": 0.1138163233363878,
+      "positive_hierarchical_gain": 0.12328740913683234,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.12328740913683234,
+        "pair_variance_fraction_of_observed": 0.13653906739878463,
+        "degree1_variance": 0.12328740913683234,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.12328740913683234,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.00024174001791535754,
+          0.0
+        ],
+        "total_square_energy": 0.22034137701877676,
+        "nonconstant_energy": 0.12328740913683234,
+        "mean_spectral_degree": 0.5595290852989732,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.4404709147010269,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.7796586229812232,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.7781179693148786,
+          "degree2_pair_brier": 0.787466697402876,
+          "backfit_iterations": 7
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.7811992766475678,
+          "degree2_pair_brier": 0.7907927201604595,
+          "backfit_iterations": 11
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        2,
+        8
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8269433350391986,
+      "degree2_pair_brier": 0.837153525546662,
+      "degree1_gain": 0.07600269707885698,
+      "degree2_incremental_gain": -0.010210190507463413,
+      "total_pair_gain": 0.06579250657139357,
+      "positive_hierarchical_gain": 0.07600269707885698,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.07600269707885698,
+        "pair_variance_fraction_of_observed": 0.0841719154583095,
+        "degree1_variance": 0.07600269707885698,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.07600269707885698,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.0001490248962330529,
+          0.0
+        ],
+        "total_square_energy": 0.1730566649608014,
+        "nonconstant_energy": 0.07600269707885698,
+        "mean_spectral_degree": 0.4391780986653831,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.560821901334617,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8269433350391986,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8261641995999115,
+          "degree2_pair_brier": 0.836318463550712,
+          "backfit_iterations": 8
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8277224704784856,
+          "degree2_pair_brier": 0.837988587542612,
+          "backfit_iterations": 10
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        2,
+        16
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8605028840650251,
+      "degree2_pair_brier": 0.8707199154762246,
+      "degree1_gain": 0.04244314805303051,
+      "degree2_incremental_gain": -0.010217031411199562,
+      "total_pair_gain": 0.03222611664183095,
+      "positive_hierarchical_gain": 0.04244314805303051,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.04244314805303051,
+        "pair_variance_fraction_of_observed": 0.04700518806585916,
+        "degree1_variance": 0.04244314805303051,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.04244314805303051,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          8.32218589275108e-05,
+          0.0
+        ],
+        "total_square_energy": 0.13949711593497494,
+        "nonconstant_energy": 0.04244314805303051,
+        "mean_spectral_degree": 0.3042582476960665,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.6957417523039335,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8605028840650251,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8603210474430484,
+          "degree2_pair_brier": 0.870344562405549,
+          "backfit_iterations": 7
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8606847206870019,
+          "degree2_pair_brier": 0.8710952685469001,
+          "backfit_iterations": 10
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        2,
+        32
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8880067484002294,
+      "degree2_pair_brier": 0.8985780856025645,
+      "degree1_gain": 0.014939283717826157,
+      "degree2_incremental_gain": -0.010571337202335052,
+      "total_pair_gain": 0.004367946515491106,
+      "positive_hierarchical_gain": 0.014939283717826157,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.014939283717826157,
+        "pair_variance_fraction_of_observed": 0.01654504608961272,
+        "degree1_variance": 0.014939283717826157,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.014939283717826157,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          2.929271317220815e-05,
+          0.0
+        ],
+        "total_square_energy": 0.11199325159977058,
+        "nonconstant_energy": 0.014939283717826157,
+        "mean_spectral_degree": 0.13339449926156766,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.8666055007384323,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8880067484002294,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8878115512047119,
+          "degree2_pair_brier": 0.8983965397311119,
+          "backfit_iterations": 7
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.888201945595747,
+          "degree2_pair_brier": 0.8987596314740172,
+          "backfit_iterations": 10
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        2,
+        64
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.899205817577776,
+      "degree2_pair_brier": 0.9097826696670636,
+      "degree1_gain": 0.0037402145402796183,
+      "degree2_incremental_gain": -0.010576852089287603,
+      "total_pair_gain": -0.0068366375490079845,
+      "positive_hierarchical_gain": 0.0037402145402796183,
+      "effective_degree": 1.0,
+      "interaction_fraction": 0.0,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.0037402145402796183,
+        "pair_variance_fraction_of_observed": 0.004142234870345611,
+        "degree1_variance": 0.0037402145402796183,
+        "degree2_incremental_variance": 0.0,
+        "concentration_leq_1": 1.0,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.0,
+        "monotone_projection_applied": true
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.0037402145402796183,
+          0.0
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          7.333754000548271e-06,
+          0.0
+        ],
+        "total_square_energy": 0.10079418242222404,
+        "nonconstant_energy": 0.0037402145402796183,
+        "mean_spectral_degree": 0.03710744460044294,
+        "mean_nonconstant_spectral_degree": 1.0,
+        "cumulative_concentration": [
+          0.9628925553995571,
+          1.0,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.899205817577776,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8983495512473844,
+          "degree2_pair_brier": 0.9091077009682467,
+          "backfit_iterations": 7
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.9000620839081676,
+          "degree2_pair_brier": 0.9104576383658805,
+          "backfit_iterations": 10
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        4,
+        8
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.7461242533623329,
+      "degree2_pair_brier": 0.6299786542078261,
+      "degree1_gain": 0.15682177875572267,
+      "degree2_incremental_gain": 0.11614559915450684,
+      "total_pair_gain": 0.2729673779102295,
+      "positive_hierarchical_gain": 0.2729673779102295,
+      "effective_degree": 1.4254925993123746,
+      "interaction_fraction": 0.42549259931237465,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.2729673779102295,
+        "pair_variance_fraction_of_observed": 0.3023075224882769,
+        "degree1_variance": 0.15682177875572267,
+        "degree2_incremental_variance": 0.11614559915450684,
+        "concentration_leq_1": 0.5745074006876253,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.4254925993123747,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.15682177875572267,
+          0.11614559915450684
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.0003074936838347503,
+          1.7861683837678867e-06
+        ],
+        "total_square_energy": 0.37002134579217394,
+        "nonconstant_energy": 0.2729673779102295,
+        "mean_spectral_degree": 1.051596026795939,
+        "mean_nonconstant_spectral_degree": 1.4254925993123746,
+        "cumulative_concentration": [
+          0.26229288927686817,
+          0.6861110839271929,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.6299786542078261,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.7449234966453568,
+          "degree2_pair_brier": 0.6283917683696622,
+          "backfit_iterations": 32
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.7473250100793091,
+          "degree2_pair_brier": 0.6315655400459899,
+          "backfit_iterations": 34
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        4,
+        16
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.7618823309597629,
+      "degree2_pair_brier": 0.6932432186674579,
+      "degree1_gain": 0.1410637011582927,
+      "degree2_incremental_gain": 0.06863911229230502,
+      "total_pair_gain": 0.2097028134505977,
+      "positive_hierarchical_gain": 0.2097028134505977,
+      "effective_degree": 1.327316124962125,
+      "interaction_fraction": 0.3273161249621249,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.2097028134505977,
+        "pair_variance_fraction_of_observed": 0.2322429093117496,
+        "degree1_variance": 0.1410637011582927,
+        "degree2_incremental_variance": 0.06863911229230502,
+        "concentration_leq_1": 0.6726838750378751,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.3273161249621249,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.1410637011582927,
+          0.06863911229230502
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.0002765954924672406,
+          1.0555803505160326e-06
+        ],
+        "total_square_energy": 0.30675678133254214,
+        "nonconstant_energy": 0.2097028134505977,
+        "mean_spectral_degree": 0.9073700817103174,
+        "mean_nonconstant_spectral_degree": 1.327316124962125,
+        "cumulative_concentration": [
+          0.3163873589374127,
+          0.7762425593522699,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.6932432186674579,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.7604331062855296,
+          "degree2_pair_brier": 0.6914254487722945,
+          "backfit_iterations": 23
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.7633315556339961,
+          "degree2_pair_brier": 0.6950609885626212,
+          "backfit_iterations": 31
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        4,
+        32
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.7696712932130849,
+      "degree2_pair_brier": 0.7345336438887609,
+      "degree1_gain": 0.13327473890497066,
+      "degree2_incremental_gain": 0.03513764932432406,
+      "total_pair_gain": 0.16841238822929472,
+      "positive_hierarchical_gain": 0.16841238822929472,
+      "effective_degree": 1.2086405263518019,
+      "interaction_fraction": 0.2086405263518019,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.16841238822929472,
+        "pair_variance_fraction_of_observed": 0.1865143455298729,
+        "degree1_variance": 0.13327473890497066,
+        "degree2_incremental_variance": 0.03513764932432406,
+        "concentration_leq_1": 0.791359473648198,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.20864052635180197,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.13327473890497066,
+          0.03513764932432406
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.00026132301746072676,
+          5.403713852260525e-07
+        ],
+        "total_square_energy": 0.26546635611123914,
+        "nonconstant_energy": 0.16841238822929472,
+        "mean_spectral_degree": 0.7667639716587085,
+        "mean_nonconstant_spectral_degree": 1.2086405263518019,
+        "cumulative_concentration": [
+          0.3655979963098436,
+          0.867638032031448,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.7345336438887609,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.7684185524105064,
+          "degree2_pair_brier": 0.733246663547931,
+          "backfit_iterations": 18
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.7709240340156633,
+          "degree2_pair_brier": 0.7358206242295908,
+          "backfit_iterations": 31
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        4,
+        64
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.7756573791225915,
+      "degree2_pair_brier": 0.7561808862545799,
+      "degree1_gain": 0.1272886529954641,
+      "degree2_incremental_gain": 0.019476492868011563,
+      "total_pair_gain": 0.14676514586347567,
+      "positive_hierarchical_gain": 0.14676514586347567,
+      "effective_degree": 1.1327051647952509,
+      "interaction_fraction": 0.13270516479525082,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.14676514586347567,
+        "pair_variance_fraction_of_observed": 0.16254032981263145,
+        "degree1_variance": 0.1272886529954641,
+        "degree2_incremental_variance": 0.019476492868011563,
+        "concentration_leq_1": 0.8672948352047491,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.13270516479525085,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.1272886529954641,
+          0.019476492868011563
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.00024958559410875316,
+          2.9952315060379184e-07
+        ],
+        "total_square_energy": 0.2438191137454201,
+        "nonconstant_energy": 0.14676514586347567,
+        "mean_spectral_degree": 0.6818236526979826,
+        "mean_nonconstant_spectral_degree": 1.1327051647952509,
+        "cumulative_concentration": [
+          0.3980572580674779,
+          0.9201190892345396,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.7561808862545799,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.77407756974859,
+          "degree2_pair_brier": 0.7544767496113988,
+          "backfit_iterations": 30
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.777237188496593,
+          "degree2_pair_brier": 0.757885022897761,
+          "backfit_iterations": 31
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        8,
+        16
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8052431086560702,
+      "degree2_pair_brier": 0.740326207586803,
+      "degree1_gain": 0.09770292346198539,
+      "degree2_incremental_gain": 0.06491690106926717,
+      "total_pair_gain": 0.16261982453125257,
+      "positive_hierarchical_gain": 0.16261982453125257,
+      "effective_degree": 1.39919426340785,
+      "interaction_fraction": 0.3991942634078499,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.16261982453125257,
+        "pair_variance_fraction_of_observed": 0.18009916290322747,
+        "degree1_variance": 0.09770292346198539,
+        "degree2_incremental_variance": 0.06491690106926717,
+        "concentration_leq_1": 0.6008057365921501,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.3991942634078499,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.09770292346198539,
+          0.06491690106926717
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.00019157435972938313,
+          9.983375789199104e-07
+        ],
+        "total_square_energy": 0.259673792413197,
+        "nonconstant_energy": 0.16261982453125257,
+        "mean_spectral_degree": 0.8762406228444485,
+        "mean_nonconstant_spectral_degree": 1.39919426340785,
+        "cumulative_concentration": [
+          0.37375341954998154,
+          0.75000595760557,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.740326207586803,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8045191918385969,
+          "degree2_pair_brier": 0.7398349018962005,
+          "backfit_iterations": 100
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8059670254735435,
+          "degree2_pair_brier": 0.7408175132774055,
+          "backfit_iterations": 31
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        8,
+        32
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8173279567848737,
+      "degree2_pair_brier": 0.7851955307237968,
+      "degree1_gain": 0.08561807533318189,
+      "degree2_incremental_gain": 0.03213242606107691,
+      "total_pair_gain": 0.1177505013942588,
+      "positive_hierarchical_gain": 0.1177505013942588,
+      "effective_degree": 1.2728856835478715,
+      "interaction_fraction": 0.2728856835478715,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.1177505013942588,
+        "pair_variance_fraction_of_observed": 0.1304070201383459,
+        "degree1_variance": 0.08561807533318189,
+        "degree2_incremental_variance": 0.03213242606107691,
+        "concentration_leq_1": 0.7271143164521284,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.27288568354787157,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.08561807533318189,
+          0.03213242606107691
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.00016787857908467037,
+          4.941549567255197e-07
+        ],
+        "total_square_energy": 0.21480446927620322,
+        "nonconstant_energy": 0.1177505013942588,
+        "mean_spectral_degree": 0.6977644737112565,
+        "mean_nonconstant_spectral_degree": 1.2728856835478715,
+        "cumulative_concentration": [
+          0.45182471393157553,
+          0.850410812357168,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.7851955307237968,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.816900450136475,
+          "degree2_pair_brier": 0.7848916018441148,
+          "backfit_iterations": 50
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8177554634332724,
+          "degree2_pair_brier": 0.7854994596034788,
+          "backfit_iterations": 70
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        8,
+        64
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8233594407001036,
+      "degree2_pair_brier": 0.8073091648691983,
+      "degree1_gain": 0.07958659141795199,
+      "degree2_incremental_gain": 0.016050275830905236,
+      "total_pair_gain": 0.09563686724885723,
+      "positive_hierarchical_gain": 0.09563686724885723,
+      "effective_degree": 1.1678251943274212,
+      "interaction_fraction": 0.16782519432742107,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.09563686724885723,
+        "pair_variance_fraction_of_observed": 0.10591648210084077,
+        "degree1_variance": 0.07958659141795199,
+        "degree2_incremental_variance": 0.016050275830905236,
+        "concentration_leq_1": 0.832174805672579,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.16782519432742105,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.07958659141795199,
+          0.016050275830905236
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.0001560521400352,
+          2.4683238494279485e-07
+        ],
+        "total_square_energy": 0.19269083513080165,
+        "nonconstant_energy": 0.09563686724885723,
+        "mean_spectral_degree": 0.5796183456465245,
+        "mean_nonconstant_spectral_degree": 1.1678251943274212,
+        "cumulative_concentration": [
+          0.5036771355319656,
+          0.9167045188215098,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8073091648691983,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8225122652326011,
+          "degree2_pair_brier": 0.8066528459629702,
+          "backfit_iterations": 20
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.824206616167606,
+          "degree2_pair_brier": 0.8079654837754265,
+          "backfit_iterations": 31
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        16,
+        32
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8491979227760258,
+      "degree2_pair_brier": 0.8205377202066186,
+      "degree1_gain": 0.05374810934202978,
+      "degree2_incremental_gain": 0.028660202569407156,
+      "total_pair_gain": 0.08240831191143694,
+      "positive_hierarchical_gain": 0.08240831191143694,
+      "effective_degree": 1.347782910541935,
+      "interaction_fraction": 0.3477829105419351,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.08240831191143694,
+        "pair_variance_fraction_of_observed": 0.09126604357309194,
+        "degree1_variance": 0.05374810934202978,
+        "degree2_incremental_variance": 0.028660202569407156,
+        "concentration_leq_1": 0.6522170894580649,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.3477829105419351,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.05374810934202978,
+          0.028660202569407156
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          0.00010538844969025448,
+          4.4075667157873365e-07
+        ],
+        "total_square_energy": 0.17946227979338136,
+        "nonconstant_energy": 0.08240831191143694,
+        "mean_spectral_degree": 0.6188961524879745,
+        "mean_nonconstant_spectral_degree": 1.347782910541935,
+        "cumulative_concentration": [
+          0.540804273709688,
+          0.8402995738023376,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8205377202066186,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8495153254823621,
+          "degree2_pair_brier": 0.8206843215492248,
+          "backfit_iterations": 50
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8488805200696894,
+          "degree2_pair_brier": 0.8203911188640125,
+          "backfit_iterations": 20
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        16,
+        64
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8556676151276338,
+      "degree2_pair_brier": 0.8389946327000826,
+      "degree1_gain": 0.04727841699042179,
+      "degree2_incremental_gain": 0.01667298242755122,
+      "total_pair_gain": 0.06395139941797301,
+      "positive_hierarchical_gain": 0.06395139941797301,
+      "effective_degree": 1.260713331987938,
+      "interaction_fraction": 0.26071333198793795,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.06395139941797301,
+        "pair_variance_fraction_of_observed": 0.07082527320925387,
+        "degree1_variance": 0.04727841699042179,
+        "degree2_incremental_variance": 0.01667298242755122,
+        "concentration_leq_1": 0.739286668012062,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.260713331987938,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.04727841699042179,
+          0.01667298242755122
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          9.270277841259174e-05,
+          2.5640880319186805e-07
+        ],
+        "total_square_energy": 0.16100536729991743,
+        "nonconstant_energy": 0.06395139941797301,
+        "mean_spectral_degree": 0.5007558642150035,
+        "mean_nonconstant_spectral_degree": 1.260713331987938,
+        "cumulative_concentration": [
+          0.6027995805950638,
+          0.8964445551899327,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8389946327000826,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8553930051043953,
+          "degree2_pair_brier": 0.8387020971187645,
+          "backfit_iterations": 20
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8559422251508723,
+          "degree2_pair_brier": 0.8392871682814005,
+          "backfit_iterations": 14
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    },
+    {
+      "lags": [
+        32,
+        64
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9029460321180556,
+      "degree1_additive_brier": 0.8832053595200733,
+      "degree2_pair_brier": 0.8671355937081318,
+      "degree1_gain": 0.01974067259798229,
+      "degree2_incremental_gain": 0.016069765811941528,
+      "total_pair_gain": 0.03581043840992382,
+      "positive_hierarchical_gain": 0.03581043840992382,
+      "effective_degree": 1.4487452967760446,
+      "interaction_fraction": 0.4487452967760445,
+      "variance_concentration": {
+        "observed_output_variance": 0.9029460321180556,
+        "pair_function_variance": 0.03581043840992382,
+        "pair_variance_fraction_of_observed": 0.03965955565021165,
+        "degree1_variance": 0.01974067259798229,
+        "degree2_incremental_variance": 0.016069765811941528,
+        "concentration_leq_1": 0.5512547032239554,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.4487452967760446,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.09705396788194443,
+          0.01974067259798229,
+          0.016069765811941528
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.09705396788194443,
+          3.8707201172514296e-05,
+          2.4713211552389894e-07
+        ],
+        "total_square_energy": 0.13286440629186824,
+        "nonconstant_energy": 0.03581043840992382,
+        "mean_spectral_degree": 0.39047481315573823,
+        "mean_nonconstant_spectral_degree": 1.4487452967760446,
+        "cumulative_concentration": [
+          0.7304738010023717,
+          0.87905138584189,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.8671355937081318,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9023166614583333,
+          "degree1_additive_brier": 0.8827904875367908,
+          "degree2_pair_brier": 0.8670696554844164,
+          "backfit_iterations": 30
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9035754027777778,
+          "degree1_additive_brier": 0.8836202315033557,
+          "degree2_pair_brier": 0.867201531931847,
+          "backfit_iterations": 17
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent"
+    }
+  ],
+  "surface": [
+    {
+      "radius": 1,
+      "energy_degree_leq_0": 0.09705396788194441,
+      "energy_degree_leq_1": 0.09705396788194441,
+      "energy_degree_leq_2": 0.09705396788194441,
+      "argmax_degree_leq_1": null,
+      "argmax_degree_leq_2": null
+    },
+    {
+      "radius": 2,
+      "energy_degree_leq_0": 0.09705396788194441,
+      "energy_degree_leq_1": 0.09705396788194443,
+      "energy_degree_leq_2": 0.09705396788194443,
+      "argmax_degree_leq_1": [
+        1,
+        2
+      ],
+      "argmax_degree_leq_2": [
+        1,
+        2
+      ]
+    },
+    {
+      "radius": 4,
+      "energy_degree_leq_0": 0.09705396788194441,
+      "energy_degree_leq_1": 0.22035840229880588,
+      "energy_degree_leq_2": 0.22035840229880588,
+      "argmax_degree_leq_1": [
+        1,
+        4
+      ],
+      "argmax_degree_leq_2": [
+        1,
+        4
+      ]
+    },
+    {
+      "radius": 8,
+      "energy_degree_leq_0": 0.09705396788194441,
+      "energy_degree_leq_1": 0.2538757466376671,
+      "energy_degree_leq_2": 0.37002134579217394,
+      "argmax_degree_leq_1": [
+        4,
+        8
+      ],
+      "argmax_degree_leq_2": [
+        4,
+        8
+      ]
+    },
+    {
+      "radius": 16,
+      "energy_degree_leq_0": 0.09705396788194441,
+      "energy_degree_leq_1": 0.2538757466376671,
+      "energy_degree_leq_2": 0.37002134579217394,
+      "argmax_degree_leq_1": [
+        4,
+        8
+      ],
+      "argmax_degree_leq_2": [
+        4,
+        8
+      ]
+    },
+    {
+      "radius": 32,
+      "energy_degree_leq_0": 0.09705396788194441,
+      "energy_degree_leq_1": 0.2538757466376671,
+      "energy_degree_leq_2": 0.37002134579217394,
+      "argmax_degree_leq_1": [
+        4,
+        8
+      ],
+      "argmax_degree_leq_2": [
+        4,
+        8
+      ]
+    },
+    {
+      "radius": 64,
+      "energy_degree_leq_0": 0.09705396788194441,
+      "energy_degree_leq_1": 0.2538757466376671,
+      "energy_degree_leq_2": 0.37002134579217394,
+      "argmax_degree_leq_1": [
+        4,
+        8
+      ],
+      "argmax_degree_leq_2": [
+        4,
+        8
+      ]
+    }
+  ],
+  "radial_degree_leq_2_increments": [
+    0.0,
+    1.3877787807814457e-17,
+    0.12330443441686145,
+    0.14966294349336806,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "radial_degree_leq_2_mass": [
+    0.0,
+    5.0840462747084856e-17,
+    0.45171857296959655,
+    0.5482814270304034,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "best_pair": [
+    4,
+    8
+  ],
+  "features": {
+    "constant_energy": 0.09705396788194441,
+    "resolved_nonconstant_energy": 0.2729673779102295,
+    "low_degree_concentration_best_pair": 0.6861110839271929,
+    "mean_nonconstant_degree_best_pair": 1.4254925993123746,
+    "max_degree2_incremental_energy": 0.11614559915450684,
+    "energy_weighted_log_radius": 2.7868690489306776,
+    "locality_radius_50": 8,
+    "locality_radius_90": 8,
+    "radial_spectral_entropy_bits": 0.9932633861490854,
+    "spectral_entropy_upper_bits_best_pair": 10.386681733561877
+  },
+  "surface_kind": "dyadic two-support lower envelope",
+  "scope": "exact within each resolved pair support; lower bound rather than the complete degree-two 64-position spectrum"
+}

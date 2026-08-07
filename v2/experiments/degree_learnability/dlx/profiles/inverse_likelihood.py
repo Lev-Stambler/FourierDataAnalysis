@@ -1,6 +1,8 @@
 """Inverse-likelihood categorical functional ANOVA (Ferrere et al., 2026).
 
-The basis generator is Definition 3.1 / equation (19) of arXiv:2603.02673.
+The basis generator is Definition 3.1 of arXiv:2603.02673.  Equation (19) in
+that paper is a concrete two-Bernoulli-variable example, not the general
+definition.
 For a coordinate subset A and non-reference category tuple z,
 
     phi_A^z(x) = prod_i (1{x_i=z_i} - 1{x_i=N_i-1}) / p_A(x_A).
@@ -40,24 +42,56 @@ def canonical_terms(cardinalities: tuple[int, ...], max_degree: int) -> list[Inv
     return terms
 
 
-def inverse_likelihood_column(X: np.ndarray, term: InverseLikelihoodTerm) -> np.ndarray:
-    """Evaluate one Formula-(19) column under X's empirical distribution."""
+def inverse_likelihood_column(
+    X: np.ndarray,
+    term: InverseLikelihoodTerm,
+    cardinalities: tuple[int, ...] | None = None,
+    sample_weights: np.ndarray | None = None,
+) -> np.ndarray:
+    """Evaluate one Definition-3.1 column under an empirical distribution.
+
+    ``sample_weights`` permits evaluation on a deduplicated support while
+    retaining the original empirical probabilities.  If ``cardinalities`` is
+    omitted, each reference category is inferred as the largest observed value.
+    """
     X = np.asarray(X, dtype=np.int64)
+    if X.ndim != 2:
+        raise ValueError("X must be a two-dimensional categorical array")
+    if sample_weights is None:
+        weights = np.full(len(X), 1.0 / len(X), dtype=np.float64)
+    else:
+        weights = np.asarray(sample_weights, dtype=np.float64)
+        if weights.shape != (len(X),):
+            raise ValueError("sample_weights must have one entry per row")
+        if not np.all(np.isfinite(weights)) or np.any(weights < 0):
+            raise ValueError("sample_weights must be finite and nonnegative")
+        total_weight = float(weights.sum())
+        if total_weight <= 0:
+            raise ValueError("sample_weights must have positive total mass")
+        weights = weights / total_weight
     if not term.support:
         return np.ones(len(X), dtype=np.float64)
 
     support = np.asarray(term.support, dtype=np.int64)
     XA = X[:, support]
-    refs = X[:, support].max(axis=0)
-    # Formula (19) assumes the encoded alphabet is 0..N_i-1.  Require the
-    # reference category to occur so the empirical inverse likelihood is valid.
+    if cardinalities is None:
+        refs = X[:, support].max(axis=0)
+    else:
+        if len(cardinalities) != X.shape[1]:
+            raise ValueError("cardinalities must have one entry per column")
+        refs = np.asarray(cardinalities, dtype=np.int64)[support] - 1
+    if len(term.categories) != len(term.support):
+        raise ValueError("term categories must align with its support")
     numerator = np.ones(len(X), dtype=np.float64)
     for j, z in enumerate(term.categories):
+        if z < 0 or z >= refs[j]:
+            raise ValueError("term category must precede the reference category")
         numerator *= ((XA[:, j] == z).astype(np.float64)
                       - (XA[:, j] == refs[j]).astype(np.float64))
 
-    _, inverse, counts = np.unique(XA, axis=0, return_inverse=True, return_counts=True)
-    probability = counts[inverse].astype(np.float64) / len(X)
+    _, inverse = np.unique(XA, axis=0, return_inverse=True)
+    marginal_probability = np.bincount(inverse, weights=weights)
+    probability = marginal_probability[inverse]
     return numerator / probability
 
 
@@ -69,7 +103,7 @@ def fit_exact_inverse_likelihood(
     max_rank: int | None = None,
     rank_tolerance: float = 1e-10,
 ) -> dict:
-    """Rank-select Formula-(19) columns and solve Gamma c = mu.
+    """Rank-select Definition-3.1 columns and solve Gamma c = mu.
 
     This mirrors Algorithm 1 on the empirical support. ``targets`` may be scalar
     or vector valued.  It is used by audits/tests, not by the q=256 text path.
@@ -95,7 +129,12 @@ def fit_exact_inverse_likelihood(
     # numerically better aligned with the L2(p) linear system.
     Q: list[np.ndarray] = []
     for term in canonical_terms(cardinalities, max_degree):
-        col = inverse_likelihood_column(support_X, term)
+        col = inverse_likelihood_column(
+            support_X,
+            term,
+            cardinalities=cardinalities,
+            sample_weights=weights,
+        )
         weighted = np.sqrt(weights) * col
         residual = weighted.copy()
         for q in Q:
@@ -125,4 +164,3 @@ def fit_exact_inverse_likelihood(
         "support_target": support_target,
         "first_indices": first,
     }
-

@@ -46,7 +46,9 @@ def _validate(model, family, rng, device, ctx_len, n_batches=8, batch=32) -> flo
 def train_run(family: Family, cfg: TransformerConfig, budget_tokens: int, seed: int,
               out_dir: Path, cell_id: str, protocol_hash: str, device: str = "cpu",
               theta: float = THETA_DEFAULT, n_checkpoints: int = 20,
-              tokens_per_step: int = 1024, record_initial: bool = False) -> dict:
+              tokens_per_step: int = 1024, record_initial: bool = False,
+              data_seed_protocol_hash: str | None = None,
+              data_seed_key: str | None = None) -> dict:
     """Train one cell; returns the metrics dict (also written to out_dir)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -55,9 +57,18 @@ def train_run(family: Family, cfg: TransformerConfig, budget_tokens: int, seed: 
 
     dev = torch.device(device)
     model = CausalTransformer(cfg).to(dev)
-    stream = FamilyStream(family, np.random.default_rng(seed_from(protocol_hash,
-                        family.version, cell_id, "stream")), cfg.ctx_len)
-    val_rng = np.random.default_rng(seed_from(protocol_hash, family.version, cell_id, "val"))
+    seed_protocol = data_seed_protocol_hash or protocol_hash
+    seed_cell = data_seed_key or cell_id
+    stream = FamilyStream(
+        family,
+        np.random.default_rng(
+            seed_from(seed_protocol, family.version, seed_cell, "stream")
+        ),
+        cfg.ctx_len,
+    )
+    val_rng = np.random.default_rng(
+        seed_from(seed_protocol, family.version, seed_cell, "val")
+    )
 
     batch = max(1, tokens_per_step // cfg.ctx_len)
     total_steps = max(1, budget_tokens // (batch * cfg.ctx_len))
@@ -76,8 +87,9 @@ def train_run(family: Family, cfg: TransformerConfig, budget_tokens: int, seed: 
     if record_initial:
         # Use a separate validation stream so recording t=0 does not perturb the
         # checkpoint validation RNG or the optimization trajectory.
-        init_rng = np.random.default_rng(seed_from(protocol_hash, family.version,
-                                                    cell_id, "val-init"))
+        init_rng = np.random.default_rng(
+            seed_from(seed_protocol, family.version, seed_cell, "val-init")
+        )
         initial_val_ce = _validate(model, family, init_rng, dev, cfg.ctx_len)
         token_grid.append(0)
         val_curve.append(initial_val_ce)
@@ -121,6 +133,9 @@ def train_run(family: Family, cfg: TransformerConfig, budget_tokens: int, seed: 
         "n_params": model.n_params(),
         "device": device,
     }
+    if data_seed_protocol_hash is not None or data_seed_key is not None:
+        metrics["data_seed_protocol_hash"] = seed_protocol
+        metrics["data_seed_key"] = seed_cell
     metrics_path = out_dir / "metrics.json"
     metrics_path.write_text(json.dumps(metrics, indent=2))
 

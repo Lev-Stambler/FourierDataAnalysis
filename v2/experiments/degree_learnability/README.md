@@ -4,6 +4,39 @@ Implements `v2/PLAN.md` (milestones M0–M10): categorical degree profiles as a
 learnability proxy for fixed Transformers, on synthetic families and real dataset
 ladders.
 
+## Current conclusion
+
+The reproducible headline is **dataset spectrum is informative, but hardness is
+learner-conditional and the present Fourier summaries are not uniquely
+predictive**. The v2.0-v2.2 byte-preserving interventions produced strong locality
+rank correlations (`rho=0.850/0.857/0.867`), but v2.3 showed that positional
+geometry moderates the effect: learned absolute, ALiBi, and the larger learned
+model passed, while sinusoidal did not. In the locked v2.4 test on 12 new corpora,
+compact Fourier features predicted held-out endpoint difficulty (`R^2=0.260`) but
+simple entropy/bigram/compression controls predicted it better (`R^2=0.572`), and
+adding Fourier features worsened RMSE by 8.8% (95% corpus-bootstrap interval
+`[-20.5%, +1.36%]`). The intervention direction remained useful (88.9% sign
+accuracy), but its magnitude prediction had negative `R^2`.
+
+The exact controlled factorial clarifies the mechanism: at equal nonconstant
+Fourier energy, degree 2 was harder than degree 1 by `0.130` normalized endpoint
+CE, while radius had a strong effect for ALiBi but not a universal effect across
+the three positional encodings. Thus the supported object is a spectrum of
+degree, energy, and locality interpreted jointly with learner geometry—not a
+model-independent scalar dataset-hardness law and not the specific `G_total`
+formula.
+
+The exact basis and statistic are defined in [`LOCALITY_MATH.md`](LOCALITY_MATH.md).
+The critical prior-art and novelty assessment is in
+[`NOVELTY_ASSESSMENT.md`](NOVELTY_ASSESSMENT.md). In short: the broad theory is
+not new; the potentially new contribution is the controlled, data-conditioned
+empirical construction and result.
+
+Attribution correction: the general inverse-likelihood categorical basis is
+Definition 3.1 of Ferrere et al. Formula (19) is only their concrete
+two-Bernoulli-variable example. Frozen protocol JSON and historical result
+artifacts keep their original wording to preserve hashes and provenance.
+
 ## Layout (PLAN §12.1)
 
 - `dlx/domains.py` — categorical Fourier utilities on Z_q^n (characters, FFT
@@ -86,7 +119,7 @@ ladders.
   sequence structure. Contiguous cyclic reads now preserve adjacency; all 12 q=256
   language cells were retrained locally. Text profiles use the inverse-likelihood
   categorical functional-ANOVA basis of Ferrere et al. (arXiv:2603.02673, Definition
-  3.1/equation 19). The entropy/vocabulary-matched controlled contrast **PASSES**:
+  3.1). The entropy/vocabulary-matched controlled contrast **PASSES**:
   the degree-2 Markov rule has 0.175 higher curve area than degree-1 copy, while copy
   learns 3.412 more bits despite its longer span. This confirms a narrow causal text
   effect; with only two natural corpora, a broad natural-dataset proxy is not
@@ -101,7 +134,7 @@ ladders.
 - Conditional-spectrum protocol v1.6 (2026-08-06): replaces ratios with absolute
   Fourier level weights of `f(x)=P(next token|x)`. For each two-position slice,
   `W0=1-L0`, `W1=L0-L1`, and `W2=L1-L2`; these equal the squared coefficient
-  sums in the Gram-orthonormalized Formula-(19) degree filtration. The controls
+  sums in a Gram-orthonormalized Definition-3.1 degree filtration. The controls
   recover exact nonconstant spectral degrees 1 and 2. Across four rungs, spectral
   degree versus curve area has Spearman `0.40`: the controlled and natural-pair
   directions agree, but the overall association is weak and the natural estimates
@@ -162,7 +195,7 @@ ladders.
   hash-pinned corpora never used in v2.0 (Gutenberg, Reuters, Brown, PubMed,
   CPython, and Linux C), eight preregistered strides `1/2/3/4/6/8/12/16`, and
   three seeds. The causal geometry effect replicates: mean within-corpus
-  `G_total` versus final held-out `CE/initial_CE` is `rho=0.857`, exact blocked
+  locality rank versus final held-out `CE/initial_CE` is `rho=0.857`, exact blocked
   `p=1.10e-11`; five of six endpoint directions and all three seed-specific means
   are positive. Curve area gives `rho=0.885`, while ordinary degree gives only
   `rho=0.012/0.127`. However, the frozen out-of-corpus predictor-selection rule
@@ -173,6 +206,39 @@ ladders.
   **GEOMETRY_SUPPORTED_METRIC_UNRESOLVED**. All 144 training cells ran on Modal
   A10 GPUs and all 48 profiles on Modal CPU; zero local training/profiling. Audit
   PASS; 67 tests PASS; see `runs/local/v21_predictor_selection/`.
+- Hard-domain single-H100 protocol v2.2 (2026-08-07): prospectively tests 8M
+  pinned bytes each of mathlib Lean, Rust source, and RFC technical prose using a
+  larger d256 four-layer learner, 8M training tokens, strides `1/4/8/16`, and
+  three seeds. All 36 training cells ran sequentially under a one-H100 container
+  cap; 12 profiles ran remotely on CPU. The frozen endpoint verdict is
+  **SUPPORTED**: mean within-domain locality rho is `0.867` (per-domain
+  `1.0/0.8/0.8`), exact blocked `p=0.00579`, all three stride-16 endpoints are
+  harder, and seed-specific means are `0.733/0.867/0.867`. It is not uniformly
+  cleaner than v2.1: curve-area rho is `1.0/1.0/0.0` (mean `0.667`) because RFC
+  stride 8 improves faster early than stride 4. The H100 strengthens endpoint
+  separation but does not remove domain-specific learning dynamics. Audit PASS;
+  67 tests PASS; see `runs/local/v22_hard_h100/`.
+- Positional-geometry robustness protocol v2.3 (2026-08-07): crosses the six
+  v2.1 corpora and four strides with learned absolute, sinusoidal, and ALiBi
+  d64/l2 Transformers plus a learned d128/l4 model. Three of four configurations
+  satisfy the frozen endpoint gate: learned d64/l2 `rho=0.800` (`p=0.000232`),
+  ALiBi `rho=0.933` (`p=1.67e-6`), and learned d128/l4 `rho=0.733`
+  (`p=0.00109`). Sinusoidal gives only `rho=0.433` (`p=0.0765`). Overall verdict:
+  **MIXED**. The data intervention matters, but its effect is conditional on
+  positional geometry. Audit PASS; see `runs/local/v23_transformer_robustness/`.
+- Spectrum-predictor protocol v2.4 (2026-08-07): estimates a resolved dyadic
+  degree/locality lower-bound surface, fits grouped low-data predictors on 13
+  development corpora, then locks predictions for 12 hash-pinned unseen corpora
+  before 270 natural-text H100 cells. Development gains did not confirm:
+  Fourier-only endpoint `R^2=0.260` versus `0.572` for four ordinary controls;
+  combined RMSE is 8.8% worse, so the verdict is
+  **PREDICTIVE_NOT_UNIQUELY_FOURIER**. A 108-cell exact q-ary factorial finds a
+  strong degree effect but architecture-specific locality, and an exploratory
+  corrected 18-cell image panel finds DCT high-frequency tail associated with
+  curve-area difficulty (`rho=0.943`, nominal `p=0.0048`, only six datasets).
+  All 396 training cells ran sequentially with at most one H100; zero local
+  training. Audit PASS; see `runs/local/v24_spectrum_predictor/`.
+
 ## Quick start
 
 ```bash

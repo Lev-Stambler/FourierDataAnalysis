@@ -1,15 +1,40 @@
 # Revised H5 matched-design status
 
+## v2.2 hard-domain single-H100 stress test
+
+- State: complete; frozen verdict **SUPPORTED**; audit **PASS**. Thirty-six
+  d256 four-layer students ran sequentially with a one-H100 cap, all 12 profiles
+  ran on remote CPU, no local training or profiling occurred, and 67 tests PASS.
+- Data: three untouched, hash-pinned 8M-byte corpora—mathlib Lean formal
+  mathematics, Rust source, and RFC 9000–9113 technical prose. The protocol was
+  frozen before any profile or curve.
+- Endpoint result: mean within-domain Spearman rho is `0.867`, with domain values
+  `1.0/0.8/0.8`; exact blocked `p=0.00579`. Stride 16 minus stride 1 final-CE
+  fraction is `+0.205/+0.110/+0.124`. All three seed-specific blocked means are
+  positive (`0.733/0.867/0.867`).
+- Statistic naming: this is locality rank rho. The frozen implementation used
+  `G_total`, but `G_total` and `log2(radius)` have identical ranks in every domain,
+  so the rank result does not select the `G_total` functional form.
+- Dynamics: curve-area rho is `1.0` for mathlib, `1.0` for Rust, and `0.0` for
+  RFCs, for a mean of `0.667`. Thus the frozen comparison-only “cleaner than
+  v2.1” diagnostic fails despite the slightly higher endpoint rho (`0.867` versus
+  `0.857`).
+- Interpretation: harder data and the larger H100 learner preserve and slightly
+  sharpen final-budget locality separation, but do not make acquisition dynamics
+  universally monotone. This reinforces the decision to report endpoint CE and
+  curve area separately.
+- Artifacts: `runs/local/v22_hard_h100/{integrated_analysis.json,audit.json,data_manifest.json}`.
+
 ## v2.1 unseen-corpus predictor selection
 
 - State: complete; frozen verdict **GEOMETRY_SUPPORTED_METRIC_UNRESOLVED**;
-  audit **PASS**. All 144 students ran on remote A10 GPUs and all 48 Formula-(19)
+  audit **PASS**. All 144 students ran on remote A10 GPUs and all 48 Definition-3.1
   profiles on remote CPUs; zero local training or profiling; 67 tests PASS.
 - Data: six previously unused, equal-length, hash-pinned byte corpora spanning
   books, news, balanced English, biomedical abstracts, Python, and C. Each uses
   the exact-byte-multiset stride intervention at `1/2/3/4/6/8/12/16`, with the
   lag pair `(s,2s)` preregistered rather than selected from the data.
-- Geometry replication: mean within-corpus `G_total` versus final held-out
+- Geometry replication: mean within-corpus locality rank versus final held-out
   `CE/initial_CE` is `rho=0.857`; exact convolution of the six `8!` permutation
   distributions gives `p=1.10e-11`. The seed-specific means are
   `0.905/0.881/0.802`, and five of six stride-16 endpoints are harder than stride
@@ -83,7 +108,7 @@
 ## v1.8 prospective natural-data run
 
 - State: complete; audit **PASS**. Six fresh 5M-token students and two fresh
-  Formula-(19) profiles were run locally with two CPU threads. The protocol was
+  Definition-3.1 profiles were run locally with two CPU threads. The protocol was
   hash-frozen before inspecting either new profile or corrected learning curve.
 - Data: four q=256 natural byte corpora with identical learner and budget:
   enwik8, TinyStories, WikiText-2, and CodeParrot Python. Only the first two valid
@@ -166,7 +191,8 @@
 - v1.3 language evidence is invalidated because cyclic corpus reuse permuted
   individual tokens before training windows were formed.
 - v1.4 preserves contiguous order and uses the inverse-likelihood categorical
-  functional-ANOVA basis from arXiv:2603.02673 Formula (19).
+  functional-ANOVA basis from arXiv:2603.02673 Definition 3.1. Formula (19) is
+  only the paper's concrete binary example.
 - Controlled text verdict: **PASS**. Markov-2 minus copy curve area is `0.175`;
   copy minus Markov-2 learning is `3.412` bits. The degree-2 local rule is harder
   even though the degree-1 copy rule has the longer span (`16`).

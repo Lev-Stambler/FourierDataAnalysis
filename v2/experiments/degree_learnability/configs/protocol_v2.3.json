@@ -1,0 +1,137 @@
+{
+  "version": "2.3",
+  "name": "transformer positional-geometry and size robustness",
+  "date_frozen": "2026-08-07",
+  "source_protocol_hash": "a38751bdc22ad8aca0534e24bbad1681e3fb6d782ceb2561a663dd54559d7db4",
+  "hypothesis": "The positive locality-rank association survives materially different standard Transformer positional geometries and a larger learned-absolute configuration.",
+  "datasets": [
+    {
+      "id": "gutenberg_books",
+      "domain": "public-domain books",
+      "path": "dlx/data_cache/v21_gutenberg_books_bytes_n5499984.npy",
+      "file_sha256": "a522af7209bc0f1ce0b4c32696c91c050ee74c637929062e42f22cbbcca5b80e",
+      "byte_stream_sha256": "6d29c7ccacb0b1fd4f4627430396bcb5019dcd05beb0efec129ef103572e84bc"
+    },
+    {
+      "id": "reuters_news",
+      "domain": "newswire",
+      "path": "dlx/data_cache/v21_reuters_news_bytes_n5499984.npy",
+      "file_sha256": "d30945bc658d3465acaca1de5d8b20be6b0edd4267f98fa7efd4970802d8965d",
+      "byte_stream_sha256": "372ae51feb23bac46f8e2a28a59acf2444abd77f553f708976394011a79d711b"
+    },
+    {
+      "id": "brown_balanced",
+      "domain": "balanced English genres",
+      "path": "dlx/data_cache/v21_brown_balanced_bytes_n5499984.npy",
+      "file_sha256": "a83cce6b57946edef88a08c108bd0999d390498b84bb903190f90f58c4f78450",
+      "byte_stream_sha256": "912ad55a415d2664a8606a5d1632ea80a3a5701573ba6ba3af261567c2afd10b"
+    },
+    {
+      "id": "pubmed_abstracts",
+      "domain": "biomedical abstracts",
+      "path": "dlx/data_cache/v21_pubmed_abstracts_bytes_n5499984.npy",
+      "file_sha256": "98ab511a6dc03eba1d10edc9186a93ee55e8e390a005f39a121eb1b8db6fc031",
+      "byte_stream_sha256": "ffdf07ce5360bbe26242454e8186987b6f723bea78fc03c52c1fc4ce153a38df"
+    },
+    {
+      "id": "cpython_source",
+      "domain": "Python source code",
+      "path": "dlx/data_cache/v21_cpython_source_bytes_n5499984.npy",
+      "file_sha256": "dee4188808ee0f70f9942a5013b107149d6c3ae11a0edb0a3518d04fa3b35f68",
+      "byte_stream_sha256": "28ab23656d4bcd8154d1c3d6eac4a412b921c8a9cc5a73c34a5bbf22f7e563a0"
+    },
+    {
+      "id": "linux_c_source",
+      "domain": "C source code",
+      "path": "dlx/data_cache/v21_linux_c_source_bytes_n5499984.npy",
+      "file_sha256": "4cb1a1b7c82794d7119c001a77a8e0e3adcb86975eeb195c0caaf7b81d30a406",
+      "byte_stream_sha256": "ab3f70a3c15a50157d0b2e0f610d515238736e6893f8c3582439a578841643fc"
+    }
+  ],
+  "intervention": {
+    "strides": [1, 4, 8, 16],
+    "radii": [2, 8, 16, 32],
+    "transform": "reuse the audited v2.1 split-into-s-contiguous-lanes and transpose round-robin transform",
+    "preregistered_pair": "(s,2s)",
+    "invariants": [
+      "exact byte multiset",
+      "same transformed streams across configurations",
+      "q=256",
+      "context length 64",
+      "3M training tokens",
+      "optimizer, schedule, tokens per update, and seeds"
+    ]
+  },
+  "shared_training": {
+    "vocab": 256,
+    "ctx_len": 64,
+    "mlp_mult": 4,
+    "dropout": 0.0,
+    "tie_weights": true,
+    "lr": 0.001,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "tokens_per_step": 1024,
+    "budget_tokens": 3000000,
+    "checkpoints": 16
+  },
+  "configurations": [
+    {
+      "id": "learned_absolute_d64_l2",
+      "position_encoding": "learned_absolute",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 4,
+      "source": "reuse exact v2.1 training cells at selected strides"
+    },
+    {
+      "id": "sinusoidal_d64_l2",
+      "position_encoding": "sinusoidal",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 4,
+      "source": "new v2.3 H100 cells"
+    },
+    {
+      "id": "alibi_d64_l2",
+      "position_encoding": "alibi",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 4,
+      "source": "new v2.3 H100 cells"
+    },
+    {
+      "id": "learned_absolute_d128_l4",
+      "position_encoding": "learned_absolute",
+      "d_model": 128,
+      "n_layers": 4,
+      "n_heads": 4,
+      "source": "new v2.3 H100 cells"
+    }
+  ],
+  "replication": {
+    "seeds": [0, 1, 2],
+    "datasets": 6,
+    "strides_per_dataset": 4,
+    "configurations": 4,
+    "reused_training_cells": 72,
+    "new_training_cells": 216,
+    "new_profile_cells": 0,
+    "maximum_concurrent_h100s": 1
+  },
+  "primary_outcome": "median final held-out CE divided by initial held-out CE",
+  "secondary_outcome": "normalized held-out CE curve area",
+  "locality_score": "log2(maximum causal lag)=log2(2s)",
+  "data_sampling": "all configurations reuse the exact v2.1 stream/validation seed namespace V21/{dataset}/stride{stride}/s{seed}, so each matched cell sees identical train and held-out windows",
+  "test": {
+    "per_configuration_statistic": "mean of six within-corpus Spearman correlations between log2 radius and primary outcome",
+    "null": "independently permute the four difficulty labels within each corpus",
+    "p_value": "two-sided exact blocked permutation probability",
+    "configuration_support": "mean rho>=0.60, exact p<0.05, stride-16 is harder than stride-1 in at least 4 of 6 corpora, and every seed-specific mean rho is positive",
+    "overall_supported": "all four configurations satisfy configuration_support",
+    "overall_mixed": "at least two configurations satisfy configuration_support and every configuration has positive mean rho",
+    "overall_refuted": "otherwise"
+  },
+  "scope": "Transformer-specific robustness of a data-derived locality descriptor; not an architecture-independent hardness law",
+  "protocol_hash": "3b5b51c57185a69909bafd5b543026f38b39f48859d41d5d4536ddb6bcc8fef8"
+}

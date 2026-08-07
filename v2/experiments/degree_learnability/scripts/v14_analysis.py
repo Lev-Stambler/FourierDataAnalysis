@@ -91,7 +91,7 @@ def write_addendum(result: dict) -> None:
         "reuse permuted individual token indices before windows were constructed. Protocol v1.4",
         "preserves contiguous token order and retrains every q=256 language cell from scratch.", "",
         "The text profile now uses the inverse-likelihood categorical functional-ANOVA basis",
-        "from Ferrere et al. (arXiv:2603.02673, Definition 3.1 / equation 19). Each",
+        "from Ferrere et al. (arXiv:2603.02673, Definition 3.1). Each",
         "context position is one categorical variable; cross-fitted nested projections measure",
         "degree-1 additive and degree-2 interaction gain over the frozen lag pairs.", "",
         (f"In the entropy/vocabulary-matched synthetic contrast, Markov-2 minus copy curve area "
@@ -115,4 +115,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

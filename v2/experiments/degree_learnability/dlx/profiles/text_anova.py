@@ -1,10 +1,11 @@
 """Cross-fitted inverse-likelihood functional-ANOVA profiles for token streams.
 
-For a pair of context positions, Formula (19)'s degree <= 1 columns span the
-constant-plus-additive categorical functions.  Adding its degree-2 columns spans
-all functions on the observed pair support.  We compute the two nested weighted
-projections directly, avoiding a q^2-column design matrix while retaining the
-same subspaces and interaction order.
+For a pair of context positions, Ferrere et al.'s Definition-3.1 columns through
+degree 1 span the constant-plus-additive categorical functions.  Adding the
+degree-2 columns spans all functions on the observed pair support after
+low-degree-first rank selection.  We compute the two nested weighted projections
+directly, avoiding a q^2-column design matrix while retaining the same subspaces
+and interaction order.  Equation (19) in that paper is only a toy example.
 """
 
 from __future__ import annotations
@@ -105,7 +106,7 @@ def conditional_fourier_spectrum(
         ],
         "irreducible_or_unresolved_brier": risk2,
         "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
-        "basis": "Gram-orthonormalized Formula-(19) categorical degree filtration",
+        "basis": "Gram-orthonormalized Definition-3.1 categorical degree filtration",
     }
 
 
@@ -363,7 +364,7 @@ def inverse_likelihood_pair_profile(
         "folds": records,
         "smoothing": smoothing,
         "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
-        "solver": "cross-fitted nested L2 projection; Formula-(19) column-span equivalent",
+        "solver": "cross-fitted nested L2 projection; Definition-3.1 column-span equivalent",
     }
 
 

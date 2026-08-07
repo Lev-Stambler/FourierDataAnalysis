@@ -1,0 +1,120 @@
+{
+  "q": 256,
+  "lags": [
+    16,
+    32
+  ],
+  "max_tokens": 96000,
+  "pairs": [
+    {
+      "lags": [
+        16,
+        32
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.9166531940104167,
+      "degree1_additive_brier": 0.7901412804813768,
+      "degree2_pair_brier": 0.6753602777157954,
+      "degree1_gain": 0.1265119135290399,
+      "degree2_incremental_gain": 0.11478100276558134,
+      "total_pair_gain": 0.24129291629462124,
+      "positive_hierarchical_gain": 0.24129291629462124,
+      "effective_degree": 1.4756915558409203,
+      "interaction_fraction": 0.4756915558409204,
+      "variance_concentration": {
+        "observed_output_variance": 0.9166531940104167,
+        "pair_function_variance": 0.24129291629462124,
+        "pair_variance_fraction_of_observed": 0.26323250480255156,
+        "degree1_variance": 0.1265119135290399,
+        "degree2_incremental_variance": 0.11478100276558134,
+        "concentration_leq_1": 0.5243084441590796,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.4756915558409204,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.08334680598958333,
+          0.1265119135290399,
+          0.11478100276558134
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.08334680598958333,
+          0.00024806257554713703,
+          1.7651826645994823e-06
+        ],
+        "total_square_energy": 0.32463972228420457,
+        "nonconstant_energy": 0.24129291629462124,
+        "mean_spectral_degree": 1.0968279437735566,
+        "mean_nonconstant_spectral_degree": 1.4756915558409203,
+        "cumulative_concentration": [
+          0.2567363149621527,
+          0.6464357412642906,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.6753602777157954,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Formula-(19) categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.9159722491319444,
+          "degree1_additive_brier": 0.790058562042524,
+          "degree2_pair_brier": 0.6749723837013311,
+          "backfit_iterations": 47
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.9173341388888889,
+          "degree1_additive_brier": 0.7902239989202297,
+          "degree2_pair_brier": 0.6757481717302598,
+          "backfit_iterations": 44
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Formula-(19) column-span equivalent"
+    }
+  ],
+  "best_pair_by_function_variance": [
+    16,
+    32
+  ],
+  "best_pair_by_total_gain": [
+    16,
+    32
+  ],
+  "best_pair_total_gain": 0.24129291629462124,
+  "best_pair_positive_hierarchical_gain": 0.24129291629462124,
+  "effective_degree_best_pair": 1.4756915558409203,
+  "concentration_leq_1_best_pair": 0.5243084441590796,
+  "tail_above_degree_1_best_pair": 0.4756915558409204,
+  "pair_function_variance_best_pair": 0.24129291629462124,
+  "primary_degree_metric": "cumulative variance concentration",
+  "max_positive_degree2_gain": 0.11478100276558134,
+  "max_interaction_fraction": 0.4756915558409204,
+  "paper": "https://arxiv.org/abs/2603.02673",
+  "memory_strategy": "pair priors evaluated in active-pair chunks; no q-by-q-by-q array",
+  "cell_id": "V22P/rfc_technical/stride16",
+  "protocol_hash": "25e09ad9ed37bb447e6267fd1c11e75ecbd55757405ad3680b4f7a3be6337328",
+  "dataset": "rfc_technical",
+  "stride": 16,
+  "expected_pair": [
+    16,
+    32
+  ],
+  "data_sha256": "70399e679a36476bfc8c2de90063b0c37f92c05c3d297a1e01dd929ebe16e3b5",
+  "byte_counts_preserved": true,
+  "position_sha256": "43b734c9ecae743dcc5034c39c623f8f12cfa5f6576b5f5b55b05889b5f9d09a",
+  "remote": {
+    "compute": "Modal CPU",
+    "wallclock_seconds": 0.31970832999999965
+  }
+}

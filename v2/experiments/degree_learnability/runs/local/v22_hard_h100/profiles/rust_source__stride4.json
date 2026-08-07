@@ -1,0 +1,120 @@
+{
+  "q": 256,
+  "lags": [
+    4,
+    8
+  ],
+  "max_tokens": 96000,
+  "pairs": [
+    {
+      "lags": [
+        4,
+        8
+      ],
+      "n_positions": 96000,
+      "q": 256,
+      "baseline_brier": 0.8969445815972222,
+      "degree1_additive_brier": 0.7130682397996456,
+      "degree2_pair_brier": 0.613932232128785,
+      "degree1_gain": 0.18387634179757661,
+      "degree2_incremental_gain": 0.09913600767086062,
+      "total_pair_gain": 0.28301234946843723,
+      "positive_hierarchical_gain": 0.28301234946843723,
+      "effective_degree": 1.3502886282420574,
+      "interaction_fraction": 0.3502886282420573,
+      "variance_concentration": {
+        "observed_output_variance": 0.8969445815972222,
+        "pair_function_variance": 0.28301234946843723,
+        "pair_variance_fraction_of_observed": 0.3155293596450148,
+        "degree1_variance": 0.18387634179757661,
+        "degree2_incremental_variance": 0.09913600767086062,
+        "concentration_leq_1": 0.6497113717579427,
+        "concentration_leq_2": 1.0,
+        "tail_above_degree_1": 0.3502886282420573,
+        "monotone_projection_applied": false
+      },
+      "conditional_fourier_spectrum": {
+        "level_weights": [
+          0.10305541840277777,
+          0.18387634179757661,
+          0.09913600767086062
+        ],
+        "level_cardinalities": [
+          1,
+          510,
+          65025
+        ],
+        "mean_squared_coefficient_by_level": [
+          0.10305541840277777,
+          0.0003605418466619149,
+          1.5245829707168108e-06
+        ],
+        "total_square_energy": 0.386067767871215,
+        "nonconstant_energy": 0.28301234946843723,
+        "mean_spectral_degree": 0.9898478685399487,
+        "mean_nonconstant_spectral_degree": 1.3502886282420574,
+        "cumulative_concentration": [
+          0.266936084747575,
+          0.7432160467124763,
+          1.0
+        ],
+        "irreducible_or_unresolved_brier": 0.613932232128785,
+        "identity": "W0=1-L0; W1=L0-L1; W2=L1-L2; sum Wk=1-L2",
+        "basis": "Gram-orthonormalized Formula-(19) categorical degree filtration"
+      },
+      "folds": [
+        {
+          "fit_fold": 0,
+          "baseline_brier": 0.8964503949652778,
+          "degree1_additive_brier": 0.7126409942978007,
+          "degree2_pair_brier": 0.6137039564215493,
+          "backfit_iterations": 39
+        },
+        {
+          "fit_fold": 1,
+          "baseline_brier": 0.8974387682291667,
+          "degree1_additive_brier": 0.7134954853014905,
+          "degree2_pair_brier": 0.6141605078360208,
+          "backfit_iterations": 38
+        }
+      ],
+      "smoothing": 8.0,
+      "basis": "inverse-likelihood categorical functional ANOVA; arXiv:2603.02673 Def. 3.1",
+      "solver": "cross-fitted nested L2 projection; Formula-(19) column-span equivalent"
+    }
+  ],
+  "best_pair_by_function_variance": [
+    4,
+    8
+  ],
+  "best_pair_by_total_gain": [
+    4,
+    8
+  ],
+  "best_pair_total_gain": 0.28301234946843723,
+  "best_pair_positive_hierarchical_gain": 0.28301234946843723,
+  "effective_degree_best_pair": 1.3502886282420574,
+  "concentration_leq_1_best_pair": 0.6497113717579427,
+  "tail_above_degree_1_best_pair": 0.3502886282420573,
+  "pair_function_variance_best_pair": 0.28301234946843723,
+  "primary_degree_metric": "cumulative variance concentration",
+  "max_positive_degree2_gain": 0.09913600767086062,
+  "max_interaction_fraction": 0.3502886282420573,
+  "paper": "https://arxiv.org/abs/2603.02673",
+  "memory_strategy": "pair priors evaluated in active-pair chunks; no q-by-q-by-q array",
+  "cell_id": "V22P/rust_source/stride4",
+  "protocol_hash": "25e09ad9ed37bb447e6267fd1c11e75ecbd55757405ad3680b4f7a3be6337328",
+  "dataset": "rust_source",
+  "stride": 4,
+  "expected_pair": [
+    4,
+    8
+  ],
+  "data_sha256": "ffeabbf18ae07cf0b0f1e7f992ebb075436a6cd5fc48a2c5b4978ebf1e5cfbab",
+  "byte_counts_preserved": true,
+  "position_sha256": "4f2290bf5d1dab8e2de57a83e0f8d15e2d1aae028f584dca7a1a4a89e1bace6b",
+  "remote": {
+    "compute": "Modal CPU",
+    "wallclock_seconds": 0.39903532099999994
+  }
+}

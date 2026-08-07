@@ -1,0 +1,103 @@
+{
+  "version": "2.4",
+  "name": "dataset Fourier spectrum predicts fixed-budget learnability",
+  "date_frozen": "2026-08-07",
+  "hypothesis": "A compact spectrum measured from the dataset before training predicts fixed-budget held-out cross-entropy and learning-curve area on unseen corpora; positional encoding moderates but does not define the dataset descriptor.",
+  "development_text_families": {
+    "v2.0": ["enwik8", "tinystories", "wikitext2", "codeparrot_python"],
+    "v2.1_v2.3": ["gutenberg_books", "reuters_news", "brown_balanced", "pubmed_abstracts", "cpython_source", "linux_c_source"],
+    "v2.2": ["mathlib_lean", "rust_source", "rfc_technical"]
+  },
+  "confirmatory_text_families": [
+    "mdn_docs",
+    "kubernetes_docs",
+    "rust_reference_docs",
+    "rfc_legacy",
+    "pubmed_independent",
+    "go_source",
+    "typescript_source",
+    "llvm_cpp_source",
+    "coq_source",
+    "julia_source",
+    "ghc_haskell_source",
+    "postgresql_source"
+  ],
+  "text_bytes_per_confirmatory_family": 2000000,
+  "text_spectrum": {
+    "basis": "inverse-likelihood categorical ANOVA, arXiv:2603.02673 Definition 3.1",
+    "q": 256,
+    "lags": [1, 2, 4, 8, 16, 32, 64],
+    "radii": [1, 2, 4, 8, 16, 32, 64],
+    "support_bank": "all 21 unordered pairs of the frozen lag bank",
+    "profile_positions": 96000,
+    "folds": 2,
+    "smoothing": 8.0,
+    "scope": "exact within every support; monotone support-bank lower envelope, not the complete degree-two context spectrum"
+  },
+  "image_panel": {
+    "role": "separate development and corrected-curve panel; not pooled numerically with text",
+    "datasets": ["gaussian_noise_control", "MNIST", "FashionMNIST", "SVHN", "CIFAR10", "STL10_downsampled"],
+    "dct_basis": "orthonormal two-dimensional DCT-II on 32x32 grayscale images",
+    "continuous_basis": "rank-Gaussianized product-Hermite degree-two patch terms",
+    "patch": 8,
+    "max_images": 10000,
+    "max_patches": 100000,
+    "old_m8_curves_reused": false
+  },
+  "training": {
+    "vocab": 256,
+    "ctx_len": 64,
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4,
+    "mlp_mult": 4,
+    "dropout": 0.0,
+    "tie_weights": true,
+    "lr": 0.001,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "tokens_per_step": 1024,
+    "budget_tokens": 3000000,
+    "checkpoints": 16,
+    "position_encodings": ["learned_absolute", "sinusoidal", "alibi"],
+    "seeds": [0, 1, 2]
+  },
+  "natural_confirmatory_intervention": {
+    "datasets": ["mdn_docs", "rfc_legacy", "pubmed_independent", "go_source", "llvm_cpp_source", "coq_source"],
+    "strides": [1, 4, 8, 16],
+    "primary_prediction_uses_stride_metadata": false
+  },
+  "exact_factorial": {
+    "alphabet": 16,
+    "context": 64,
+    "degrees": [1, 2],
+    "radii": [2, 8, 32],
+    "signal_probabilities": [0.35, 0.7],
+    "rule": "uniform block contexts with noisy modular categorical target",
+    "loss": "target positions only",
+    "purpose": "independently identify signal-energy, interaction-degree, and support-radius effects"
+  },
+  "outcomes": {
+    "primary_endpoint": "median-seed final held-out CE divided by initial held-out CE",
+    "primary_curve": "median-seed normalized held-out CE curve area",
+    "diagnostics": ["half-best-learning tokens", "early learning slope", "seed variance"]
+  },
+  "models": {
+    "confirmatory_primary": "ridge with configuration intercepts",
+    "development_challengers": ["elastic_net", "partial_least_squares", "rbf_svr", "matern_gaussian_process"],
+    "neural_network_role": "diagnostic only; not used for the low-data confirmatory verdict",
+    "splitting": "nested leave-one-corpus-out; seeds and transforms remain inside their corpus group",
+    "feature_sets": ["configuration_only", "non_fourier_only", "fourier_plus_configuration", "combined"]
+  },
+  "verdict": {
+    "strong_support": "frozen Fourier predictor has positive unseen-corpus R2 for both primary outcomes and at least 5% corpus-balanced RMSE improvement over the best non-Fourier baseline with positive corpus-bootstrap confidence intervals",
+    "predictive_not_unique": "both outcomes beat configuration-only but not the best non-Fourier baseline",
+    "mixed": "exactly one primary outcome generalizes",
+    "refuted": "neither primary outcome generalizes"
+  },
+  "compute": {
+    "maximum_concurrent_h100s": 1,
+    "staging": "profiles and predictions are hash-frozen before confirmatory training outcomes are opened"
+  },
+  "protocol_hash": "a4ef4ad6a76c87b24f3708fc22ee06f2fb6dbf9c18c5c6739519e0a541f840b3"
+}

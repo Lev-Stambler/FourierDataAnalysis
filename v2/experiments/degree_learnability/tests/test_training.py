@@ -75,3 +75,45 @@ def test_model_shapes_and_ce():
     assert logits.shape == (4, 16, 8)
     ce = cross_entropy_bits(logits, torch.randint(0, 8, (4, 16)))
     assert 2.5 < ce < 3.6  # near log2(8)=3 at init
+
+
+@pytest.mark.parametrize(
+    "position_encoding", ["learned_absolute", "sinusoidal", "alibi"]
+)
+def test_positional_configurations_are_causal_and_finite(position_encoding):
+    cfg = TransformerConfig(
+        vocab=8,
+        ctx_len=16,
+        d_model=32,
+        n_layers=2,
+        n_heads=4,
+        position_encoding=position_encoding,
+    )
+    model = CausalTransformer(cfg).eval()
+    left = torch.randint(0, 8, (2, 16))
+    right = left.clone()
+    right[:, 9:] = torch.randint(0, 8, (2, 7))
+    with torch.no_grad():
+        logits_left = model(left)
+        logits_right = model(right)
+    assert torch.isfinite(logits_left).all()
+    assert logits_left.shape == (2, 16, 8)
+    assert torch.equal(logits_left[:, :9], logits_right[:, :9])
+
+
+def test_default_position_mode_preserves_historical_config_hash():
+    cfg = TransformerConfig(
+        vocab=256, ctx_len=64, d_model=64, n_layers=2, n_heads=4
+    )
+    assert cfg.config_hash == "6d7e38e4d696eb6e"
+    assert "position_encoding" not in cfg.to_json()
+    sinusoidal = TransformerConfig(
+        vocab=256,
+        ctx_len=64,
+        d_model=64,
+        n_layers=2,
+        n_heads=4,
+        position_encoding="sinusoidal",
+    )
+    assert "sinusoidal" in sinusoidal.to_json()
+    assert sinusoidal.config_hash != cfg.config_hash
