@@ -10,7 +10,7 @@ from sklearn.base import RegressorMixin
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import ConstantKernel, Matern, WhiteKernel
-from sklearn.linear_model import ElasticNet, Ridge
+from sklearn.linear_model import ElasticNet, LinearRegression, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -66,6 +66,8 @@ def design_matrix(
 
 
 def _candidate_models(kind: str, n_features: int) -> list[tuple[dict, Callable[[], RegressorMixin]]]:
+    if kind == "ols":
+        return [({}, lambda: make_pipeline(StandardScaler(), LinearRegression()))]
     if kind == "ridge":
         return [
             (

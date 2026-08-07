@@ -27,6 +27,8 @@ model-independent scalar dataset-hardness law and not the specific `G_total`
 formula.
 
 The exact basis and statistic are defined in [`LOCALITY_MATH.md`](LOCALITY_MATH.md).
+The post-v2.4 plain-OLS and sampled higher-degree diagnostic is summarized in
+[`V25_KISS_STATUS.md`](V25_KISS_STATUS.md).
 The critical prior-art and novelty assessment is in
 [`NOVELTY_ASSESSMENT.md`](NOVELTY_ASSESSMENT.md). In short: the broad theory is
 not new; the potentially new contribution is the controlled, data-conditioned

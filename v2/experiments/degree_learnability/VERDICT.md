@@ -544,3 +544,30 @@ manifest hash
 `b315b9cc5561ff9558dc168bb3acb84cff8a745623329e0f1d9d0212263e1c49`.
 Audit PASS. Artifacts:
 `runs/local/v24_spectrum_predictor/{confirmatory_analysis.json,factorial_analysis.json,image_analysis.json,audit.json}`.
+
+<!-- KISS_HIGHER_DEGREE_POSTHOC -->
+## Post-confirmatory KISS and higher-degree diagnostic (2026-08-07)
+
+This diagnostic does not change the frozen v2.4 verdict. It identifies why the
+original absolute predictor underperformed. Both frozen ridge models selected
+`alpha=100`; training mixed 124 natural and artificial-stride rows while the
+absolute confirmation used only natural rows; and every natural confirmation
+profile had identical pair-envelope locality (`1.58496`) and zero radial entropy.
+
+Unpenalized OLS trained only on the 31 old natural rows and evaluated unchanged on
+the 36 v2.4 natural corpus/configuration rows gives endpoint `R2=0.624` for the
+ordinary controls and `0.699` after adding pair energy and degree. For curve area,
+controls give `0.647`, while adding two sampled degree-through-3 summaries gives
+`0.746`. Because these analysis choices were made after outcomes were known, the
+numbers are exploratory. Across all 25 corpora under leave-one-corpus-out OLS,
+incremental gains are much smaller: endpoint `0.697→0.708` and curve area
+`0.681→0.693`, with the preferred spectral summary differing by target.
+
+The sampled estimator finds substantial degree-three conditional energy in all
+25 corpora while retaining 80--90% opposite-fold context coverage in the 12 new
+corpora. Degrees four through six are frequently coverage-limited. The result
+supports the criticism that v2.4 truncated the natural spectrum too early, but it
+also confirms that more independent corpora—not more seeds—are required to
+identify a stable incremental Fourier coefficient beyond strong sequential
+controls. See `V25_KISS_STATUS.md` and
+`runs/local/v24_spectrum_predictor/v25_kiss_ols_analysis.json`.

@@ -43,6 +43,17 @@ def test_nested_loco_ridge_recovers_grouped_signal() -> None:
     assert len(result["outer_selections"]) == 8
 
 
+def test_nested_loco_ols_recovers_exact_linear_signal() -> None:
+    result = nested_loco_predictions(
+        _rows(),
+        target="difficulty",
+        feature_names=("resolved_nonconstant_energy", "energy_weighted_log_radius"),
+        kind="ols",
+    )
+    assert result["r2"] > 0.99
+    assert all(selection["parameters"] == {} for selection in result["outer_selections"].values())
+
+
 def test_frozen_ridge_round_trip_matches_manual_fit_predictions() -> None:
     rows = _rows()
     artifact = fit_frozen_ridge(

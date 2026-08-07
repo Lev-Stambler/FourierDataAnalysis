@@ -344,3 +344,46 @@ Squared coefficients, grouped by spatial separation, give a degree-2 Hermite
 energy and locality profile. These are natural continuous-product analogues of
 degree and radius, but they are not numerically commensurate with the dependent
 categorical text basis and are never pooled with it.
+
+## 9. Sampled higher-order projection curve
+
+Enumerating q-ary coefficients at degree k costs
+$\binom{d}{k}(q-1)^k$ and is infeasible for byte text. The KISS diagnostic instead
+samples nested supports $A_0\subset A_1\subset\cdots\subset A_K$ and estimates
+
+\[
+M(A_k)=E\left[\left\|P(Y=\cdot\mid X_{A_k})\right\|_2^2\right].
+\]
+
+For each two-fold split, the opposite fold supplies an empirical conditional
+probability $\widehat p_{-f}(Y_i\mid X_{i,A})$. The score
+
+\[
+Z_i=\widehat p_{-f}(Y_i\mid X_{i,A})\in[0,1]
+\]
+
+is averaged over held-out positions. Conditional on the fitted opposite-fold
+table, Hoeffding gives
+
+\[
+P(|\bar Z-EZ|>\epsilon)\leq2e^{-2n\epsilon^2}.
+\]
+
+If an evaluation context was never observed in the opposite fold, it contributes
+zero. The profiler therefore reports context coverage $c_A$ and the conservative
+identification interval $[\widehat M(A),\widehat M(A)+1-c_A]$ separately from
+sampling uncertainty.
+
+Under a product input measure with orthogonal coordinate subspaces, the mean
+$M_k=E_{|A|=k}M(A)$ is a binomial transform of the Fourier levels:
+
+\[
+M_k=\sum_{j=0}^k\frac{\binom{k}{j}}{\binom{d}{j}}W_j.
+\]
+
+This can be inverted recursively without enumerating individual coefficients.
+For dependent natural text, however, coordinate subspaces overlap and this
+identity does not define the Ferrere spectrum. Large signed inverted levels in
+the real profiles demonstrate the failure of that product assumption. The
+reported cumulative conditional-energy curve remains basis invariant and useful;
+its increments must not be relabeled as exact dependent-input Fourier weights.
