@@ -440,3 +440,34 @@ The implementation, frozen protocols, compact audit chains, and complete result
 artifacts are available in this repository. The exact categorical basis and
 projection definitions are documented in [`LOCALITY_MATH.md`](LOCALITY_MATH.md),
 and the full experimental history is summarized in [`VERDICT.md`](VERDICT.md).
+
+## Correction: sample corpus positions, not an ordered stream
+
+The v2.7 result contained a sampling confound that the hash audit could not
+detect. Its Fourier measurement described a prefix, the learner advanced through
+one cyclic ordering, and validation described the tail. These are reproducible
+procedures, but reproducibility is not distributional alignment. Repository
+concatenations often change genre across position; in Blender, a large generated
+numeric file near the tail made the issue obvious.
+
+The v2.8 repair first permuted 16 KiB blocks into disjoint train, profile, and
+validation sets. It then sampled whole context/next-byte windows uniformly from
+the appropriate blocks. The contexts remain contiguous—there is no token or byte
+shuffling—so the local conditional structure that the Fourier statistic is meant
+to measure is preserved. The only discarded information is accidental global
+file order.
+
+After rebuilding the development measurements and freezing a new OLS, the same
+24 held-out sources gave a 26.0% RMSE reduction, `R^2=0.453`, and pooled
+`rho=0.806`. The stratified bootstrap interval, `[18.1%,35.0%]`, is comfortably
+positive. Yet the mean rank correlation inside the six domains is `0.067`
+(`p=0.410`). That combination is not paradoxical: the scalar predicts broad
+domain-level differences well but leaves much of the within-domain difficulty
+unexplained.
+
+So the strongest defensible statement is now sharper: a dataset-only marginal
+Fourier-locality statistic predicts a substantial fraction of learning-time
+variation for this fixed Transformer under a correctly randomized window law.
+It is not yet a universal scalar theory of dataset hardness. The next decisive
+test is a newly sourced panel with more datasets per domain, frozen after this
+sampling correction—not more feature search on these 24 sources.

@@ -1,0 +1,84 @@
+{
+  "version": "2.8",
+  "name": "random-window sampling repair",
+  "date_frozen": "2026-08-10",
+  "status": "frozen after diagnosing v2.7 prefix/cyclic-stream mismatch and before any corrected profile or training outcome",
+  "scope": "paired protocol repair on the same 54 development and 24 confirmation corpora; not a new source-disjoint confirmation",
+  "hypothesis": "Marginal Fourier locality sampled across the corpus predicts normalized learning time under random-window Transformer training.",
+  "data": {
+    "manifest": "runs/local/v28_random_windows/data_manifest.json",
+    "manifest_sha256": "74ae3f105c946f132cf692566d356fe98940dd1b7cf5b8fc348286970b469aed",
+    "development_corpora": 54,
+    "confirmation_corpora": 24
+  },
+  "sampling": {
+    "unit": "contiguous next-token window; individual tokens are never shuffled",
+    "block_size": 16384,
+    "split_fractions": [0.75, 0.125, 0.125],
+    "split_names": ["train", "profile", "validation"],
+    "split_seed": 2801,
+    "split_seed_derivation": "seed_from(protocol_hash, byte_stream_sha256, split_seed)",
+    "train_windows": "uniform with replacement over eligible starts in train blocks",
+    "profile_windows": "uniform without replacement over eligible starts in profile blocks",
+    "validation_windows": "2048 fixed uniform-without-replacement starts in validation blocks, identical across learner seeds",
+    "document_limitation": "historical streams lack a universal document index; disjoint 16KiB blocks prevent the ordered-prefix and adjacent-tail split failure but do not reconstruct documents"
+  },
+  "profile": {
+    "basis": "inverse-likelihood categorical projection under the sampled dependent data measure",
+    "q": 256,
+    "lags": [1, 2, 4, 8, 16, 32, 64],
+    "max_degree": 3,
+    "chains": 64,
+    "positions": 200000,
+    "seed": 2803,
+    "delta": 0.05,
+    "primary_feature": "sampled_marginal_log1p_radius_through_degree3"
+  },
+  "target": {
+    "name": "normalized_learning_time",
+    "formula": "(median normalized_curve_area - median final_ce_fraction) / (1 - median final_ce_fraction)",
+    "maximum_identifiable_final_ce_fraction": 0.99
+  },
+  "prediction": {
+    "model": "standardized unpenalized one-feature OLS fit on all 54 corrected development outcomes",
+    "feature_sets": {
+      "intercept_only": [],
+      "marginal_locality": ["sampled_marginal_log1p_radius_through_degree3"]
+    },
+    "freeze_before_confirmation_training": true
+  },
+  "training": {
+    "vocab": 256,
+    "ctx_len": 64,
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4,
+    "mlp_mult": 4,
+    "dropout": 0.0,
+    "tie_weights": true,
+    "lr": 0.001,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "position_encoding": "learned_absolute",
+    "tokens_per_step": 1024,
+    "budget_tokens": 3000000,
+    "checkpoints": 16,
+    "validation_windows": 2048,
+    "seeds": [0, 1]
+  },
+  "decision": {
+    "rmse_bootstrap": {"samples": 100000, "seed": 2805, "stratified": true, "confidence": 0.95},
+    "rank_test": {"statistic": "mean within-stratum Spearman rho", "permutations": 100000, "seed": 2806, "alternative": "greater", "maximum_p": 0.05},
+    "confirmed": "RMSE improvement interval strictly above zero and blocked rank rho positive with one-sided p <= 0.05",
+    "labels": ["CONFIRMED", "PREDICTIVE_ONLY", "ASSOCIATION_ONLY", "NOT_CONFIRMED", "TARGET_UNIDENTIFIABLE", "AUDIT_FAILED"]
+  },
+  "compute": {
+    "profiles": "Modal CPU",
+    "training_gpu": "H100",
+    "maximum_concurrent_h100s": 1,
+    "development_training_cells": 108,
+    "confirmation_training_cells": 48,
+    "network_during_remote_cells": false
+  },
+  "protocol_hash": "a9043972453a18e17d559c8d5839de08a4445ff4680ea480452e0caddfaabbc1"
+}

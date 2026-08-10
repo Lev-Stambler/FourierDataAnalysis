@@ -472,3 +472,42 @@ one-sided blocked-permutation $p=0.119$. The preregistered verdict is therefore
 `PREDICTIVE_ONLY`, not `CONFIRMED`: the scalar carries transferable between-domain
 information for this learner, but a consistent within-domain ordering remains
 unresolved.
+
+## 12. Random-window sampling law (v2.8 repair)
+
+The Fourier statistic and learner target must refer to the same distribution of
+local contexts. For byte stream $x_{1:N}$, v2.8 partitions eligible positions by
+randomly assigning disjoint 16 KiB blocks to
+
+\[
+B_{\mathrm{train}},\quad B_{\mathrm{profile}},\quad
+B_{\mathrm{validation}}
+\]
+
+with proportions $0.75/0.125/0.125$. A valid start $i$ for context length
+$L=64$ must satisfy $\{i,\ldots,i+L\}\subset B$; windows never cross a block
+boundary. Training draws
+
+\[
+I_t\stackrel{\mathrm{iid}}{\sim}
+\operatorname{Unif}\mathcal I(B_{\mathrm{train}})
+\]
+
+with replacement and learns from the intact window
+$(x_{I_t:I_t+L-1},x_{I_t+L})$. Profiling draws 200,000 eligible positions without
+replacement from $B_{\mathrm{profile}}$; validation fixes 2,048 starts without
+replacement from $B_{\mathrm{validation}}$ and reuses them for both learner
+seeds. Thus train, spectral profile, and evaluation are disjoint but exchangeable
+with respect to accidental corpus position.
+
+This repairs ordered-prefix versus ordered-tail bias while preserving every
+within-window lag used by $\Lambda_{\mathrm{marg}}$. It does not reconstruct
+document boundaries in historical byte streams, so a future source panel should
+split documents first and sample windows second.
+
+Under this law, the frozen one-feature predictor reaches held-out `R^2=0.453`
+and pooled Spearman $\rho=0.806$, with a 26.04% RMSE reduction
+($95\%$ stratified interval $[18.12\%,34.99\%]$). The blocked within-domain
+rank statistic remains null (mean $\rho=0.067$, $p=0.410$). The result therefore
+supports cross-dataset prediction for the fixed learner, not a complete scalar
+ordering within domains.

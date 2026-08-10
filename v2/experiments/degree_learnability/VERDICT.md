@@ -631,3 +631,40 @@ but does not yet give a reliable scalar ordering within domains. This is stronge
 than the v2.6 null result and weaker than a universal dataset-hardness law. Audit
 PASS. Locks: protocol `4b3d0018…`, data `93b36112…`, profiles `aec5b085…`,
 predictions `fb6fac00…`. Artifacts: `runs/local/v27_marginal_locality/`.
+
+## Completed v2.8 random-window sampling repair (2026-08-10)
+
+The v2.7 audit was mechanically valid but its data law was scientifically
+misaligned: the Fourier profile used the first 250k contiguous bytes, training
+walked an ordered cyclic stream from one random offset, and validation used the
+final 40k bytes. Position-dependent corpus composition could therefore make
+profile, train, and validation distributions differ. The Blender stream exposed
+the failure especially clearly because a large generated coefficient file sat
+near the validation tail.
+
+Before observing corrected confirmation outcomes, v2.8 froze deterministic
+random assignment of 16 KiB blocks to train/profile/validation (75/12.5/12.5),
+uniform sampling of intact 65-byte training windows, 200k profile positions, and
+2,048 fixed validation windows. It rebuilt all 78 profiles, retrained 108
+development cells, and locked a positive one-feature OLS coefficient and 24
+predictions before running 48 sequential confirmation cells on one H100.
+
+The corrected frozen verdict is **PREDICTIVE_ONLY**:
+
+- intercept RMSE `0.02544` versus locality RMSE `0.01881`;
+- relative improvement `26.04%`, stratified 95% interval
+  `[18.12%, 34.99%]`;
+- locality `R^2=0.453`, pooled Spearman `rho=0.806`
+  (`p=1.99e-6`);
+- mean within-stratum Spearman `rho=0.067`, blocked one-sided
+  permutation `p=0.410`.
+
+The two-seed target is stable (cross-seed Pearson `r=0.997`; median absolute
+difference `0.00073`), and no corpus approaches the target-identification cutoff
+(median final CE fractions `0.167–0.347`). Thus randomizing corpus position does
+not remove the dataset-level predictive signal; it strengthens it materially.
+The failure of the blocked rank gate says something equally specific: the scalar
+mainly separates broad corpus regimes and does not reliably order four datasets
+inside each regime. Since v2.8 reuses the v2.7 sources, it is a paired correction,
+not an independent source-disjoint replication. Audit PASS. Locks: protocol
+`a9043972…`, data `74ae3f10…`, profiles `2eabd4dd…`, predictions `c35f8274…`.

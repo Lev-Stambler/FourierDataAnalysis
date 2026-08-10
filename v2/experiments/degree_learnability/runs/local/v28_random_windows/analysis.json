@@ -1,0 +1,449 @@
+{
+  "status": "PAIRED_SAMPLING_REPAIR_NOT_NEW_SOURCE_DISJOINT_CONFIRMATION",
+  "protocol_hash": "a9043972453a18e17d559c8d5839de08a4445ff4680ea480452e0caddfaabbc1",
+  "data_manifest_hash": "74ae3f105c946f132cf692566d356fe98940dd1b7cf5b8fc348286970b469aed",
+  "profile_manifest_hash": "2eabd4ddf8fa080208ec8c2079aa74a2f15afe540276080d892ab7b163c623a2",
+  "prediction_lock_hash": "c35f82744a8f45ff4160a732cf8609e99deb5d0645b129e198689f9e2cda58a3",
+  "verdict": "PREDICTIVE_ONLY",
+  "primary_gates": {
+    "predictive_rmse_gate": true,
+    "blocked_rank_gate": false
+  },
+  "scores": {
+    "intercept_only": {
+      "rmse": 0.02543575672356418,
+      "r2": -2.324242343787475e-05,
+      "spearman_rho": null,
+      "spearman_two_sided_p": null,
+      "pearson_r": null,
+      "pearson_two_sided_p": null
+    },
+    "marginal_locality": {
+      "rmse": 0.018812162776215793,
+      "r2": 0.45298627331592856,
+      "spearman_rho": 0.806086956521739,
+      "spearman_two_sided_p": 1.9857209496898876e-06,
+      "pearson_r": 0.803774315949193,
+      "pearson_two_sided_p": 2.236331004186992e-06
+    }
+  },
+  "stratified_paired_bootstrap": {
+    "relative_rmse_improvement": 0.2604048316444292,
+    "stratified_bootstrap_95_interval": [
+      0.18123509491365716,
+      0.34989496273677534
+    ],
+    "samples": 100000,
+    "seed": 2805,
+    "strata": [
+      "application_code",
+      "documentation",
+      "formal",
+      "language",
+      "prose",
+      "science"
+    ]
+  },
+  "blocked_rank_test": {
+    "statistic": "mean within-stratum Spearman rho",
+    "mean_rho": 0.06666666666666665,
+    "within_stratum_rhos": {
+      "application_code": 0.7999999999999999,
+      "documentation": 0.39999999999999997,
+      "formal": -0.7999999999999999,
+      "language": 1.0,
+      "prose": -0.39999999999999997,
+      "science": -0.6000000000000001
+    },
+    "one_sided_permutation_p": 0.4099259007409926,
+    "permutations": 100000,
+    "seed": 2806,
+    "alternative": "greater"
+  },
+  "rows": [
+    {
+      "dataset": "dickens_prose",
+      "stratum": "prose",
+      "initial_ce_bits": 8.0149517851899,
+      "final_ce_bits": 2.563525937298303,
+      "learning_amount_bits": 5.451425847891599,
+      "fractional_learning": 0.6801570784778159,
+      "normalized_curve_area": 0.6613911543869397,
+      "final_ce_fraction": 0.3198429215221841,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5180103475026391
+      },
+      "normalized_learning_time": 0.5021608150122275
+    },
+    {
+      "dataset": "twain_prose",
+      "stratum": "prose",
+      "initial_ce_bits": 8.01629366907434,
+      "final_ce_bits": 2.5448726371794574,
+      "learning_amount_bits": 5.471421031894883,
+      "fractional_learning": 0.6825365808028514,
+      "normalized_curve_area": 0.6566579773225886,
+      "final_ce_fraction": 0.3174634191971486,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5172363817609099
+      },
+      "normalized_learning_time": 0.49696172727687876
+    },
+    {
+      "dataset": "doyle_prose",
+      "stratum": "prose",
+      "initial_ce_bits": 7.988593648876255,
+      "final_ce_bits": 2.4732751659231,
+      "learning_amount_bits": 5.515318482953155,
+      "fractional_learning": 0.6903998404565047,
+      "normalized_curve_area": 0.6513771903844923,
+      "final_ce_fraction": 0.3096001595434953,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5186608851967884
+      },
+      "normalized_learning_time": 0.4950421637047423
+    },
+    {
+      "dataset": "hugo_prose",
+      "stratum": "prose",
+      "initial_ce_bits": 8.018151500911372,
+      "final_ce_bits": 2.588011951091522,
+      "learning_amount_bits": 5.43013954981985,
+      "fractional_learning": 0.6772303721713488,
+      "normalized_curve_area": 0.6588340441952147,
+      "final_ce_fraction": 0.32276962782865115,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5175582690611142
+      },
+      "normalized_learning_time": 0.4962335272841758
+    },
+    {
+      "dataset": "pubmed_abstracts_3",
+      "stratum": "science",
+      "initial_ce_bits": 8.023310636471953,
+      "final_ce_bits": 2.577814344610539,
+      "learning_amount_bits": 5.445496291861414,
+      "fractional_learning": 0.6787074823255049,
+      "normalized_curve_area": 0.6694901579388217,
+      "final_ce_fraction": 0.32129251767449507,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5215582699748975
+      },
+      "normalized_learning_time": 0.5130305018463502
+    },
+    {
+      "dataset": "arxiv_articles",
+      "stratum": "science",
+      "initial_ce_bits": 8.015305768481038,
+      "final_ce_bits": 2.5179653092042598,
+      "learning_amount_bits": 5.497340459276778,
+      "fractional_learning": 0.6858555459255793,
+      "normalized_curve_area": 0.6583238169015656,
+      "final_ce_fraction": 0.31414445407442076,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5207086306495352
+      },
+      "normalized_learning_time": 0.5018248592896718
+    },
+    {
+      "dataset": "pubmed_articles",
+      "stratum": "science",
+      "initial_ce_bits": 8.021464983156388,
+      "final_ce_bits": 2.771149144089774,
+      "learning_amount_bits": 5.250315839066614,
+      "fractional_learning": 0.654530341908399,
+      "normalized_curve_area": 0.6667159624413489,
+      "final_ce_fraction": 0.3454696580916011,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5276031827492701
+      },
+      "normalized_learning_time": 0.49080429703701345
+    },
+    {
+      "dataset": "uspto_patents",
+      "stratum": "science",
+      "initial_ce_bits": 7.943942857375397,
+      "final_ce_bits": 2.496148235050745,
+      "learning_amount_bits": 5.447794622324652,
+      "fractional_learning": 0.6857772154052311,
+      "normalized_curve_area": 0.6551155841642322,
+      "final_ce_fraction": 0.31422278459476893,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5346501470769351
+      },
+      "normalized_learning_time": 0.4970897135566499
+    },
+    {
+      "dataset": "ansible_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.917990890338514,
+      "final_ce_bits": 2.366728471373344,
+      "learning_amount_bits": 5.55126241896517,
+      "fractional_learning": 0.701092869069053,
+      "normalized_curve_area": 0.6789828976087804,
+      "final_ce_fraction": 0.2989071309309471,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.530757157386153
+      },
+      "normalized_learning_time": 0.5421190022692962
+    },
+    {
+      "dataset": "airflow_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.958127610206513,
+      "final_ce_bits": 2.6054891451652136,
+      "learning_amount_bits": 5.3526384650412995,
+      "fractional_learning": 0.6726000751045136,
+      "normalized_curve_area": 0.693191054033261,
+      "final_ce_fraction": 0.3273999248954864,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5320840148203311
+      },
+      "normalized_learning_time": 0.5438463994832817
+    },
+    {
+      "dataset": "home_assistant_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.989539048256965,
+      "final_ce_bits": 1.7581712042080717,
+      "learning_amount_bits": 6.2313678440488935,
+      "fractional_learning": 0.7799411809272185,
+      "normalized_curve_area": 0.6592371063154779,
+      "final_ce_fraction": 0.2200588190727814,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5476667556377232
+      },
+      "normalized_learning_time": 0.5630915484172635
+    },
+    {
+      "dataset": "mongodb_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.9943654726305375,
+      "final_ce_bits": 2.6952711617021157,
+      "learning_amount_bits": 5.299094310928422,
+      "fractional_learning": 0.6628536483566063,
+      "normalized_curve_area": 0.7004076708736346,
+      "final_ce_fraction": 0.3371463516433937,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5245454417082676
+      },
+      "normalized_learning_time": 0.5480264310694588
+    },
+    {
+      "dataset": "perl5_language",
+      "stratum": "language",
+      "initial_ce_bits": 7.889773546326632,
+      "final_ce_bits": 2.737310783610587,
+      "learning_amount_bits": 5.152462762716045,
+      "fractional_learning": 0.6530538747269794,
+      "normalized_curve_area": 0.6869258215517753,
+      "final_ce_fraction": 0.34694612527302066,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5265511196474956
+      },
+      "normalized_learning_time": 0.5205997689254797
+    },
+    {
+      "dataset": "gcc_language",
+      "stratum": "language",
+      "initial_ce_bits": 7.944660121769736,
+      "final_ce_bits": 2.435672970504239,
+      "learning_amount_bits": 5.508987151265497,
+      "fractional_learning": 0.6934207937027501,
+      "normalized_curve_area": 0.6771668562252401,
+      "final_ce_fraction": 0.3065792062972499,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.531086714385016
+      },
+      "normalized_learning_time": 0.5344340021145236
+    },
+    {
+      "dataset": "groovy_language",
+      "stratum": "language",
+      "initial_ce_bits": 7.911326476626252,
+      "final_ce_bits": 2.0044030247061926,
+      "learning_amount_bits": 5.90692345192006,
+      "fractional_learning": 0.7466406026108638,
+      "normalized_curve_area": 0.6629813742533925,
+      "final_ce_fraction": 0.25335939738913615,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.540758588690836
+      },
+      "normalized_learning_time": 0.5486200126699301
+    },
+    {
+      "dataset": "ballerina_language",
+      "stratum": "language",
+      "initial_ce_bits": 7.910474420829301,
+      "final_ce_bits": 1.7886483599438558,
+      "learning_amount_bits": 6.121826060885445,
+      "fractional_learning": 0.7738751821898684,
+      "normalized_curve_area": 0.6601600341591591,
+      "final_ce_fraction": 0.2261248178101316,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5451372213598765
+      },
+      "normalized_learning_time": 0.5608594594296449
+    },
+    {
+      "dataset": "tensorflow_code",
+      "stratum": "application_code",
+      "initial_ce_bits": 7.941426514717129,
+      "final_ce_bits": 2.1838003098510717,
+      "learning_amount_bits": 5.757626204866058,
+      "fractional_learning": 0.7250109418065385,
+      "normalized_curve_area": 0.6801389931454302,
+      "final_ce_fraction": 0.27498905819346164,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5413090447746685
+      },
+      "normalized_learning_time": 0.5588190627060614
+    },
+    {
+      "dataset": "arrow_code",
+      "stratum": "application_code",
+      "initial_ce_bits": 7.903049177367455,
+      "final_ce_bits": 1.3176482773878226,
+      "learning_amount_bits": 6.585400899979632,
+      "fractional_learning": 0.8332713754976278,
+      "normalized_curve_area": 0.6369800509466259,
+      "final_ce_fraction": 0.16672862450237233,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5427301653984496
+      },
+      "normalized_learning_time": 0.564343670347995
+    },
+    {
+      "dataset": "redis_code",
+      "stratum": "application_code",
+      "initial_ce_bits": 7.980391237312992,
+      "final_ce_bits": 2.662767609633625,
+      "learning_amount_bits": 5.317623627679367,
+      "fractional_learning": 0.666336098592736,
+      "normalized_curve_area": 0.698619124779357,
+      "final_ce_fraction": 0.3336639014072641,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5321213722094872
+      },
+      "normalized_learning_time": 0.5477044154486866
+    },
+    {
+      "dataset": "blender_code",
+      "stratum": "application_code",
+      "initial_ce_bits": 7.946407390260093,
+      "final_ce_bits": 2.389947448669223,
+      "learning_amount_bits": 5.55645994159087,
+      "fractional_learning": 0.6992428030914228,
+      "normalized_curve_area": 0.6917213522901414,
+      "final_ce_fraction": 0.30075719690857716,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5462370408900213
+      },
+      "normalized_learning_time": 0.5591250330401291
+    },
+    {
+      "dataset": "lean4_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.998661567002342,
+      "final_ce_bits": 2.561178997551135,
+      "learning_amount_bits": 5.437482569451206,
+      "fractional_learning": 0.6798001563367676,
+      "normalized_curve_area": 0.6985603697139735,
+      "final_ce_fraction": 0.3201998436632323,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5323164325275591
+      },
+      "normalized_learning_time": 0.5565761092048122
+    },
+    {
+      "dataset": "unimath_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.950743492096056,
+      "final_ce_bits": 2.147247823977896,
+      "learning_amount_bits": 5.80349566811816,
+      "fractional_learning": 0.7299313357043392,
+      "normalized_curve_area": 0.6694397011909512,
+      "final_ce_fraction": 0.27006866429566073,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5328487477309752
+      },
+      "normalized_learning_time": 0.5471350760820834
+    },
+    {
+      "dataset": "sel4_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.996792739024574,
+      "final_ce_bits": 1.9426427165413558,
+      "learning_amount_bits": 6.054150022483219,
+      "fractional_learning": 0.7570735804485649,
+      "normalized_curve_area": 0.6584746314229568,
+      "final_ce_fraction": 0.24292641955143512,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5344702774956817
+      },
+      "normalized_learning_time": 0.548887482806242
+    },
+    {
+      "dataset": "vst_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.861223491127742,
+      "final_ce_bits": 2.011137080643136,
+      "learning_amount_bits": 5.8500864104846055,
+      "fractional_learning": 0.7441746102060183,
+      "normalized_curve_area": 0.651206720529929,
+      "final_ce_fraction": 0.2558253897939816,
+      "target_identifiable": true,
+      "predictions": {
+        "intercept_only": 0.5319039124246265,
+        "marginal_locality": 0.5366790714596595
+      },
+      "normalized_learning_time": 0.5313018279762184
+    }
+  ]
+}

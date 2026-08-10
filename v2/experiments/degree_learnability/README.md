@@ -37,6 +37,17 @@ interval is entirely negative (`[-10.10%, -0.17%]`). Raw locality has only
 locality hypothesis is not supported, while an incremental energy/degree signal
 remains suggestive rather than confirmed.
 
+The v2.8 random-window repair resolves a later sampling confound in v2.7. The
+old profile read a corpus prefix while training traversed an ordered cyclic
+stream and validation used its tail. With disjoint randomized 16 KiB blocks and
+random intact context windows for all three roles, the development-frozen
+marginal-locality OLS reduces held-out RMSE by **26.0%** (stratified 95% interval
+`[18.1%, 35.0%]`), reaches `R^2=0.453`, and has pooled Spearman `rho=0.806` on
+the same 24-corpus panel. The blocked within-domain rank gate still fails (mean
+`rho=0.067`, `p=0.410`), so the mechanical verdict remains
+**PREDICTIVE_ONLY**. This is a paired sampling repair, not a second
+source-disjoint confirmation.
+
 The exact controlled factorial clarifies the mechanism: at equal nonconstant
 Fourier energy, degree 2 was harder than degree 1 by `0.130` normalized endpoint
 CE, while radius had a strong effect for ALiBi but not a universal effect across
@@ -325,4 +336,30 @@ Artifacts are under `runs/local/v27_marginal_locality/`.
 uv run python scripts/v27_dry_run.py
 uv run python scripts/v27_analyze.py
 uv run python scripts/v27_audit.py
+```
+
+## Completed v2.8 random-window repair
+
+Protocol v2.8 replaces the v2.7 ordered-prefix/cyclic-stream sampling with one
+data law. Each byte stream is partitioned into deterministic randomized 16 KiB
+blocks: 75% train, 12.5% Fourier profile, and 12.5% validation. Training samples
+intact 65-byte context/target windows uniformly with replacement; profiling
+samples positions without replacement; validation uses 2,048 fixed random
+windows shared across learner seeds. Individual bytes are never shuffled.
+
+The corrected 54-corpus development grid and 78 Fourier profiles were completed
+before the 24 confirmation predictions were hash-locked. On 48 sequential H100
+confirmation cells, marginal locality reduces RMSE from `0.02544` to `0.01881`,
+a **26.04%** improvement with stratified paired-bootstrap interval
+`[18.12%, 34.99%]`. Prospective `R^2` is `0.453`; pooled Spearman is `0.806`
+(`p=1.99e-6`). Mean within-stratum Spearman is only `0.067`, however, with
+blocked permutation `p=0.410`. The frozen verdict is therefore
+**PREDICTIVE_ONLY**, and the audit passes. Because this repair reuses the v2.7
+source panel, it strengthens the predictive evidence but is not a new
+source-disjoint replication. Artifacts are under
+`runs/local/v28_random_windows/`.
+
+```bash
+uv run python scripts/v28_analyze.py
+uv run python scripts/v28_audit.py
 ```
