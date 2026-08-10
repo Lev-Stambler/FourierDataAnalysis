@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from dlx.profiles.sampled_degree import (
     crossfit_conditional_collision,
     geometric_sampled_features,
     invert_product_reference_degree_curve,
+    marginal_locality_features,
     sampled_nested_degree_profile,
 )
 
@@ -79,6 +81,33 @@ def test_geometric_summary_orders_matched_near_and_far_degree_three() -> None:
         far["sampled_geometric_complexity_through_degree3"]
         > near["sampled_geometric_complexity_through_degree3"]
     )
+
+
+def test_marginal_locality_uses_the_coordinate_added_at_each_step() -> None:
+    chain = [
+        {"conditional_collision_energy": 0.50, "support_columns": []},
+        {"conditional_collision_energy": 0.60, "support_columns": [2]},
+        {"conditional_collision_energy": 0.90, "support_columns": [2, 0]},
+        {"conditional_collision_energy": 1.00, "support_columns": [2, 0, 1]},
+    ]
+    features = marginal_locality_features([chain], (1, 2, 16))
+    expected = (0.1 * np.log2(17.0) + 0.3 * np.log2(2.0) + 0.1 * np.log2(3.0)) / 0.5
+    assert np.isclose(
+        features["sampled_marginal_log1p_radius_through_degree3"], expected
+    )
+    assert features["sampled_marginal_radius50_through_degree3"] == 1.0
+    assert features["sampled_marginal_radius90_through_degree3"] == 16.0
+
+
+def test_marginal_locality_rejects_zero_energy() -> None:
+    chain = [
+        {"conditional_collision_energy": 0.5, "support_columns": []},
+        {"conditional_collision_energy": 0.5, "support_columns": [0]},
+        {"conditional_collision_energy": 0.4, "support_columns": [0, 1]},
+        {"conditional_collision_energy": 0.3, "support_columns": [0, 1, 2]},
+    ]
+    with pytest.raises(ValueError, match="without positive energy"):
+        marginal_locality_features([chain], (1, 2, 4))
 
 
 def test_product_reference_binomial_inversion() -> None:

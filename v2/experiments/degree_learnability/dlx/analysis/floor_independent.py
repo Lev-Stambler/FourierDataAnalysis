@@ -5,8 +5,31 @@ from __future__ import annotations
 import numpy as np
 
 
-def curve_metrics(token_grid: list[int], val_ce_bits: list[float],
-                  initial_ce_bits: float | None = None) -> dict:
+def normalized_learning_time(
+    normalized_curve_area: float,
+    final_ce_fraction: float,
+    *,
+    maximum_final_fraction: float = 0.99,
+) -> float:
+    """Return normalized time spent above the run's achieved endpoint."""
+    area = float(normalized_curve_area)
+    final = float(final_ce_fraction)
+    if not np.isfinite(area) or not np.isfinite(final):
+        raise ValueError("learning-time inputs must be finite")
+    if not 0.0 < maximum_final_fraction < 1.0:
+        raise ValueError("maximum_final_fraction must lie in (0,1)")
+    if final >= maximum_final_fraction:
+        raise ValueError(
+            "normalized learning time is unidentifiable when final CE barely improves"
+        )
+    return (area - final) / (1.0 - final)
+
+
+def curve_metrics(
+    token_grid: list[int],
+    val_ce_bits: list[float],
+    initial_ce_bits: float | None = None,
+) -> dict:
     """Summarize a CE curve without a Bayes-floor estimate.
 
     ``normalized_curve_area`` is CE/init CE integrated over normalized log-token
@@ -17,7 +40,9 @@ def curve_metrics(token_grid: list[int], val_ce_bits: list[float],
     t = np.asarray(token_grid, dtype=np.float64)
     ce = np.asarray(val_ce_bits, dtype=np.float64)
     if t.ndim != 1 or ce.ndim != 1 or len(t) != len(ce) or len(t) < 2:
-        raise ValueError("token_grid and val_ce_bits must be aligned curves of length >= 2")
+        raise ValueError(
+            "token_grid and val_ce_bits must be aligned curves of length >= 2"
+        )
     if np.any(~np.isfinite(ce)) or np.any(np.diff(t) < 0):
         raise ValueError("curve must be finite and token_grid non-decreasing")
 

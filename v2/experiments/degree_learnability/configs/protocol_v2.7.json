@@ -1,0 +1,108 @@
+{
+  "version": "2.7",
+  "name": "prospective marginal Fourier locality confirmation",
+  "date_frozen": "2026-08-10",
+  "status": "frozen after source-only feasibility and development-manifest construction, before confirmation materialization, profiling, prediction, or training",
+  "hypothesis": "The dataset-only marginal locality centroid positively predicts normalized learning time for the fixed learned-absolute Transformer.",
+  "development": {
+    "n_corpora": 54,
+    "manifest": "runs/local/v27_marginal_locality/development_manifest.json",
+    "manifest_sha256": "e42090c861c92d2774635e332ea16bfa03903f699bb1343e3c75394ef2e4b032",
+    "required_positive_standardized_coefficient": true
+  },
+  "corpora": {
+    "bytes_per_corpus": 2000000,
+    "minimum_feasibility_bytes": 2500000,
+    "source_registry": "configs/source_candidates_v2.7.json",
+    "source_registry_sha256": "aa50112d3191da2932d9df5172e3821b5d39829767a1b32f1077342aa36a3337",
+    "source_feasibility": "runs/local/v27_marginal_locality/source_feasibility.json",
+    "source_feasibility_sha256": "a56819af6fd528f411d9df5f6f94e1efe31fd654406bb94c9dc058ec621f433a",
+    "selection_notes": "Feature-blind feasibility replaced undersized tensorflow/docs and microsoft/TypeScript-Website with ordered ansible/ansible-documentation and mongodb/docs fallbacks; the Doyle public-domain group added three disjoint works. No Fourier profile existed.",
+    "sources": [
+      {"id":"dickens_prose","stratum":"prose"},
+      {"id":"twain_prose","stratum":"prose"},
+      {"id":"doyle_prose","stratum":"prose"},
+      {"id":"hugo_prose","stratum":"prose"},
+      {"id":"pubmed_abstracts_3","stratum":"science"},
+      {"id":"arxiv_articles","stratum":"science"},
+      {"id":"pubmed_articles","stratum":"science"},
+      {"id":"uspto_patents","stratum":"science"},
+      {"id":"ansible_docs","stratum":"documentation"},
+      {"id":"airflow_docs","stratum":"documentation"},
+      {"id":"home_assistant_docs","stratum":"documentation"},
+      {"id":"mongodb_docs","stratum":"documentation"},
+      {"id":"perl5_language","stratum":"language"},
+      {"id":"gcc_language","stratum":"language"},
+      {"id":"groovy_language","stratum":"language"},
+      {"id":"ballerina_language","stratum":"language"},
+      {"id":"tensorflow_code","stratum":"application_code"},
+      {"id":"arrow_code","stratum":"application_code"},
+      {"id":"redis_code","stratum":"application_code"},
+      {"id":"blender_code","stratum":"application_code"},
+      {"id":"lean4_formal","stratum":"formal"},
+      {"id":"unimath_formal","stratum":"formal"},
+      {"id":"sel4_formal","stratum":"formal"},
+      {"id":"vst_formal","stratum":"formal"}
+    ]
+  },
+  "profile": {
+    "basis": "inverse-likelihood categorical projection under the dependent data measure",
+    "q": 256,
+    "lags": [1,2,4,8,16,32,64],
+    "max_degree": 3,
+    "chains": 64,
+    "positions": 250000,
+    "folds": 2,
+    "seed": 2603,
+    "delta": 0.05,
+    "primary_feature": "sampled_marginal_log1p_radius_through_degree3",
+    "secondary_features": ["sampled_marginal_radius50_through_degree3","sampled_marginal_radius90_through_degree3","sampled_marginal_positive_energy_through_degree3"]
+  },
+  "target": {
+    "name": "normalized_learning_time",
+    "formula": "(median normalized_curve_area - median final_ce_fraction) / (1 - median final_ce_fraction)",
+    "maximum_identifiable_final_ce_fraction": 0.99
+  },
+  "prediction": {
+    "model": "standardized unpenalized one-feature OLS fit only on the locked 54-corpus development panel",
+    "feature_sets": {
+      "intercept_only": [],
+      "marginal_locality": ["sampled_marginal_log1p_radius_through_degree3"]
+    },
+    "clip_predictions": false
+  },
+  "training": {
+    "vocab": 256,
+    "ctx_len": 64,
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4,
+    "mlp_mult": 4,
+    "dropout": 0.0,
+    "tie_weights": true,
+    "lr": 0.001,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "position_encoding": "learned_absolute",
+    "tokens_per_step": 1024,
+    "budget_tokens": 3000000,
+    "checkpoints": 16,
+    "seeds": [0,1]
+  },
+  "decision": {
+    "rmse_bootstrap": {"samples":100000,"seed":2701,"stratified":true,"confidence":0.95},
+    "rank_test": {"statistic":"mean within-stratum Spearman rho","permutations":100000,"seed":2702,"alternative":"greater","maximum_p":0.05},
+    "confirmed": "RMSE improvement interval strictly above zero and blocked rank rho positive with one-sided p <= 0.05",
+    "partial_labels": ["PREDICTIVE_ONLY","ASSOCIATION_ONLY"],
+    "failure_labels": ["NOT_CONFIRMED","TARGET_UNIDENTIFIABLE","AUDIT_FAILED"]
+  },
+  "compute": {
+    "profiles": "Modal CPU",
+    "training_gpu": "H100",
+    "maximum_concurrent_h100s": 1,
+    "expected_training_cells": 48,
+    "network_during_remote_cells": false,
+    "freeze_order": ["development manifest","source feasibility","protocol","data manifest","profiles","OLS artifacts and predictions","training"]
+  },
+  "protocol_hash": "4b3d0018d3180c8bd208b4b0fe42559e7ab4c8bc9e3c6d8c118d64ddd57bf9b7"
+}

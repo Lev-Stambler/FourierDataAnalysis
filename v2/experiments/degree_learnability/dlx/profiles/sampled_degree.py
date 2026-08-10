@@ -191,6 +191,63 @@ def geometric_sampled_features(
     }
 
 
+def marginal_locality_features(
+    chains: list[list[dict]],
+    coordinate_radii: tuple[int, ...],
+    *,
+    feature_degree: int = 3,
+) -> dict[str, float]:
+    """Attribute clipped chain increments to the coordinate added at each step."""
+    if not chains or feature_degree < 1:
+        raise ValueError("chains and feature_degree must be positive")
+    radii = tuple(int(value) for value in coordinate_radii)
+    if not radii or any(value < 1 for value in radii):
+        raise ValueError("coordinate_radii must be positive")
+    radial_energy: dict[int, float] = {}
+    for chain in chains:
+        if len(chain) <= feature_degree:
+            raise ValueError("chain does not reach the requested feature degree")
+        for degree in range(1, feature_degree + 1):
+            support = chain[degree]["support_columns"]
+            if len(support) != degree:
+                raise ValueError("chain support length does not equal its degree")
+            coordinate = int(support[-1])
+            if coordinate < 0 or coordinate >= len(radii):
+                raise ValueError("chain support coordinate is out of range")
+            increment = max(
+                float(chain[degree]["conditional_collision_energy"])
+                - float(chain[degree - 1]["conditional_collision_energy"]),
+                0.0,
+            )
+            radius = radii[coordinate]
+            radial_energy[radius] = radial_energy.get(radius, 0.0) + increment
+    total = sum(radial_energy.values())
+    if total <= 0.0:
+        raise ValueError("marginal locality is undefined without positive energy")
+
+    def quantile(probability: float) -> int:
+        threshold = probability * total
+        cumulative = 0.0
+        for radius, energy in sorted(radial_energy.items()):
+            cumulative += energy
+            if cumulative >= threshold:
+                return radius
+        raise AssertionError("positive radial energy did not reach its quantile")
+
+    return {
+        "sampled_marginal_log1p_radius_through_degree3": float(
+            sum(
+                energy * math.log2(1.0 + radius)
+                for radius, energy in radial_energy.items()
+            )
+            / total
+        ),
+        "sampled_marginal_radius50_through_degree3": float(quantile(0.5)),
+        "sampled_marginal_radius90_through_degree3": float(quantile(0.9)),
+        "sampled_marginal_positive_energy_through_degree3": float(total / len(chains)),
+    }
+
+
 def sampled_nested_degree_profile(
     contexts: np.ndarray,
     targets: np.ndarray,

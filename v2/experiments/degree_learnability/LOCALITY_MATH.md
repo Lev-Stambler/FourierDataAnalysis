@@ -433,3 +433,42 @@ worsens endpoint RMSE by 4.76% with a paired bootstrap interval entirely below
 zero. This negative result concerns the scalar aggregation and frozen learner;
 it does not contradict the earlier within-corpus causal ordering under explicit
 stride interventions.
+
+## 11. Marginal locality and the v2.7 result
+
+The v2.6 chain increment is caused by the coordinate added at step $k$, but the
+old $G_{\leq3}$ assigned it to $\max A_{c,k}$. Once a large lag entered a chain,
+that rule mislabeled every later near-coordinate increment as far away. Protocol
+v2.7 instead attributes each positive increment to the newly added lag $r_{c,k}$:
+
+\[
+w(r)=\sum_{c,k}\delta_{c,k}\mathbf 1\{r_{c,k}=r\},
+\qquad
+\Lambda_{\mathrm{marg}}
+=\frac{\sum_r w(r)\log_2(1+r)}{\sum_r w(r)}.
+\]
+
+This is a randomized marginal attribution of the resolved projection curve. It
+is not an exact joint-support Fourier coefficient under dependent inputs. Its
+location is nevertheless unambiguous: it records which coordinate generated
+the measured nested-projection increment.
+
+The learning-time target separates the achieved endpoint from convergence shape.
+If $F$ is median final CE divided by initial CE and $A$ is median normalized
+curve area across seeds, then
+
+\[
+H_{\mathrm{learn}}=\frac{A-F}{1-F}.
+\]
+
+The frozen analysis rejects this target if any corpus has $F\geq0.99$; the 24
+confirmation corpora instead ranged from 0.241 to 0.459.
+
+On 24 source-disjoint corpora, the development-frozen one-feature OLS reduced
+RMSE from 0.05363 to 0.05034, a 6.14% improvement with stratified paired-bootstrap
+95% interval $[1.70\%,27.96\%]$. Its prospective $R^2$ was 0.083 and pooled
+Spearman $\rho=0.757$. However, mean within-stratum Spearman was only 0.30 with
+one-sided blocked-permutation $p=0.119$. The preregistered verdict is therefore
+`PREDICTIVE_ONLY`, not `CONFIRMED`: the scalar carries transferable between-domain
+information for this learner, but a consistent within-domain ordering remains
+unresolved.

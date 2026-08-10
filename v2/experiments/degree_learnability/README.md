@@ -46,6 +46,8 @@ model-independent scalar dataset-hardness law and not the specific `G_total`
 formula.
 
 The exact basis and statistic are defined in [`LOCALITY_MATH.md`](LOCALITY_MATH.md).
+The research narrative—including the failed endpoint test and the post-hoc
+marginal-locality correction—is in [`BLOG.md`](BLOG.md).
 The post-v2.4 plain-OLS and sampled higher-degree diagnostic is summarized in
 [`docs/history/V25_KISS_STATUS.md`](docs/history/V25_KISS_STATUS.md).
 The critical prior-art and novelty assessment is in
@@ -300,3 +302,27 @@ uv run python scripts/v26_audit.py
 `scripts/v26_dry_run.py` validates the 64-cell grid without downloading data or
 launching remote work. Training refuses to start unless the protocol, data,
 profile, model, and prediction hashes all match.
+
+## Completed v2.7 marginal-locality confirmation
+
+Protocol v2.7 prospectively tests the corrected marginal locality centroid on
+24 source-disjoint corpora in six strata. A one-feature OLS was frozen from 54
+compatible development corpora before any of the 48 confirmation training cells
+ran. The target is normalized learning time
+`(curve_area - final_fraction) / (1 - final_fraction)` for the same
+learned-absolute d64/l2 Transformer.
+
+The frozen result is **PREDICTIVE_ONLY**. Relative RMSE improvement over the
+historical intercept is 6.14%, with a stratified paired-bootstrap 95% interval
+of `[1.70%, 27.96%]`; prospective R² improves from -0.041 to 0.083. The blocked
+rank gate does not pass: mean within-stratum Spearman rho is 0.30, one-sided
+permutation `p=0.119`. Pooled rho is 0.757, indicating substantial between-domain
+signal that should not be mistaken for a uniform within-domain ordering. All 48
+cells ran sequentially on one H100 at a time, and the mechanical audit passes.
+Artifacts are under `runs/local/v27_marginal_locality/`.
+
+```bash
+uv run python scripts/v27_dry_run.py
+uv run python scripts/v27_analyze.py
+uv run python scripts/v27_audit.py
+```

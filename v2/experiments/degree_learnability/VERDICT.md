@@ -604,3 +604,30 @@ $G_{\le3}$ as a useful universal cross-corpus scalar in this design; it does not
 undo the causal within-corpus stride-locality results. Audit PASS. Locks:
 protocol `d19bdf25…`, data `2920024a…`, profiles `4bff065e…`, predictions
 `1ee62f59…`.
+
+## Completed v2.7 prospective marginal-locality test (2026-08-10)
+
+The corrected feature attributes every positive random-chain projection
+increment to the coordinate newly added at that step. Its scalar summary is the
+energy-weighted centroid of `log2(1 + lag)`. The target is normalized learning
+time, `(curve_area - final_fraction) / (1 - final_fraction)`, which measures how
+slowly the fixed learner realizes its eventual loss reduction.
+
+The one-feature standardized OLS was fit on a locked 54-corpus development panel.
+Predictions for 24 source-disjoint corpora—four each in six broad strata—were
+hash-locked before 48 sequential H100 cells ran. No corpus triggered the frozen
+target-instability cutoff: median final CE fractions ranged from 0.241 to 0.459.
+
+The preregistered verdict is **PREDICTIVE_ONLY**. Marginal locality reduces RMSE
+from `0.05363` to `0.05034`, a 6.14% improvement with stratified paired-bootstrap
+95% interval `[1.70%, 27.96%]`; prospective R² changes from `-0.041` to `0.083`.
+Pooled Spearman is `rho=0.757` (`p=1.89e-5`). The separate blocked rank gate does
+not pass: the six within-stratum rhos are `-0.4/0.8/-0.4/1.0/0.4/0.4`, mean
+`rho=0.30`, one-sided permutation `p=0.119`.
+
+Thus a frozen, dataset-only Fourier-locality summary carries prospective
+predictive information for this Transformer, especially across broad domains,
+but does not yet give a reliable scalar ordering within domains. This is stronger
+than the v2.6 null result and weaker than a universal dataset-hardness law. Audit
+PASS. Locks: protocol `4b3d0018…`, data `93b36112…`, profiles `aec5b085…`,
+predictions `fb6fac00…`. Artifacts: `runs/local/v27_marginal_locality/`.
