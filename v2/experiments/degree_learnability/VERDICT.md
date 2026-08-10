@@ -569,5 +569,21 @@ corpora. Degrees four through six are frequently coverage-limited. The result
 supports the criticism that v2.4 truncated the natural spectrum too early, but it
 also confirms that more independent corpora—not more seeds—are required to
 identify a stable incremental Fourier coefficient beyond strong sequential
-controls. See `V25_KISS_STATUS.md` and
-`runs/local/v24_spectrum_predictor/v25_kiss_ols_analysis.json`.
+controls. See `docs/history/V25_KISS_STATUS.md` and
+`runs/local/v25_kiss_diagnostic/{analysis.json,manifest.json}`. The compact
+profile summaries and deterministic compressed chain audits reconstruct the
+original v2.5 profile artifacts losslessly; no frozen v2.4 artifact changed.
+
+## Frozen v2.6 prospective test (2026-08-10)
+
+No v2.6 profile or learning outcome has been computed. The hash-frozen protocol
+uses 32 new, source-disjoint repositories in four balanced strata, two seeds of
+the learned-absolute d64/l2 learner, and one independent corpus row per outcome.
+It fits standardized OLS only on the 22 prior corpora with the same learner.
+
+The primary target is median-seed final held-out `CE/initial_CE`. The primary
+incremental comparison adds the preregistered sampled geometric complexity to
+ordinary controls plus sampled degree-three energy and mean degree. All model
+artifacts and 32 predictions must be hash-locked after CPU profiling and before
+the 64 sequential H100 cells can start. Until that run completes, v2.4 remains
+the latest confirmatory absolute-prediction verdict.

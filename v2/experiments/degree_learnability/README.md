@@ -18,6 +18,14 @@ adding Fourier features worsened RMSE by 8.8% (95% corpus-bootstrap interval
 `[-20.5%, +1.36%]`). The intervention direction remained useful (88.9% sign
 accuracy), but its magnitude prediction had negative `R^2`.
 
+The post-confirmatory v2.5 diagnosis found two concrete limitations rather than a
+positive confirmation: v2.4 selected ridge `alpha=100` under a natural/stride
+covariate mismatch, and its degree-two profile omitted substantial degree-three
+conditional energy. Plain OLS plus degree-three summaries produced promising
+held-out numbers, but only small, target-dependent gains under pooled
+leave-one-corpus-out analysis. Those choices were post hoc and do not change the
+v2.4 verdict.
+
 The exact controlled factorial clarifies the mechanism: at equal nonconstant
 Fourier energy, degree 2 was harder than degree 1 by `0.130` normalized endpoint
 CE, while radius had a strong effect for ALiBi but not a universal effect across
@@ -28,7 +36,7 @@ formula.
 
 The exact basis and statistic are defined in [`LOCALITY_MATH.md`](LOCALITY_MATH.md).
 The post-v2.4 plain-OLS and sampled higher-degree diagnostic is summarized in
-[`V25_KISS_STATUS.md`](V25_KISS_STATUS.md).
+[`docs/history/V25_KISS_STATUS.md`](docs/history/V25_KISS_STATUS.md).
 The critical prior-art and novelty assessment is in
 [`NOVELTY_ASSESSMENT.md`](NOVELTY_ASSESSMENT.md). In short: the broad theory is
 not new; the potentially new contribution is the controlled, data-conditioned
@@ -47,8 +55,9 @@ artifacts keep their original wording to preserve hashes and provenance.
   (`base.py` interface per PLAN §12.2; `f2_subset_sum.py`).
 - `dlx/seeding.py` — deterministic seed tree (PLAN §12.5).
 - `tests/` — preregistration-relevant tests (PLAN §12.4).
-- (upcoming) `dlx/profiles/`, `dlx/learners/`, `dlx/training/`, `dlx/analysis/`,
-  `dlx/protocol/`, `dlx/modal_app.py`.
+- `dlx/profiles/` and `dlx/analysis/` — data-derived spectra and frozen predictors.
+- `dlx/protocol/` — protocol hashing, lock verification, and pure cell enumeration.
+- `runs/local/v25_kiss_diagnostic/` — compact v2.5 summaries and lossless audits.
 
 ## Conventions
 
@@ -114,7 +123,7 @@ artifacts keep their original wording to preserve hashes and provenance.
   floor-independent curve metrics. Result: **INCONCLUSIVE** under the frozen rule
   (tabular degree-vs-difficulty Spearman rho `-0.5/1.0/0.5`; language suffix-gain
   rho `-0.2`). Nine new language cells ran locally with two CPU threads; enwik8 was
-  reused; images were not retrained. See `H5_MATCHED_STATUS.md`, protocol v1.3,
+  reused; images were not retrained. See `docs/history/H5_MATCHED_STATUS.md`, protocol v1.3,
   `runs/local/h5_matched/integrated_analysis.json`, and the `VERDICT.md` addendum.
 - Corrected text protocol v1.4 (2026-08-06): the v1.3 language cells were invalidated
   after finding that cyclic corpus reuse shuffled individual tokens and erased
@@ -248,3 +257,27 @@ uv sync                      # CPU tiers
 uv sync --extra gpu --extra analysis   # GPU/analysis milestones
 uv run pytest -q             # S0/S1 tests
 ```
+
+## Frozen v2.6 confirmation
+
+Protocol v2.6 is frozen but not executed. It uses 32 new pinned corpora, one
+learned-absolute d64/l2 Transformer, two seeds, and exactly 64 sequential H100
+cells. Final held-out `CE/initial_CE` is primary. The primary comparison asks
+whether the sampled geometric feature improves frozen OLS predictions beyond
+ordinary controls plus sampled energy and degree.
+
+The enforced run order is:
+
+```bash
+uv run python scripts/v26_prepare_data.py --validate-only
+uv run python scripts/v26_prepare_data.py
+modal run scripts/v26_modal.py --stage profile
+uv run python scripts/v26_freeze_predictions.py
+modal run scripts/v26_modal.py --stage train
+uv run python scripts/v26_analyze.py
+uv run python scripts/v26_audit.py
+```
+
+`scripts/v26_dry_run.py` validates the 64-cell grid without downloading data or
+launching remote work. Training refuses to start unless the protocol, data,
+profile, model, and prediction hashes all match.

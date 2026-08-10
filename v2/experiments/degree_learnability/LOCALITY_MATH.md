@@ -387,3 +387,41 @@ identity does not define the Ferrere spectrum. Large signed inverted levels in
 the real profiles demonstrate the failure of that product assumption. The
 reported cumulative conditional-energy curve remains basis invariant and useful;
 its increments must not be relabeled as exact dependent-input Fourier weights.
+
+## 10. Frozen v2.6 sampled geometric summary
+
+For v2.6, each random chain uses the pinned lag bank
+$\{1,2,4,8,16,32,64\}$ and stops at degree three. Empirical nested increments
+are clipped only for the scalar predictor:
+
+\[
+\delta_{c,k}=\max\{\widehat M(A_{c,k})-\widehat M(A_{c,k-1}),0\}.
+\]
+
+Raw signed increments and coverage intervals remain in the audit artifact. The
+three frozen dataset features are
+
+\[
+E_{\leq3}=\frac1C\sum_c
+\max\{\widehat M(A_{c,3})-\widehat M(A_{c,0}),0\},
+\]
+
+\[
+D_{\leq3}=\frac{\sum_{c,k}k\delta_{c,k}}{\sum_{c,k}\delta_{c,k}},
+\]
+
+and
+
+\[
+G_{\leq3}=\frac{
+\sum_{c,k}\delta_{c,k}\log_2\!\left[
+\binom{\max A_{c,k}}{k}(q-1)^k\right]
+}{\sum_c\widehat M(A_{c,3})}.
+\]
+
+The denominator of $G_{\leq3}$ is the resolved total square energy, including
+the constant component, matching the Parseval normalization motivation. This is
+a fixed randomized projection summary, not an exact recovery of dependent-input
+Fourier levels. Its value is computed before training and is model-independent;
+whether it predicts finite-budget hardness is learner-conditional and is the
+prospective v2.6 question.

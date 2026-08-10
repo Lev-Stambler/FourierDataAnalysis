@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import sys
@@ -11,18 +12,13 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-
-from v24_development_analysis import DATA_FILES
-from v24_freeze_predictions import DATASETS, OUT
-
-from dlx.profiles.sampled_degree import (
-    invert_product_reference_degree_curve,
-    sampled_token_degree_profile,
-)
+from dlx.analysis.text_panel import v24_profile_data_files
+from dlx.profiles.sampled_degree import sampled_token_degree_profile
 
 ROOT = Path(__file__).parent.parent
-PROFILE_DIR = OUT / "higher_degree_profiles"
+OUT = ROOT / "runs/local/v25_kiss_diagnostic"
+PROFILE_DIR = OUT / "profiles"
+AUDIT_DIR = OUT / "audit_chains"
 
 
 def main() -> None:
@@ -34,37 +30,16 @@ def main() -> None:
     parser.add_argument("--max-positions", type=int, default=100_000)
     parser.add_argument("--chains", type=int, default=48)
     parser.add_argument("--max-degree", type=int, default=6)
-    parser.add_argument("--inversion-only", action="store_true")
+    parser.add_argument("--audit-chains", action="store_true")
+    parser.add_argument("--product-reference", action="store_true")
     args = parser.parse_args()
-    paths = (
-        {dataset: ROOT / f"dlx/data_cache/v24_{dataset}_bytes_n2000000.npy" for dataset in DATASETS}
-        if args.panel == "confirmation"
-        else DATA_FILES
-    )
+    paths = v24_profile_data_files(ROOT, args.panel)
     if args.dataset != "all" and args.dataset not in paths:
         parser.error(f"unknown {args.panel} dataset: {args.dataset}")
     selected = tuple(paths) if args.dataset == "all" else (args.dataset,)
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     for dataset in selected:
         output_path = PROFILE_DIR / f"{dataset}.json"
-        if args.inversion_only:
-            result = json.loads(output_path.read_text())
-            result["product_reference_inverted_level_weights"] = (
-                invert_product_reference_degree_curve(
-                    [
-                        row["mean_conditional_collision_energy"]
-                        for row in result["degree_curve"]
-                    ],
-                    result["n_coordinates"],
-                )
-            )
-            result["product_reference_warning"] = (
-                "exact only for orthogonal coordinate subspaces, such as a product "
-                "input measure; signed levels diagnose dependence or estimation bias"
-            )
-            output_path.write_text(json.dumps(result, indent=2))
-            print(f"{dataset}: inversion added", flush=True)
-            continue
         path = paths[dataset]
         tokens = np.load(path, mmap_mode="r")
         result = {
@@ -78,9 +53,28 @@ def main() -> None:
                 max_positions=args.max_positions,
                 seed=2500,
                 delta=0.05,
+                include_chains=args.audit_chains,
+                include_product_reference=args.product_reference,
             ),
         }
+        chains = result.pop("chains", None)
         output_path.write_text(json.dumps(result, indent=2))
+        if chains is not None:
+            AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+            audit_payload = json.dumps(
+                {
+                    "dataset": dataset,
+                    "data_sha256": result["data_sha256"],
+                    "summary_sha256": hashlib.sha256(
+                        output_path.read_bytes()
+                    ).hexdigest(),
+                    "chains": chains,
+                },
+                separators=(",", ":"),
+            ).encode()
+            (AUDIT_DIR / f"{dataset}.json.gz").write_bytes(
+                gzip.compress(audit_payload, compresslevel=9, mtime=0)
+            )
         compact = [
             {
                 "degree": row["degree"],

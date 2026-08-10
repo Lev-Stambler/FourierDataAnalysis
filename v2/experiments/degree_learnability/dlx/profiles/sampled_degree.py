@@ -46,7 +46,9 @@ def invert_product_reference_degree_curve(
     return [float(value) for value in weights]
 
 
-def _lookup_counts(sorted_values: np.ndarray, counts: np.ndarray, query: np.ndarray) -> np.ndarray:
+def _lookup_counts(
+    sorted_values: np.ndarray, counts: np.ndarray, query: np.ndarray
+) -> np.ndarray:
     indices = np.searchsorted(sorted_values, query)
     valid = indices < len(sorted_values)
     output = np.zeros(len(query), dtype=np.int64)
@@ -113,10 +115,13 @@ def crossfit_conditional_collision(
     coverage = sum(item[1] * item[2] for item in directions) / total
     # Conditional on the opposite-fold table, every evaluation score is in [0,1].
     # A union bound over the two held-out folds yields this weighted half-width.
-    half_width = sum(
-        item[2] * math.sqrt(math.log(4.0 / delta) / (2.0 * item[2]))
-        for item in directions
-    ) / total
+    half_width = (
+        sum(
+            item[2] * math.sqrt(math.log(4.0 / delta) / (2.0 * item[2]))
+            for item in directions
+        )
+        / total
+    )
     return {
         "conditional_collision_energy": float(estimate),
         "opposite_fold_context_coverage": float(coverage),
@@ -133,6 +138,59 @@ def crossfit_conditional_collision(
     }
 
 
+def geometric_sampled_features(
+    chains: list[list[dict]],
+    coordinate_radii: tuple[int, ...],
+    *,
+    feature_degree: int = 3,
+    q: int = 256,
+) -> dict[str, float]:
+    """Summarize nested-chain energy, degree, and radius with a fixed formula."""
+    if not chains or feature_degree < 1 or q < 2:
+        raise ValueError("chains, feature_degree, and q must be positive")
+    radii = tuple(int(value) for value in coordinate_radii)
+    positive_energy = 0.0
+    weighted_degree = 0.0
+    weighted_geometry = 0.0
+    total_square_energy = 0.0
+    terminal_nonconstant = 0.0
+    for chain in chains:
+        if len(chain) <= feature_degree:
+            raise ValueError("chain does not reach the requested feature degree")
+        total_square_energy += chain[feature_degree]["conditional_collision_energy"]
+        terminal_nonconstant += max(
+            chain[feature_degree]["conditional_collision_energy"]
+            - chain[0]["conditional_collision_energy"],
+            0.0,
+        )
+        for degree in range(1, feature_degree + 1):
+            increment = max(
+                chain[degree]["conditional_collision_energy"]
+                - chain[degree - 1]["conditional_collision_energy"],
+                0.0,
+            )
+            support = chain[degree]["support_columns"]
+            radius = max(radii[index] for index in support)
+            if radius < degree:
+                raise ValueError("support radius cannot be smaller than its degree")
+            positive_energy += increment
+            weighted_degree += degree * increment
+            weighted_geometry += increment * math.log2(
+                math.comb(radius, degree) * ((q - 1) ** degree)
+            )
+    return {
+        "sampled_nonconstant_energy_through_degree3": float(
+            terminal_nonconstant / len(chains)
+        ),
+        "sampled_mean_degree_through_degree3": float(
+            weighted_degree / positive_energy if positive_energy else 0.0
+        ),
+        "sampled_geometric_complexity_through_degree3": float(
+            weighted_geometry / total_square_energy if total_square_energy else 0.0
+        ),
+    }
+
+
 def sampled_nested_degree_profile(
     contexts: np.ndarray,
     targets: np.ndarray,
@@ -141,22 +199,40 @@ def sampled_nested_degree_profile(
     n_chains: int = 48,
     seed: int = 0,
     delta: float = 0.05,
+    q: int = 256,
+    coordinate_radii: tuple[int, ...] | None = None,
+    include_chains: bool = False,
+    include_product_reference: bool = False,
 ) -> dict:
-    """Estimate an average cumulative projection curve over random support chains."""
+    """Estimate an average cumulative projection curve over random support chains.
+
+    The compact summary is the stable public artifact. ``include_chains`` retains
+    the lossless per-support audit rows, while ``include_product_reference`` adds
+    the product-measure-only binomial inversion.
+    """
     x = np.asarray(contexts)
     y = np.asarray(targets)
     if x.ndim != 2 or len(x) != len(y):
         raise ValueError("contexts must be (n,d) and align with targets")
-    if x.dtype.kind not in "uib" or np.any(x < 0) or np.any(x > 255):
-        raise ValueError("contexts must contain categorical values in [0,255]")
-    if y.dtype.kind not in "uib" or np.any(y < 0) or np.any(y > 255):
-        raise ValueError("targets must contain categorical values in [0,255]")
+    if not 2 <= q <= 256:
+        raise ValueError("q must lie in [2,256]")
+    if x.dtype.kind not in "uib" or np.any(x < 0) or np.any(x >= q):
+        raise ValueError("contexts must contain categorical values in [0,q)")
+    if y.dtype.kind not in "uib" or np.any(y < 0) or np.any(y >= q):
+        raise ValueError("targets must contain categorical values in [0,q)")
     if not 1 <= max_degree <= min(7, x.shape[1]):
         raise ValueError("max_degree must be between 1 and min(7,n_coordinates)")
     if n_chains < 2:
         raise ValueError("n_chains must be at least two")
     if not 0.0 < delta < 1.0:
         raise ValueError("delta must lie in (0,1)")
+    radii = (
+        tuple(range(1, x.shape[1] + 1))
+        if coordinate_radii is None
+        else tuple(int(value) for value in coordinate_radii)
+    )
+    if len(radii) != x.shape[1] or any(value < 1 for value in radii):
+        raise ValueError("coordinate_radii must contain one positive value per column")
 
     rng = np.random.default_rng(seed)
     folds = np.zeros(len(y), dtype=np.int8)
@@ -181,6 +257,7 @@ def sampled_nested_degree_profile(
                 {
                     "degree": degree,
                     "support_columns": order[:degree].tolist(),
+                    "support_radius": max(radii[index] for index in order[:degree]),
                     **crossfit_conditional_collision(
                         keys, y, folds, delta=per_support_delta
                     ),
@@ -228,11 +305,15 @@ def sampled_nested_degree_profile(
             }
         )
         previous = mean_energy
-    product_weights = invert_product_reference_degree_curve(
-        [row["mean_conditional_collision_energy"] for row in degree_curve],
-        x.shape[1],
+    feature_degree = min(3, max_degree)
+    sampled_features = geometric_sampled_features(
+        chain_rows,
+        radii,
+        feature_degree=feature_degree,
+        q=q,
     )
-    return {
+    result = {
+        "schema_version": 2,
         "estimator": "random nested-support cross-fitted conditional collision energy",
         "interpretation": (
             "basis-invariant cumulative projection diagnostic; increments are not "
@@ -240,18 +321,28 @@ def sampled_nested_degree_profile(
         ),
         "n_examples": len(y),
         "n_coordinates": x.shape[1],
+        "coordinate_radii": list(radii),
         "max_degree": max_degree,
         "n_chains": n_chains,
         "seed": seed,
         "delta": delta,
         "degree_curve": degree_curve,
-        "product_reference_inverted_level_weights": product_weights,
-        "product_reference_warning": (
+        "sampled_features": sampled_features,
+    }
+    if include_product_reference:
+        result["product_reference_inverted_level_weights"] = (
+            invert_product_reference_degree_curve(
+                [row["mean_conditional_collision_energy"] for row in degree_curve],
+                x.shape[1],
+            )
+        )
+        result["product_reference_warning"] = (
             "exact only for orthogonal coordinate subspaces, such as a product "
             "input measure; signed levels diagnose dependence or estimation bias"
-        ),
-        "chains": chain_rows,
-    }
+        )
+    if include_chains:
+        result["chains"] = chain_rows
+    return result
 
 
 def sampled_token_degree_profile(
@@ -263,6 +354,9 @@ def sampled_token_degree_profile(
     max_positions: int = 100_000,
     seed: int = 0,
     delta: float = 0.05,
+    q: int = 256,
+    include_chains: bool = False,
+    include_product_reference: bool = False,
 ) -> dict:
     """Convenience wrapper for a categorical token stream."""
     values = np.asarray(tokens)
@@ -282,5 +376,9 @@ def sampled_token_degree_profile(
         n_chains=n_chains,
         seed=seed,
         delta=delta,
+        q=q,
+        coordinate_radii=lag_values,
+        include_chains=include_chains,
+        include_product_reference=include_product_reference,
     )
     return {"lags": list(lag_values), "n_positions": len(positions), **result}

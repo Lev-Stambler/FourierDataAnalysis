@@ -9,21 +9,26 @@ from pathlib import Path
 
 import numpy as np
 from scipy.stats import spearmanr
-from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
+from dlx.analysis.spectrum_predictor import (
+    fit_frozen_ols,
+    nested_loco_predictions,
+    predict_frozen_ols,
+)
+from dlx.analysis.text_panel import (
+    CONTROL_FEATURES,
+    TARGETS,
+    attach_sampled_features,
+    load_v24_confirmation_rows,
+    load_v24_development_rows,
+)
 
-from v24_confirmatory_analysis import _actual_rows
-from v24_development_analysis import CONTROL_FEATURES, build_rows
-from v24_freeze_predictions import OUT, TARGETS
-
-from dlx.analysis.spectrum_predictor import design_matrix, nested_loco_predictions
-
-RESULT_PATH = OUT / "v25_kiss_ols_analysis.json"
-HIGHER_DEGREE_DIR = OUT / "higher_degree_profiles"
+ROOT = Path(__file__).parent.parent
+OUT = ROOT / "runs/local/v25_kiss_diagnostic"
+RESULT_PATH = OUT / "analysis.json"
+HIGHER_DEGREE_DIR = OUT / "profiles"
 
 FEATURE_SETS = {
     "configuration_only": (),
@@ -70,76 +75,34 @@ SAMPLED_FEATURE_SETS = {
 }
 
 
-def _confirmation_rows() -> list[dict]:
-    feature_rows = json.loads(
-        (OUT / "confirmatory_predictions.json").read_text()
-    )["predictions"]
-    by_key = {
-        (row["dataset"], int(row["stride"]), row["configuration"]): row
-        for row in feature_rows
-    }
-    output = []
-    for actual in _actual_rows():
-        key = (actual["dataset"], int(actual["stride"]), actual["configuration"])
-        output.append({**actual, "features": by_key[key]["features"]})
-    return output
-
-
 def _fit_predict(
-    train_rows: list[dict], test_rows: list[dict], feature_names: tuple[str, ...], target: str
+    train_rows: list[dict],
+    test_rows: list[dict],
+    feature_names: tuple[str, ...],
+    target: str,
 ) -> dict:
-    configurations = tuple(sorted({row["configuration"] for row in train_rows}))
-    x_train = design_matrix(train_rows, feature_names, configurations)
-    x_test = design_matrix(test_rows, feature_names, configurations)
-    y_train = np.asarray([row[target] for row in train_rows], dtype=float)
     y_test = np.asarray([row[target] for row in test_rows], dtype=float)
-    scaler = StandardScaler().fit(x_train)
-    model = LinearRegression().fit(scaler.transform(x_train), y_train)
-    predicted = model.predict(scaler.transform(x_test))
+    artifact = fit_frozen_ols(
+        train_rows,
+        target=target,
+        feature_names=feature_names,
+        reject_constant_features=False,
+    )
+    predicted = predict_frozen_ols(artifact, test_rows)
     return {
         "n_train_rows": len(train_rows),
         "n_test_rows": len(test_rows),
         "rmse": math.sqrt(mean_squared_error(y_test, predicted)),
         "r2": float(r2_score(y_test, predicted)),
-        "standardized_coefficients": model.coef_.tolist(),
-        "intercept": float(model.intercept_),
+        "standardized_coefficients": artifact["coefficients"],
+        "intercept": artifact["intercept"],
     }
-
-
-def _add_higher_degree_features(rows: list[dict]) -> list[dict]:
-    output = []
-    for row in rows:
-        profile = json.loads((HIGHER_DEGREE_DIR / f"{row['dataset']}.json").read_text())
-        curve = profile["degree_curve"]
-        energies = np.asarray(
-            [curve[degree]["mean_conditional_collision_energy"] for degree in range(4)],
-            dtype=float,
-        )
-        increments = np.maximum(np.diff(energies), 0.0)
-        total = float(increments.sum())
-        sampled_features = {
-            "sampled_nonconstant_energy_through_degree3": total,
-            "sampled_mean_degree_through_degree3": (
-                float(np.dot(np.arange(1, 4), increments) / total)
-                if total > 0.0
-                else 0.0
-            ),
-            "sampled_degree3_context_coverage": curve[3]["mean_context_coverage"],
-        }
-        output.append(
-            {**row, "features": {**row["features"], **sampled_features}}
-        )
-    return output
 
 
 def _shift(development: list[dict], confirmation: list[dict]) -> dict:
     result = {}
     feature_names = tuple(
-        dict.fromkeys(
-            name
-            for names in FEATURE_SETS.values()
-            for name in names
-        )
+        dict.fromkeys(name for names in FEATURE_SETS.values() for name in names)
     )
     for name in feature_names:
         train = np.asarray([row["features"][name] for row in development], dtype=float)
@@ -183,14 +146,12 @@ def _confirmation_correlations(rows: list[dict]) -> dict:
 
 
 def analyze() -> dict:
-    development = build_rows()
-    confirmation = _confirmation_rows()
-    development_natural = _add_higher_degree_features(
-        [row for row in development if row["stride"] == 1]
+    development = load_v24_development_rows(ROOT)
+    confirmation = load_v24_confirmation_rows(ROOT)
+    development_natural = attach_sampled_features(
+        [row for row in development if row["stride"] == 1], HIGHER_DEGREE_DIR
     )
-    confirmation_natural = _add_higher_degree_features(
-        [row for row in confirmation if row["stride"] == 1]
-    )
+    confirmation_natural = attach_sampled_features(confirmation, HIGHER_DEGREE_DIR)
     all_natural = development_natural + confirmation_natural
     scores = {}
     for target in TARGETS:
@@ -263,6 +224,7 @@ def analyze() -> dict:
 
 def main() -> None:
     result = analyze()
+    OUT.mkdir(parents=True, exist_ok=True)
     RESULT_PATH.write_text(json.dumps(result, indent=2))
     compact = {
         target: {

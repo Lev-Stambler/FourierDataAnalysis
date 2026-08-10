@@ -1,0 +1,77 @@
+{
+  "version": "2.6",
+  "name": "prospective sampled Fourier locality predictor",
+  "date_frozen": "2026-08-10",
+  "status": "frozen before corpus materialization, profiling, prediction, or training",
+  "hypothesis": "Sampled geometric locality improves frozen prediction of fixed-budget held-out cross-entropy beyond ordinary sequential controls and non-geometric degree/energy summaries.",
+  "corpora": {
+    "bytes_per_corpus": 2000000,
+    "canonicalization": "lexicographic archive member order, explicit FILE separators, exact prefix",
+    "sources": [
+      {"id":"django_docs","stratum":"documentation","repo":"django/django","commit":"c9eb16a87e60c305fb3651459639f647cce498db","paths":["/docs/"],"suffixes":[".txt",".md",".rst"]},
+      {"id":"numpy_docs","stratum":"documentation","repo":"numpy/numpy","commit":"87310db7f2a791b4a4e8503d4111359d85052cd4","paths":["/doc/"],"suffixes":[".md",".rst"]},
+      {"id":"pandas_docs","stratum":"documentation","repo":"pandas-dev/pandas","commit":"2e3e0ba45333641fa86dd6fee2559cfe946328e7","paths":["/doc/"],"suffixes":[".md",".rst"]},
+      {"id":"pytorch_docs","stratum":"documentation","repo":"pytorch/pytorch","commit":"2ba6a0a1865e48bce91c6a36d4d11218b52baee7","paths":["/docs/"],"suffixes":[".md",".rst"]},
+      {"id":"terraform_docs","stratum":"documentation","repo":"hashicorp/terraform","commit":"da3a115efef0de2e817a8c3ef57c5df9297c99ce","paths":["/website/"],"suffixes":[".md",".mdx"]},
+      {"id":"ansible_docs","stratum":"documentation","repo":"ansible/ansible","commit":"c5ecb46c3f8c135a76ee86584f4b77b50184e5a6","paths":["/docs/"],"suffixes":[".md",".rst"]},
+      {"id":"grafana_docs","stratum":"documentation","repo":"grafana/grafana","commit":"945bd0458d2ddb3874152f1aa0f3cc940f2174c5","paths":["/docs/"],"suffixes":[".md",".mdx"]},
+      {"id":"godot_docs","stratum":"documentation","repo":"godotengine/godot-docs","commit":"8be07b62c7abc0612dad5e75ffd1190243f85392","paths":["/"],"suffixes":[".rst"]},
+      {"id":"openjdk_java","stratum":"language","repo":"openjdk/jdk","commit":"20ccb7cfbde76b7ce2bb0e635934c252a187f702","paths":["/src/"],"suffixes":[".java"]},
+      {"id":"dotnet_csharp","stratum":"language","repo":"dotnet/runtime","commit":"14b601ec5edfeecbc70368890e8676fe5c29da83","paths":["/src/"],"suffixes":[".cs"]},
+      {"id":"swift_source","stratum":"language","repo":"swiftlang/swift","commit":"e2bbdd321e85cf8a54c253c1d7cfbf495103e6f7","paths":["/lib/","/stdlib/"],"suffixes":[".swift"]},
+      {"id":"dart_source","stratum":"language","repo":"dart-lang/sdk","commit":"0b79bdfb86dbbb3e18c232b45fa462a7293e7db4","paths":["/sdk/lib/","/runtime/"],"suffixes":[".dart"]},
+      {"id":"erlang_source","stratum":"language","repo":"erlang/otp","commit":"498708c139c041cc79aec3d6da3459b570eb99c5","paths":["/lib/"],"suffixes":[".erl",".hrl"]},
+      {"id":"ocaml_source","stratum":"language","repo":"ocaml/ocaml","commit":"8cdc85c9db658e334c802e75c556c4d870aa5502","paths":["/stdlib/","/typing/","/parsing/"],"suffixes":[".ml",".mli"]},
+      {"id":"ruby_source","stratum":"language","repo":"ruby/ruby","commit":"8233b2222839fdcfd73669c46c74e9b30b3498c6","paths":["/lib/","/test/"],"suffixes":[".rb"]},
+      {"id":"php_source","stratum":"language","repo":"php/php-src","commit":"0b7f50ad2e48161c3d4e8b3ddd6d547ea72ed691","paths":["/ext/","/Zend/"],"suffixes":[".php",".c",".h"]},
+      {"id":"spark_scala","stratum":"additional_code","repo":"apache/spark","commit":"9a20f8b3693c527485e432a57d3fcac6df8eda86","paths":["/core/","/sql/"],"suffixes":[".scala"]},
+      {"id":"kotlin_source","stratum":"additional_code","repo":"JetBrains/kotlin","commit":"0cd09f53fb52ffbaf70ebfc528ea245b25e242ba","paths":["/compiler/","/libraries/"],"suffixes":[".kt"]},
+      {"id":"elixir_source","stratum":"additional_code","repo":"elixir-lang/elixir","commit":"44085d43476e3db956b03dfe36de65a7da1926a9","paths":["/lib/"],"suffixes":[".ex",".exs"]},
+      {"id":"zig_source","stratum":"additional_code","repo":"ziglang/zig","commit":"738d2be9d6b6ef3ff3559130c05159ef53336224","paths":["/src/","/lib/"],"suffixes":[".zig"]},
+      {"id":"nim_source","stratum":"additional_code","repo":"nim-lang/Nim","commit":"f4e8e04cd06dc32021d324534b6a55600ee77748","paths":["/lib/","/compiler/"],"suffixes":[".nim"]},
+      {"id":"racket_source","stratum":"additional_code","repo":"racket/racket","commit":"00cfe60118a53a7649e581e104b01cf41591a82e","paths":["/racket/collects/","/pkgs/"],"suffixes":[".rkt"]},
+      {"id":"clojure_source","stratum":"additional_code","repo":"clojure/clojure","commit":"2cea69253b9ed27436e93632b9a27c2f99088a49","paths":["/src/","/test/"],"suffixes":[".clj"]},
+      {"id":"r_source","stratum":"additional_code","repo":"wch/r-source","commit":"cbb23c7644fe807b81d093d02eb849da254e1079","paths":["/src/library/","/src/main/"],"suffixes":[".R",".c",".h"]},
+      {"id":"isabelle_formal","stratum":"formal","repo":"isabelle-prover/mirror-isabelle","commit":"5c7c2b880fd0ec0b75bc0f246893ae87078edd7c","paths":["/src/","/thys/"],"suffixes":[".thy"]},
+      {"id":"agda_formal","stratum":"formal","repo":"agda/agda-stdlib","commit":"7f649a3f4b68c0276757ed26e7afd0ef52d6a878","paths":["/src/"],"suffixes":[".agda"]},
+      {"id":"metamath_formal","stratum":"formal","repo":"metamath/set.mm","commit":"ebabf55ecf2173012d463eb08e5affa319095642","paths":["/"],"suffixes":[".mm"]},
+      {"id":"dafny_formal","stratum":"formal","repo":"dafny-lang/libraries","commit":"b486ff7faadbf306ed7e71386a2b0aeb1e38bd4d","paths":["/"],"suffixes":[".dfy"]},
+      {"id":"fstar_formal","stratum":"formal","repo":"FStarLang/FStar","commit":"3fd1c28120b1c11475bdffdc015a08f4f5e94d7a","paths":["/ulib/","/examples/"],"suffixes":[".fst",".fsti"]},
+      {"id":"hol_light_formal","stratum":"formal","repo":"jrh13/hol-light","commit":"6868f3c1ec54255e77f4b63e13d2ae0705a71859","paths":["/"],"suffixes":[".ml"]},
+      {"id":"compcert_formal","stratum":"formal","repo":"AbsInt/CompCert","commit":"a354849f0e5f52bdb9c1064b78f468369e0bf6a3","paths":["/"],"suffixes":[".v"]},
+      {"id":"acl2_formal","stratum":"formal","repo":"acl2/acl2","commit":"fbc68c09c23af08d32396960e242362a6f37833f","paths":["/books/"],"suffixes":[".lisp"]}
+    ]
+  },
+  "profile": {
+    "basis": "inverse-likelihood categorical projection under the dependent data measure",
+    "q": 256,
+    "lags": [1,2,4,8,16,32,64],
+    "max_degree": 3,
+    "chains": 64,
+    "positions": 250000,
+    "folds": 2,
+    "seed": 2603,
+    "delta": 0.05,
+    "features": ["sampled_nonconstant_energy_through_degree3","sampled_mean_degree_through_degree3","sampled_geometric_complexity_through_degree3"]
+  },
+  "controls": ["unigram_entropy_bits","heldout_bigram_ce_bits","lag1_mutual_information_bits","zlib_bits_per_byte"],
+  "training": {"vocab":256,"ctx_len":64,"d_model":64,"n_layers":2,"n_heads":4,"mlp_mult":4,"dropout":0.0,"tie_weights":true,"lr":0.001,"weight_decay":0.1,"grad_clip":1.0,"position_encoding":"learned_absolute","tokens_per_step":1024,"budget_tokens":3000000,"checkpoints":16,"seeds":[0,1]},
+  "prediction": {
+    "model": "standardized unpenalized OLS fit only on prior natural learned_absolute_d64_l2 corpus rows",
+    "feature_sets": {
+      "intercept_only": [],
+      "controls": ["unigram_entropy_bits","heldout_bigram_ce_bits","lag1_mutual_information_bits","zlib_bits_per_byte"],
+      "controls_energy_degree": ["unigram_entropy_bits","heldout_bigram_ce_bits","lag1_mutual_information_bits","zlib_bits_per_byte","sampled_nonconstant_energy_through_degree3","sampled_mean_degree_through_degree3"],
+      "controls_energy_degree_locality": ["unigram_entropy_bits","heldout_bigram_ce_bits","lag1_mutual_information_bits","zlib_bits_per_byte","sampled_nonconstant_energy_through_degree3","sampled_mean_degree_through_degree3","sampled_geometric_complexity_through_degree3"]
+    }
+  },
+  "outcomes": {"primary":"median-seed final held-out CE divided by initial held-out CE","secondary":"median-seed normalized held-out CE curve area"},
+  "verdict": {
+    "locality_supported": "primary locality model RMSE is lower and paired corpus-bootstrap 95% lower bound on relative improvement is above zero",
+    "spectrum_supported_locality_unresolved": "energy-degree model beats controls but locality fails its gate",
+    "predictive_not_incremental": "spectral models have positive R2 but do not beat controls",
+    "not_supported": "spectral models have non-positive R2 and no RMSE improvement"
+  },
+  "compute": {"profiles":"Modal CPU","training_gpu":"H100","maximum_concurrent_h100s":1,"expected_training_cells":64,"network_during_remote_cells":false,"freeze_order":["protocol","data manifest","profiles and controls","OLS artifacts and predictions","training"]},
+  "protocol_hash": "8ba87a8f434e7f0b50755b60ad0ae5a5440f713f540fd7eb437b765189ac1c5f"
+}
