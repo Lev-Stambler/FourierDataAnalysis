@@ -26,6 +26,17 @@ held-out numbers, but only small, target-dependent gains under pooled
 leave-one-corpus-out analysis. Those choices were post hoc and do not change the
 v2.4 verdict.
 
+The prospective v2.6.2 test resolves the immediate follow-up negatively for
+locality. On 32 new corpora, controls predict endpoint difficulty with
+`R^2=0.134`. Adding sampled degree-three energy and mean degree gives
+`R^2=0.189` and a 3.2% RMSE improvement, but its 95% paired-corpus bootstrap
+interval `[-10.8%, +18.1%]` is unresolved. Adding the frozen geometric locality
+summary reduces `R^2` to `0.110` and worsens RMSE by 4.76%; its improvement
+interval is entirely negative (`[-10.10%, -0.17%]`). Raw locality has only
+`rho=0.051` with endpoint difficulty (`p=0.780`). Thus the primary sampled
+locality hypothesis is not supported, while an incremental energy/degree signal
+remains suggestive rather than confirmed.
+
 The exact controlled factorial clarifies the mechanism: at equal nonconstant
 Fourier energy, degree 2 was harder than degree 1 by `0.130` normalized endpoint
 CE, while radius had a strong effect for ALiBi but not a universal effect across
@@ -258,13 +269,21 @@ uv sync --extra gpu --extra analysis   # GPU/analysis milestones
 uv run pytest -q             # S0/S1 tests
 ```
 
-## Frozen v2.6 confirmation
+## Completed v2.6 confirmation
 
-Protocol v2.6 is frozen but not executed. It uses 32 new pinned corpora, one
+Protocol v2.6.2 uses 32 new pinned corpora, one
 learned-absolute d64/l2 Transformer, two seeds, and exactly 64 sequential H100
 cells. Final held-out `CE/initial_CE` is primary. The primary comparison asks
 whether the sampled geometric feature improves frozen OLS predictions beyond
 ordinary controls plus sampled energy and degree.
+
+All profiles ran on Modal CPU and all training cells ran sequentially with H100
+concurrency one. The mechanical protocol label is
+`SPECTRUM_SUPPORTED_LOCALITY_UNRESOLVED` because energy/degree has a positive
+point improvement. The more informative primary conclusion is
+`FROZEN_LOCALITY_INCREMENT_HARMFUL`; the spectrum-only improvement is not
+statistically resolved. Audit PASS. Artifacts are under
+`runs/local/v26_sampled_locality/`.
 
 The enforced run order is:
 

@@ -574,16 +574,33 @@ controls. See `docs/history/V25_KISS_STATUS.md` and
 profile summaries and deterministic compressed chain audits reconstruct the
 original v2.5 profile artifacts losslessly; no frozen v2.4 artifact changed.
 
-## Frozen v2.6 prospective test (2026-08-10)
+## Completed v2.6.2 prospective test (2026-08-10)
 
-No v2.6 profile or learning outcome has been computed. The hash-frozen protocol
-uses 32 new, source-disjoint repositories in four balanced strata, two seeds of
+The hash-frozen protocol uses 32 new, source-disjoint repositories in four
+balanced strata, two seeds of
 the learned-absolute d64/l2 learner, and one independent corpus row per outcome.
 It fits standardized OLS only on the 22 prior corpora with the same learner.
 
 The primary target is median-seed final held-out `CE/initial_CE`. The primary
 incremental comparison adds the preregistered sampled geometric complexity to
 ordinary controls plus sampled degree-three energy and mean degree. All model
-artifacts and 32 predictions must be hash-locked after CPU profiling and before
-the 64 sequential H100 cells can start. Until that run completes, v2.4 remains
-the latest confirmatory absolute-prediction verdict.
+artifacts and 32 predictions were hash-locked after CPU profiling and before the
+64 sequential H100 cells started. Two source-only amendments replaced repositories
+that could not supply the frozen two-million-byte payload; both occurred before
+any profile, prediction, or training outcome.
+
+The primary sampled-locality hypothesis fails. Controls achieve endpoint
+`RMSE=0.05861`, `R^2=0.134`; adding energy and degree gives `RMSE=0.05673`,
+`R^2=0.189`, a 3.2% point improvement with bootstrap interval
+`[-10.75%, +18.14%]`. Adding geometric locality instead yields
+`RMSE=0.05943`, `R^2=0.110`, or a 4.76% degradation relative to energy/degree;
+the paired interval `[-10.10%, -0.17%]` lies wholly below zero. Raw locality has
+endpoint `rho=0.051`, `p=0.780`. Curve-area models all have negative `R^2`.
+
+The mechanical frozen label is `SPECTRUM_SUPPORTED_LOCALITY_UNRESOLVED` because
+energy/degree wins on point RMSE. Scientifically, that gain is unresolved and the
+specific frozen locality increment is harmful out of sample. This refutes
+$G_{\le3}$ as a useful universal cross-corpus scalar in this design; it does not
+undo the causal within-corpus stride-locality results. Audit PASS. Locks:
+protocol `d19bdf25…`, data `2920024a…`, profiles `4bff065e…`, predictions
+`1ee62f59…`.

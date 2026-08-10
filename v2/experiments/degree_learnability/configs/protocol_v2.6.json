@@ -1,8 +1,9 @@
 {
-  "version": "2.6",
+  "version": "2.6.2",
   "name": "prospective sampled Fourier locality predictor",
   "date_frozen": "2026-08-10",
-  "status": "frozen before corpus materialization, profiling, prediction, or training",
+  "status": "source-resolution amendments frozen after four corpus materializations and before any profiling, prediction, or training",
+  "amendment": "v2.6.1 replaced technically empty pandas_docs with sklearn_docs. A source-tree feasibility audit then found terraform_docs, ansible_docs, clojure_source, and dafny_formal below two million selected bytes; v2.6.2 replaces them with pinned node_docs, react_docs, crystal_source, and dafny_main. No Fourier profiles, predictions, or learning outcomes existed.",
   "hypothesis": "Sampled geometric locality improves frozen prediction of fixed-budget held-out cross-entropy beyond ordinary sequential controls and non-geometric degree/energy summaries.",
   "corpora": {
     "bytes_per_corpus": 2000000,
@@ -10,10 +11,10 @@
     "sources": [
       {"id":"django_docs","stratum":"documentation","repo":"django/django","commit":"c9eb16a87e60c305fb3651459639f647cce498db","paths":["/docs/"],"suffixes":[".txt",".md",".rst"]},
       {"id":"numpy_docs","stratum":"documentation","repo":"numpy/numpy","commit":"87310db7f2a791b4a4e8503d4111359d85052cd4","paths":["/doc/"],"suffixes":[".md",".rst"]},
-      {"id":"pandas_docs","stratum":"documentation","repo":"pandas-dev/pandas","commit":"2e3e0ba45333641fa86dd6fee2559cfe946328e7","paths":["/doc/"],"suffixes":[".md",".rst"]},
+      {"id":"sklearn_docs","stratum":"documentation","repo":"scikit-learn/scikit-learn","commit":"c74a434d91c6c7aa4e05a18a7a8ff3c9d9745eb5","paths":["/doc/"],"suffixes":[".md",".rst"]},
       {"id":"pytorch_docs","stratum":"documentation","repo":"pytorch/pytorch","commit":"2ba6a0a1865e48bce91c6a36d4d11218b52baee7","paths":["/docs/"],"suffixes":[".md",".rst"]},
-      {"id":"terraform_docs","stratum":"documentation","repo":"hashicorp/terraform","commit":"da3a115efef0de2e817a8c3ef57c5df9297c99ce","paths":["/website/"],"suffixes":[".md",".mdx"]},
-      {"id":"ansible_docs","stratum":"documentation","repo":"ansible/ansible","commit":"c5ecb46c3f8c135a76ee86584f4b77b50184e5a6","paths":["/docs/"],"suffixes":[".md",".rst"]},
+      {"id":"node_docs","stratum":"documentation","repo":"nodejs/node","commit":"d512d2dec9862b32dcd780397127e44ac4b3860f","paths":["/doc/"],"suffixes":[".md"]},
+      {"id":"react_docs","stratum":"documentation","repo":"reactjs/react.dev","commit":"c7d6b700038c63d1aaf2c649af1aefe01ebbacac","paths":["/src/content/"],"suffixes":[".md",".mdx"]},
       {"id":"grafana_docs","stratum":"documentation","repo":"grafana/grafana","commit":"945bd0458d2ddb3874152f1aa0f3cc940f2174c5","paths":["/docs/"],"suffixes":[".md",".mdx"]},
       {"id":"godot_docs","stratum":"documentation","repo":"godotengine/godot-docs","commit":"8be07b62c7abc0612dad5e75ffd1190243f85392","paths":["/"],"suffixes":[".rst"]},
       {"id":"openjdk_java","stratum":"language","repo":"openjdk/jdk","commit":"20ccb7cfbde76b7ce2bb0e635934c252a187f702","paths":["/src/"],"suffixes":[".java"]},
@@ -30,12 +31,12 @@
       {"id":"zig_source","stratum":"additional_code","repo":"ziglang/zig","commit":"738d2be9d6b6ef3ff3559130c05159ef53336224","paths":["/src/","/lib/"],"suffixes":[".zig"]},
       {"id":"nim_source","stratum":"additional_code","repo":"nim-lang/Nim","commit":"f4e8e04cd06dc32021d324534b6a55600ee77748","paths":["/lib/","/compiler/"],"suffixes":[".nim"]},
       {"id":"racket_source","stratum":"additional_code","repo":"racket/racket","commit":"00cfe60118a53a7649e581e104b01cf41591a82e","paths":["/racket/collects/","/pkgs/"],"suffixes":[".rkt"]},
-      {"id":"clojure_source","stratum":"additional_code","repo":"clojure/clojure","commit":"2cea69253b9ed27436e93632b9a27c2f99088a49","paths":["/src/","/test/"],"suffixes":[".clj"]},
+      {"id":"crystal_source","stratum":"additional_code","repo":"crystal-lang/crystal","commit":"8988438216bc2f7352cb172686e087be8ac6a60a","paths":["/src/","/spec/"],"suffixes":[".cr"]},
       {"id":"r_source","stratum":"additional_code","repo":"wch/r-source","commit":"cbb23c7644fe807b81d093d02eb849da254e1079","paths":["/src/library/","/src/main/"],"suffixes":[".R",".c",".h"]},
       {"id":"isabelle_formal","stratum":"formal","repo":"isabelle-prover/mirror-isabelle","commit":"5c7c2b880fd0ec0b75bc0f246893ae87078edd7c","paths":["/src/","/thys/"],"suffixes":[".thy"]},
       {"id":"agda_formal","stratum":"formal","repo":"agda/agda-stdlib","commit":"7f649a3f4b68c0276757ed26e7afd0ef52d6a878","paths":["/src/"],"suffixes":[".agda"]},
       {"id":"metamath_formal","stratum":"formal","repo":"metamath/set.mm","commit":"ebabf55ecf2173012d463eb08e5affa319095642","paths":["/"],"suffixes":[".mm"]},
-      {"id":"dafny_formal","stratum":"formal","repo":"dafny-lang/libraries","commit":"b486ff7faadbf306ed7e71386a2b0aeb1e38bd4d","paths":["/"],"suffixes":[".dfy"]},
+      {"id":"dafny_main","stratum":"formal","repo":"dafny-lang/dafny","commit":"f3c2fedfb2b88272af5b64f5e45d803a3bc0043a","paths":["/Source/","/Test/"],"suffixes":[".dfy"]},
       {"id":"fstar_formal","stratum":"formal","repo":"FStarLang/FStar","commit":"3fd1c28120b1c11475bdffdc015a08f4f5e94d7a","paths":["/ulib/","/examples/"],"suffixes":[".fst",".fsti"]},
       {"id":"hol_light_formal","stratum":"formal","repo":"jrh13/hol-light","commit":"6868f3c1ec54255e77f4b63e13d2ae0705a71859","paths":["/"],"suffixes":[".ml"]},
       {"id":"compcert_formal","stratum":"formal","repo":"AbsInt/CompCert","commit":"a354849f0e5f52bdb9c1064b78f468369e0bf6a3","paths":["/"],"suffixes":[".v"]},
@@ -73,5 +74,5 @@
     "not_supported": "spectral models have non-positive R2 and no RMSE improvement"
   },
   "compute": {"profiles":"Modal CPU","training_gpu":"H100","maximum_concurrent_h100s":1,"expected_training_cells":64,"network_during_remote_cells":false,"freeze_order":["protocol","data manifest","profiles and controls","OLS artifacts and predictions","training"]},
-  "protocol_hash": "8ba87a8f434e7f0b50755b60ad0ae5a5440f713f540fd7eb437b765189ac1c5f"
+  "protocol_hash": "d19bdf25d0c61574fe7b4dc77a748607ede7af8913e9b0229f7be4781d335cc4"
 }

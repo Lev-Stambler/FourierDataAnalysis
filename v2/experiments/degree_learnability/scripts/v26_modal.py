@@ -9,7 +9,12 @@ from pathlib import Path
 
 import modal
 
-ROOT = Path(__file__).parent.parent
+LOCAL_ROOT = Path(__file__).parent.parent
+ROOT = (
+    Path("/root/pkg")
+    if str(Path(__file__).resolve()).startswith("/root/")
+    else LOCAL_ROOT
+)
 sys.path.insert(0, str(ROOT))
 
 from dlx.protocol.frozen import (

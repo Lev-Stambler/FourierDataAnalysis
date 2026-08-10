@@ -44,12 +44,18 @@ def _rows(protocol: dict) -> list[dict]:
 
 
 def _score(actual: np.ndarray, predicted: np.ndarray) -> dict:
-    rho, p_value = spearmanr(actual, predicted)
+    if float(np.std(actual)) == 0.0 or float(np.std(predicted)) == 0.0:
+        rho = None
+        p_value = None
+    else:
+        rho_value, p_value_value = spearmanr(actual, predicted)
+        rho = float(rho_value)
+        p_value = float(p_value_value)
     return {
         "rmse": math.sqrt(mean_squared_error(actual, predicted)),
         "r2": float(r2_score(actual, predicted)),
-        "spearman_rho": float(rho),
-        "spearman_two_sided_p": float(p_value),
+        "spearman_rho": rho,
+        "spearman_two_sided_p": p_value,
     }
 
 
@@ -112,12 +118,30 @@ def analyze() -> dict:
         verdict = "PREDICTIVE_NOT_INCREMENTAL"
     else:
         verdict = "NOT_SUPPORTED"
+    locality_gate = (
+        locality["relative_rmse_improvement"] > 0
+        and locality["corpus_bootstrap_95_interval"][0] > 0
+    )
+    locality_harm = locality["corpus_bootstrap_95_interval"][1] < 0
+    energy_resolved = energy["corpus_bootstrap_95_interval"][0] > 0
+    if locality_gate:
+        scientific_conclusion = "PRIMARY_LOCALITY_HYPOTHESIS_SUPPORTED"
+    elif locality_harm:
+        scientific_conclusion = "FROZEN_LOCALITY_INCREMENT_HARMFUL"
+    else:
+        scientific_conclusion = "PRIMARY_LOCALITY_HYPOTHESIS_NOT_SUPPORTED"
     result = {
         "protocol_hash": protocol["protocol_hash"],
         "data_manifest_hash": data_hash,
         "profile_manifest_hash": profile_hash,
         "prediction_lock_hash": prediction_hash,
         "verdict": verdict,
+        "scientific_conclusion": scientific_conclusion,
+        "primary_gates": {
+            "locality_supported": locality_gate,
+            "locality_harm_interval_below_zero": locality_harm,
+            "energy_degree_improvement_interval_above_zero": energy_resolved,
+        },
         "n_unseen_corpora": len(rows),
         "primary_target": primary,
         "secondary_target": "normalized_curve_area",
@@ -125,12 +149,21 @@ def analyze() -> dict:
         "paired_corpus_bootstrap_improvements": improvements,
         "rows": rows,
     }
-    (OUT / "analysis.json").write_text(json.dumps(result, indent=2) + "\n")
+    (OUT / "analysis.json").write_text(
+        json.dumps(result, indent=2, allow_nan=False) + "\n"
+    )
     return result
 
 
 if __name__ == "__main__":
     result = analyze()
     print(
-        json.dumps({"verdict": result["verdict"], "scores": result["scores"]}, indent=2)
+        json.dumps(
+            {
+                "verdict": result["verdict"],
+                "scientific_conclusion": result["scientific_conclusion"],
+                "scores": result["scores"],
+            },
+            indent=2,
+        )
     )

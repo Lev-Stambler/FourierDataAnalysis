@@ -1,0 +1,442 @@
+{
+  "protocol_hash": "d19bdf25d0c61574fe7b4dc77a748607ede7af8913e9b0229f7be4781d335cc4",
+  "data_manifest_hash": "2920024ad55089d3fb9174be867adb12cbf6963b670c612d5b4bd118db9e8b80",
+  "profile_manifest_hash": "4bff065ed7b486b51b617c5964cc2e81fe67410e0454772ca435706d07c8fa2f",
+  "prediction_lock_hash": "1ee62f5999825007e75222378f485f3d917e8bcb7e644bb4da7b11dd4dac4be8",
+  "verdict": "SPECTRUM_SUPPORTED_LOCALITY_UNRESOLVED",
+  "scientific_conclusion": "FROZEN_LOCALITY_INCREMENT_HARMFUL",
+  "primary_gates": {
+    "locality_supported": false,
+    "locality_harm_interval_below_zero": true,
+    "energy_degree_improvement_interval_above_zero": false
+  },
+  "n_unseen_corpora": 32,
+  "primary_target": "final_ce_fraction",
+  "secondary_target": "normalized_curve_area",
+  "scores": {
+    "final_ce_fraction": {
+      "intercept_only": {
+        "rmse": 0.0666990508966753,
+        "r2": -0.12149577685190249,
+        "spearman_rho": null,
+        "spearman_two_sided_p": null
+      },
+      "controls": {
+        "rmse": 0.058607033953382404,
+        "r2": 0.1341197782014525,
+        "spearman_rho": 0.47470674486803516,
+        "spearman_two_sided_p": 0.006046785377644385
+      },
+      "controls_energy_degree": {
+        "rmse": 0.05673200884124492,
+        "r2": 0.18863801049360873,
+        "spearman_rho": 0.5007331378299119,
+        "spearman_two_sided_p": 0.003512295026374919
+      },
+      "controls_energy_degree_locality": {
+        "rmse": 0.05943118553600147,
+        "r2": 0.10959596038572528,
+        "spearman_rho": 0.4974340175953078,
+        "spearman_two_sided_p": 0.0037714813037317174
+      }
+    },
+    "normalized_curve_area": {
+      "intercept_only": {
+        "rmse": 0.02911231512989059,
+        "r2": -6.861384896339473e-05,
+        "spearman_rho": null,
+        "spearman_two_sided_p": null
+      },
+      "controls": {
+        "rmse": 0.03202629388189212,
+        "r2": -0.21029065309388195,
+        "spearman_rho": 0.5234604105571847,
+        "spearman_two_sided_p": 0.0021090584834050023
+      },
+      "controls_energy_degree": {
+        "rmse": 0.033780682998510135,
+        "r2": -0.34652109797604647,
+        "spearman_rho": 0.4670087976539589,
+        "spearman_two_sided_p": 0.007045652389442195
+      },
+      "controls_energy_degree_locality": {
+        "rmse": 0.033139383497866694,
+        "r2": -0.29588111210703705,
+        "spearman_rho": 0.4490469208211143,
+        "spearman_two_sided_p": 0.009935349644485255
+      }
+    }
+  },
+  "paired_corpus_bootstrap_improvements": {
+    "final_ce_fraction": {
+      "energy_degree_vs_controls": {
+        "baseline_rmse": 0.058607033953382404,
+        "challenger_rmse": 0.05673200884124492,
+        "relative_rmse_improvement": 0.03199317531798192,
+        "corpus_bootstrap_95_interval": [
+          -0.10750540961726372,
+          0.18140955928047545
+        ],
+        "bootstrap_samples": 10000,
+        "bootstrap_seed": 2603
+      },
+      "locality_increment": {
+        "baseline_rmse": 0.05673200884124492,
+        "challenger_rmse": 0.05943118553600147,
+        "relative_rmse_improvement": -0.04757766823152244,
+        "corpus_bootstrap_95_interval": [
+          -0.1010191209183913,
+          -0.0016913384294232052
+        ],
+        "bootstrap_samples": 10000,
+        "bootstrap_seed": 2604
+      }
+    },
+    "normalized_curve_area": {
+      "energy_degree_vs_controls": {
+        "baseline_rmse": 0.03202629388189212,
+        "challenger_rmse": 0.033780682998510135,
+        "relative_rmse_improvement": -0.0547796483441988,
+        "corpus_bootstrap_95_interval": [
+          -0.19874000908056044,
+          0.10319844130193011
+        ],
+        "bootstrap_samples": 10000,
+        "bootstrap_seed": 2603
+      },
+      "locality_increment": {
+        "baseline_rmse": 0.033780682998510135,
+        "challenger_rmse": 0.033139383497866694,
+        "relative_rmse_improvement": 0.01898420765121076,
+        "corpus_bootstrap_95_interval": [
+          -0.02044496411954356,
+          0.04797786599549267
+        ],
+        "bootstrap_samples": 10000,
+        "bootstrap_seed": 2604
+      }
+    }
+  },
+  "rows": [
+    {
+      "dataset": "django_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.941973978490488,
+      "final_ce_bits": 3.0520664444245087,
+      "learning_amount_bits": 4.889907534065979,
+      "fractional_learning": 0.6157074062373058,
+      "normalized_curve_area": 0.7220803400419126,
+      "final_ce_fraction": 0.38429259376269415
+    },
+    {
+      "dataset": "numpy_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.954392544739652,
+      "final_ce_bits": 3.5630945108175336,
+      "learning_amount_bits": 4.391298033922118,
+      "fractional_learning": 0.5520550539071604,
+      "normalized_curve_area": 0.7511831074143498,
+      "final_ce_fraction": 0.4479449460928396
+    },
+    {
+      "dataset": "sklearn_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.9892803433544035,
+      "final_ce_bits": 3.234946861950564,
+      "learning_amount_bits": 4.75433348140384,
+      "fractional_learning": 0.595093853046321,
+      "normalized_curve_area": 0.7205251110829389,
+      "final_ce_fraction": 0.4049061469536791
+    },
+    {
+      "dataset": "pytorch_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.969882635141902,
+      "final_ce_bits": 3.213302286395865,
+      "learning_amount_bits": 4.756580348746038,
+      "fractional_learning": 0.5968225813200043,
+      "normalized_curve_area": 0.7162024002764846,
+      "final_ce_fraction": 0.4031774186799957
+    },
+    {
+      "dataset": "node_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.9908317128565125,
+      "final_ce_bits": 3.3438019694464662,
+      "learning_amount_bits": 4.647029743410046,
+      "fractional_learning": 0.5815549381495677,
+      "normalized_curve_area": 0.7360447013446665,
+      "final_ce_fraction": 0.4184450618504324
+    },
+    {
+      "dataset": "react_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.968970869118353,
+      "final_ce_bits": 3.0091489155768762,
+      "learning_amount_bits": 4.959821953541477,
+      "fractional_learning": 0.6224084328215808,
+      "normalized_curve_area": 0.7130997438995159,
+      "final_ce_fraction": 0.37759156717841924
+    },
+    {
+      "dataset": "grafana_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.96020594529978,
+      "final_ce_bits": 2.6174170126647187,
+      "learning_amount_bits": 5.34278893263506,
+      "fractional_learning": 0.6711873293968691,
+      "normalized_curve_area": 0.7100602778622296,
+      "final_ce_fraction": 0.3288126706031308
+    },
+    {
+      "dataset": "godot_docs",
+      "stratum": "documentation",
+      "initial_ce_bits": 7.932101400409033,
+      "final_ce_bits": 2.5313348373979965,
+      "learning_amount_bits": 5.400766563011038,
+      "fractional_learning": 0.68088879838766,
+      "normalized_curve_area": 0.6948116939358271,
+      "final_ce_fraction": 0.3191112016123399
+    },
+    {
+      "dataset": "openjdk_java",
+      "stratum": "language",
+      "initial_ce_bits": 7.794148354733172,
+      "final_ce_bits": 2.351235615812537,
+      "learning_amount_bits": 5.442912738920635,
+      "fractional_learning": 0.6983418834409232,
+      "normalized_curve_area": 0.653728523798156,
+      "final_ce_fraction": 0.3016581165590767
+    },
+    {
+      "dataset": "dotnet_csharp",
+      "stratum": "language",
+      "initial_ce_bits": 7.868300265492191,
+      "final_ce_bits": 2.5678749808287433,
+      "learning_amount_bits": 5.300425284663449,
+      "fractional_learning": 0.6736638515801128,
+      "normalized_curve_area": 0.6808146318245938,
+      "final_ce_fraction": 0.32633614841988723
+    },
+    {
+      "dataset": "swift_source",
+      "stratum": "language",
+      "initial_ce_bits": 7.926158582904133,
+      "final_ce_bits": 2.8183804492755034,
+      "learning_amount_bits": 5.107778133628629,
+      "fractional_learning": 0.6444214858680357,
+      "normalized_curve_area": 0.7072259086254289,
+      "final_ce_fraction": 0.3555785141319643
+    },
+    {
+      "dataset": "dart_source",
+      "stratum": "language",
+      "initial_ce_bits": 7.97574100916523,
+      "final_ce_bits": 3.28091111720281,
+      "learning_amount_bits": 4.69482989196242,
+      "fractional_learning": 0.5886296023786679,
+      "normalized_curve_area": 0.7363190416892617,
+      "final_ce_fraction": 0.4113703976213322
+    },
+    {
+      "dataset": "erlang_source",
+      "stratum": "language",
+      "initial_ce_bits": 7.9231372776851,
+      "final_ce_bits": 3.4559301862600953,
+      "learning_amount_bits": 4.4672070914250055,
+      "fractional_learning": 0.5638369925120588,
+      "normalized_curve_area": 0.7269376762196386,
+      "final_ce_fraction": 0.43616300748794123
+    },
+    {
+      "dataset": "ocaml_source",
+      "stratum": "language",
+      "initial_ce_bits": 7.962945628928024,
+      "final_ce_bits": 3.3586055051064707,
+      "learning_amount_bits": 4.6043401238215536,
+      "fractional_learning": 0.5782128527756482,
+      "normalized_curve_area": 0.7086175155655772,
+      "final_ce_fraction": 0.42178714722435184
+    },
+    {
+      "dataset": "ruby_source",
+      "stratum": "language",
+      "initial_ce_bits": 7.948106277880978,
+      "final_ce_bits": 3.636772630871258,
+      "learning_amount_bits": 4.31133364700972,
+      "fractional_learning": 0.5424462331968027,
+      "normalized_curve_area": 0.7420519686818663,
+      "final_ce_fraction": 0.45755376680319726
+    },
+    {
+      "dataset": "php_source",
+      "stratum": "language",
+      "initial_ce_bits": 7.99667267363644,
+      "final_ce_bits": 2.8547180616370285,
+      "learning_amount_bits": 5.141954611999412,
+      "fractional_learning": 0.6430069388401871,
+      "normalized_curve_area": 0.6908448800479077,
+      "final_ce_fraction": 0.356993061159813
+    },
+    {
+      "dataset": "spark_scala",
+      "stratum": "additional_code",
+      "initial_ce_bits": 7.940020341568012,
+      "final_ce_bits": 3.2475867913692205,
+      "learning_amount_bits": 4.692433550198791,
+      "fractional_learning": 0.5909916305654344,
+      "normalized_curve_area": 0.7174240207028528,
+      "final_ce_fraction": 0.4090083694345656
+    },
+    {
+      "dataset": "kotlin_source",
+      "stratum": "additional_code",
+      "initial_ce_bits": 7.90221481428571,
+      "final_ce_bits": 2.3644001998054813,
+      "learning_amount_bits": 5.537814614480229,
+      "fractional_learning": 0.7008369142855215,
+      "normalized_curve_area": 0.6951660970907271,
+      "final_ce_fraction": 0.2991630857144786
+    },
+    {
+      "dataset": "elixir_source",
+      "stratum": "additional_code",
+      "initial_ce_bits": 7.965512469992152,
+      "final_ce_bits": 2.880935311912869,
+      "learning_amount_bits": 5.0845771580792825,
+      "fractional_learning": 0.6383486902061344,
+      "normalized_curve_area": 0.7061140425917969,
+      "final_ce_fraction": 0.36165130979386556
+    },
+    {
+      "dataset": "zig_source",
+      "stratum": "additional_code",
+      "initial_ce_bits": 7.929593592389815,
+      "final_ce_bits": 1.5202101852492205,
+      "learning_amount_bits": 6.409383407140595,
+      "fractional_learning": 0.8081628105296792,
+      "normalized_curve_area": 0.6453161227158632,
+      "final_ce_fraction": 0.19183718947032086
+    },
+    {
+      "dataset": "nim_source",
+      "stratum": "additional_code",
+      "initial_ce_bits": 7.929317044287227,
+      "final_ce_bits": 2.728972022051938,
+      "learning_amount_bits": 5.20034502223529,
+      "fractional_learning": 0.6558552429167057,
+      "normalized_curve_area": 0.6973443998770187,
+      "final_ce_fraction": 0.3441447570832944
+    },
+    {
+      "dataset": "racket_source",
+      "stratum": "additional_code",
+      "initial_ce_bits": 7.892798549172659,
+      "final_ce_bits": 2.82129843591703,
+      "learning_amount_bits": 5.071500113255629,
+      "fractional_learning": 0.6425430501643121,
+      "normalized_curve_area": 0.675275172560841,
+      "final_ce_fraction": 0.3574569498356879
+    },
+    {
+      "dataset": "crystal_source",
+      "stratum": "additional_code",
+      "initial_ce_bits": 7.856114391769645,
+      "final_ce_bits": 2.975312167435042,
+      "learning_amount_bits": 4.880802224334603,
+      "fractional_learning": 0.6212275580753195,
+      "normalized_curve_area": 0.7076760344089197,
+      "final_ce_fraction": 0.37877244192468057
+    },
+    {
+      "dataset": "r_source",
+      "stratum": "additional_code",
+      "initial_ce_bits": 7.896638147844497,
+      "final_ce_bits": 3.7769156176318823,
+      "learning_amount_bits": 4.119722530212615,
+      "fractional_learning": 0.5217626868075635,
+      "normalized_curve_area": 0.768146964636056,
+      "final_ce_fraction": 0.47823731319243645
+    },
+    {
+      "dataset": "isabelle_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 8.00882329091556,
+      "final_ce_bits": 2.794083546530282,
+      "learning_amount_bits": 5.2147397443852785,
+      "fractional_learning": 0.6511278630177988,
+      "normalized_curve_area": 0.7043263034575742,
+      "final_ce_fraction": 0.34887213698220115
+    },
+    {
+      "dataset": "agda_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.940889928846437,
+      "final_ce_bits": 3.3366258643522277,
+      "learning_amount_bits": 4.60426406449421,
+      "fractional_learning": 0.5798288373988882,
+      "normalized_curve_area": 0.7117857397468847,
+      "final_ce_fraction": 0.42017116260111176
+    },
+    {
+      "dataset": "metamath_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.961173304715221,
+      "final_ce_bits": 2.8759036799900697,
+      "learning_amount_bits": 5.085269624725152,
+      "fractional_learning": 0.6387663638343676,
+      "normalized_curve_area": 0.6956727043296272,
+      "final_ce_fraction": 0.36123363616563253
+    },
+    {
+      "dataset": "dafny_main",
+      "stratum": "formal",
+      "initial_ce_bits": 7.992935920589819,
+      "final_ce_bits": 3.637328414305353,
+      "learning_amount_bits": 4.355607506284466,
+      "fractional_learning": 0.5449398286058621,
+      "normalized_curve_area": 0.7515159782156471,
+      "final_ce_fraction": 0.45506017139413785
+    },
+    {
+      "dataset": "fstar_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.92930758524143,
+      "final_ce_bits": 3.56982300956507,
+      "learning_amount_bits": 4.35948457567636,
+      "fractional_learning": 0.5498137452219999,
+      "normalized_curve_area": 0.7161130470728625,
+      "final_ce_fraction": 0.4501862547780001
+    },
+    {
+      "dataset": "hol_light_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.961715308039414,
+      "final_ce_bits": 1.7955738271967512,
+      "learning_amount_bits": 6.166141480842663,
+      "fractional_learning": 0.7744780038102479,
+      "normalized_curve_area": 0.638419526162247,
+      "final_ce_fraction": 0.22552199618975216
+    },
+    {
+      "dataset": "compcert_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.9579462222544315,
+      "final_ce_bits": 2.9725285314905863,
+      "learning_amount_bits": 4.985417690763844,
+      "fractional_learning": 0.6264801688944095,
+      "normalized_curve_area": 0.7090929392571756,
+      "final_ce_fraction": 0.3735198311055904
+    },
+    {
+      "dataset": "acl2_formal",
+      "stratum": "formal",
+      "initial_ce_bits": 7.826646798379485,
+      "final_ce_bits": 2.7932225368865686,
+      "learning_amount_bits": 5.033424261492917,
+      "fractional_learning": 0.6431365544652763,
+      "normalized_curve_area": 0.6677933472029742,
+      "final_ce_fraction": 0.35686344553472366
+    }
+  ]
+}

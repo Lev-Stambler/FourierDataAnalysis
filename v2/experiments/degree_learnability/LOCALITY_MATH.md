@@ -425,3 +425,11 @@ a fixed randomized projection summary, not an exact recovery of dependent-input
 Fourier levels. Its value is computed before training and is model-independent;
 whether it predicts finite-budget hardness is learner-conditional and is the
 prospective v2.6 question.
+
+The completed v2.6.2 result does not support this scalar as an absolute
+cross-corpus hardness predictor. Raw $G_{\leq3}$ has endpoint Spearman
+$\rho=0.051$ (`p=0.780`), and adding it to the frozen controls-plus-degree model
+worsens endpoint RMSE by 4.76% with a paired bootstrap interval entirely below
+zero. This negative result concerns the scalar aggregation and frozen learner;
+it does not contradict the earlier within-corpus causal ordering under explicit
+stride interventions.
