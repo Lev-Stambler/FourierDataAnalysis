@@ -44,10 +44,12 @@ class RandomWindowCorpus:
             raise ValueError("corpus has too few blocks for the requested split")
         boundaries = np.cumsum(np.concatenate(([0], counts)))
         self.block_ids: dict[str, np.ndarray] = {}
+        self.block_ranges: dict[str, tuple[tuple[int, int], ...]] = {}
         self.starts: dict[str, np.ndarray] = {}
         for index, name in enumerate(self.SPLITS):
             ids = np.sort(order[boundaries[index] : boundaries[index + 1]])
             self.block_ids[name] = ids
+            self.block_ranges[name] = tuple(blocks[block] for block in ids)
             self.starts[name] = np.concatenate(
                 [
                     np.arange(

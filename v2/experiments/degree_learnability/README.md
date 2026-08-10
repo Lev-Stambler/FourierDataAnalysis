@@ -56,6 +56,17 @@ degree, energy, and locality interpreted jointly with learner geometry—not a
 model-independent scalar dataset-hardness law and not the specific `G_total`
 formula.
 
+The v3.0 architecture-spectrum experiment sharpened that learner-conditional
+idea but stopped at its frozen mechanism gate. Across five positional geometries
+and 18 exact Walsh tasks, larger initialization NTK response predicted smaller
+held-out curve area after architecture and degree adjustment (coefficient
+`-0.0533`, support-bootstrap 95% interval `[-0.1294,-0.0364]`). However,
+reverse-ALiBi did not reverse the monotone radius ordering: both ALiBi directions
+had degree-one `rho=+0.464`, because lag 1 and the unique lag-64 boundary were
+special easy anchors while intermediate lags stayed hard. The strict gate failed,
+so no natural-corpus outcomes were observed and no transfer claim is made. See
+[`docs/V30_ARCHITECTURE_SPECTRUM.md`](docs/V30_ARCHITECTURE_SPECTRUM.md).
+
 The exact basis and statistic are defined in [`LOCALITY_MATH.md`](LOCALITY_MATH.md).
 The research narrative—including the failed endpoint test and the post-hoc
 marginal-locality correction—is in [`BLOG.md`](BLOG.md).

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from dlx.profiles.simple_controls import simple_text_controls
+from dlx.profiles.simple_controls import (
+    blockwise_simple_text_controls,
+    simple_text_controls,
+)
 
 
 def test_controls_distinguish_periodic_from_iid() -> None:
@@ -18,3 +21,13 @@ def test_controls_distinguish_periodic_from_iid() -> None:
 def test_controls_reject_short_stream() -> None:
     with np.testing.assert_raises(ValueError):
         simple_text_controls(np.arange(10), q=16)
+
+
+def test_blockwise_controls_are_deterministic_and_exclude_boundary_pairs() -> None:
+    tokens = np.concatenate([np.full(200, value, dtype=np.uint8) for value in range(4)])
+    segments = tuple((start, start + 200) for start in range(0, 800, 200))
+    first = blockwise_simple_text_controls(tokens, segments, q=4, seed=9)
+    second = blockwise_simple_text_controls(tokens, segments, q=4, seed=9)
+    assert first == second
+    assert first["lag1_mutual_information_bits"] == 2.0
+    assert first["heldout_bigram_ce_bits"] == 2.0

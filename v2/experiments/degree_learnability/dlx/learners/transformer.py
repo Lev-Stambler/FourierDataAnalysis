@@ -4,7 +4,7 @@ Deliberately small and standard: token embedding, configurable positional
 geometry, pre-norm blocks with multi-head causal self-attention (torch SDPA) and
 SwiGLU-free GELU MLP, tied output head. Historical protocols use the default
 learned absolute positions. Later robustness protocols may use fixed sinusoidal
-positions or ALiBi without changing the historical default config hash.
+positions or attention-relative variants without changing historical hashes.
 """
 
 from __future__ import annotations
@@ -33,12 +33,18 @@ class TransformerConfig:
     weight_decay: float = 0.1
     grad_clip: float = 1.0
     position_encoding: str = "learned_absolute"
+    rope_base: float = 10_000.0
+    attention_window: int | None = None
 
     def to_json(self) -> str:
         payload = asdict(self)
         # Preserve every historical config hash exactly.
         if self.position_encoding == "learned_absolute":
             payload.pop("position_encoding")
+        if self.position_encoding != "rope":
+            payload.pop("rope_base")
+        if self.attention_window is None:
+            payload.pop("attention_window")
         return json.dumps(payload, sort_keys=True)
 
     @property
@@ -46,12 +52,27 @@ class TransformerConfig:
         return hashlib.sha256(self.to_json().encode()).hexdigest()[:16]
 
     def __post_init__(self) -> None:
-        allowed = {"learned_absolute", "sinusoidal", "alibi"}
+        allowed = {
+            "learned_absolute",
+            "sinusoidal",
+            "rope",
+            "nope",
+            "alibi",
+            "reverse_alibi",
+        }
         if self.position_encoding not in allowed:
             raise ValueError(
                 f"position_encoding must be one of {sorted(allowed)}, "
                 f"got {self.position_encoding!r}"
             )
+        if self.rope_base <= 1.0:
+            raise ValueError("rope_base must be greater than one")
+        if self.attention_window is not None and not (
+            1 <= self.attention_window <= self.ctx_len
+        ):
+            raise ValueError("attention_window must lie in [1,ctx_len]")
+        if self.position_encoding == "rope" and (self.d_model // self.n_heads) % 2:
+            raise ValueError("RoPE requires an even attention head dimension")
 
 
 def _alibi_slopes(n_heads: int) -> torch.Tensor:
@@ -86,6 +107,29 @@ def _sinusoidal_positions(ctx_len: int, d_model: int) -> torch.Tensor:
     return table
 
 
+def _apply_rope(values: torch.Tensor, *, base: float) -> torch.Tensor:
+    """Rotate paired head coordinates by their absolute sequence positions."""
+    head_dim = values.shape[-1]
+    if head_dim % 2:
+        raise ValueError("RoPE requires an even head dimension")
+    positions = torch.arange(
+        values.shape[-2], device=values.device, dtype=torch.float32
+    )
+    inverse_frequencies = torch.exp(
+        -math.log(base)
+        * torch.arange(0, head_dim, 2, device=values.device, dtype=torch.float32)
+        / head_dim
+    )
+    angles = positions[:, None] * inverse_frequencies[None, :]
+    cosine = angles.cos().to(dtype=values.dtype)[None, None, :, :]
+    sine = angles.sin().to(dtype=values.dtype)[None, None, :, :]
+    even = values[..., 0::2]
+    odd = values[..., 1::2]
+    return torch.stack(
+        (even * cosine - odd * sine, even * sine + odd * cosine), dim=-1
+    ).flatten(-2)
+
+
 class Block(nn.Module):
     def __init__(self, cfg: TransformerConfig):
         super().__init__()
@@ -93,7 +137,9 @@ class Block(nn.Module):
         self.n_heads = cfg.n_heads
         self.head_dim = cfg.d_model // cfg.n_heads
         self.position_encoding = cfg.position_encoding
-        if self.position_encoding == "alibi":
+        self.rope_base = cfg.rope_base
+        self.attention_window = cfg.attention_window
+        if self.position_encoding in {"alibi", "reverse_alibi"}:
             self.register_buffer(
                 "alibi_slopes",
                 _alibi_slopes(cfg.n_heads).reshape(1, cfg.n_heads, 1, 1),
@@ -118,15 +164,29 @@ class Block(nn.Module):
         B, T, D = h.shape
         qkv = self.qkv(h).reshape(B, T, 3, self.n_heads, self.head_dim)
         q, k, v = [t.permute(0, 2, 1, 3) for t in qkv.unbind(dim=2)]
+        if self.position_encoding == "rope":
+            q = _apply_rope(q, base=self.rope_base)
+            k = _apply_rope(k, base=self.rope_base)
         dropout_p = self.drop.p if self.training else 0.0
-        if self.position_encoding == "alibi":
-            positions = torch.arange(T, device=h.device)
-            distances = positions[:, None] - positions[None, :]
-            causal = distances >= 0
-            bias = -self.alibi_slopes.to(dtype=h.dtype) * distances.clamp_min(0).to(
-                dtype=h.dtype
-            )[None, None, :, :]
+        positions = torch.arange(T, device=h.device)
+        distances = positions[:, None] - positions[None, :]
+        causal = distances >= 0
+        if self.attention_window is not None:
+            causal &= distances < self.attention_window
+        if self.position_encoding in {"alibi", "reverse_alibi"}:
+            direction = -1.0 if self.position_encoding == "alibi" else 1.0
+            bias = (
+                direction
+                * self.alibi_slopes.to(dtype=h.dtype)
+                * distances.clamp_min(0).to(dtype=h.dtype)[None, None, :, :]
+            )
             bias = bias.masked_fill(~causal[None, None, :, :], float("-inf"))
+            att = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=bias, is_causal=False, dropout_p=dropout_p
+            )
+        elif self.attention_window is not None:
+            bias = torch.zeros((T, T), device=h.device, dtype=h.dtype)
+            bias = bias.masked_fill(~causal, float("-inf"))
             att = F.scaled_dot_product_attention(
                 q, k, v, attn_mask=bias, is_causal=False, dropout_p=dropout_p
             )
@@ -194,6 +254,7 @@ class CausalTransformer(nn.Module):
 def cross_entropy_bits(logits: torch.Tensor, targets: torch.Tensor) -> float:
     """Mean cross-entropy in bits per token."""
     B, T, V = logits.shape
-    loss = F.cross_entropy(logits.reshape(B * T, V), targets.reshape(B * T),
-                           reduction="mean")
+    loss = F.cross_entropy(
+        logits.reshape(B * T, V), targets.reshape(B * T), reduction="mean"
+    )
     return float(loss.item()) / math.log(2.0)

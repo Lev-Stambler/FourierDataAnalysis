@@ -471,3 +471,36 @@ variation for this fixed Transformer under a correctly randomized window law.
 It is not yet a universal scalar theory of dataset hardness. The next decisive
 test is a newly sourced panel with more datasets per domain, frozen after this
 sampling correction—not more feature search on these 24 sources.
+
+## Architecture matching: a useful coefficient and a failed control
+
+The next attempt replaced a universal locality scalar with an
+architecture-conditioned one. For each positional geometry, we measured the
+initialization NTK response to exact Walsh characters and asked whether characters
+with larger response train faster. This is the cleanest version of the proposed
+bridge: dataset spectrum on one side, learner response kernel on the other.
+
+The coefficient worked. Across learned absolute, RoPE, NoPE, ALiBi, and
+reverse-ALiBi, and after controlling for architecture and character degree, the
+log-response coefficient was `-0.0533`. Its frozen support-cluster 95% interval
+was `[-0.1294,-0.0364]`. Higher gradient response really was associated with
+smaller held-out CE curve area.
+
+But the supposedly surgical reverse-ALiBi control was not surgical. Negating the
+attention-distance bias does not produce a smooth preference that marches from
+far to near. It strongly favors the single farthest boundary. The residual stream
+also makes the current token special. Consequently both ALiBi and reverse-ALiBi
+had the same positive degree-one radius rank correlation (`rho=0.464`): lags 1
+and 64 were easy anchors, and the intermediate lags were hard.
+
+That failed a predeclared half of the mechanism gate. We therefore stopped before
+profiling and training the new 48-corpus panel. This is not a null result—the NTK
+coefficient and the large architecture contrasts are real controlled evidence—but
+it is not authorization to claim that the proposed overlap predicts natural-data
+hardness. A post-gate leave-one-support-out diagnostic was nearly flat (`0.57%`
+RMSE improvement), reinforcing the need for a better support-generalization test.
+
+The next control should remove boundary identity and tune a genuinely banded or
+centered distance kernel whose preferred lag moves continuously. Only after that
+kernel passes the controlled character gate should its energy-weighted overlap be
+tested on the source-disjoint natural panel.

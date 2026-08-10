@@ -19,8 +19,16 @@ from dlx.training.run import train_run
 
 def test_cyclic_corpus_preserves_adjacency_and_varies_start():
     tokens = np.arange(40, dtype=np.int64)
-    fam = CorpusFamily(tokens, q=40, L=4, name="ordered", floor_bits=0.0,
-                       val_fraction=0.2, cyclic=True, shuffle_seed=7)
+    fam = CorpusFamily(
+        tokens,
+        q=40,
+        L=4,
+        name="ordered",
+        floor_bits=0.0,
+        val_fraction=0.2,
+        cyclic=True,
+        shuffle_seed=7,
+    )
     draw = fam.sample(70, np.random.default_rng(0))
 
     train_hi = int(len(tokens) * 0.8)
@@ -41,11 +49,27 @@ def test_metrics_primitives():
 
 def _tiny(cell, seed=7):
     fam = F1Markov(q=8, L=16, k=1, eta=0.1)
-    cfg = TransformerConfig(vocab=8, ctx_len=16, d_model=32, n_layers=2, n_heads=2,
-                            lr=2e-3, weight_decay=0.05)
-    return train_run(fam, cfg, budget_tokens=100_000, seed=seed, out_dir=cell,
-                     cell_id="smoke", protocol_hash="test-proto", device="cpu",
-                     n_checkpoints=5, tokens_per_step=2048)
+    cfg = TransformerConfig(
+        vocab=8,
+        ctx_len=16,
+        d_model=32,
+        n_layers=2,
+        n_heads=2,
+        lr=2e-3,
+        weight_decay=0.05,
+    )
+    return train_run(
+        fam,
+        cfg,
+        budget_tokens=100_000,
+        seed=seed,
+        out_dir=cell,
+        cell_id="smoke",
+        protocol_hash="test-proto",
+        device="cpu",
+        n_checkpoints=5,
+        tokens_per_step=2048,
+    )
 
 
 def test_cpu_smoke_and_manifest(tmp_path):
@@ -78,7 +102,15 @@ def test_model_shapes_and_ce():
 
 
 @pytest.mark.parametrize(
-    "position_encoding", ["learned_absolute", "sinusoidal", "alibi"]
+    "position_encoding",
+    [
+        "learned_absolute",
+        "sinusoidal",
+        "rope",
+        "nope",
+        "alibi",
+        "reverse_alibi",
+    ],
 )
 def test_positional_configurations_are_causal_and_finite(position_encoding):
     cfg = TransformerConfig(
@@ -102,9 +134,7 @@ def test_positional_configurations_are_causal_and_finite(position_encoding):
 
 
 def test_default_position_mode_preserves_historical_config_hash():
-    cfg = TransformerConfig(
-        vocab=256, ctx_len=64, d_model=64, n_layers=2, n_heads=4
-    )
+    cfg = TransformerConfig(vocab=256, ctx_len=64, d_model=64, n_layers=2, n_heads=4)
     assert cfg.config_hash == "6d7e38e4d696eb6e"
     assert "position_encoding" not in cfg.to_json()
     sinusoidal = TransformerConfig(

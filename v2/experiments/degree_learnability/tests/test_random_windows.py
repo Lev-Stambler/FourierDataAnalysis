@@ -15,6 +15,7 @@ def test_random_window_splits_are_reproducible_disjoint_and_contiguous() -> None
     assert not (block_sets[0] & block_sets[1])
     assert not (block_sets[0] & block_sets[2])
     assert not (block_sets[1] & block_sets[2])
+    assert all(stop - start <= 256 for start, stop in first.block_ranges["profile"])
 
     starts = first.sample_starts("train", 32, np.random.default_rng(9), replace=True)
     x, y = first.batch(starts)

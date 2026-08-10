@@ -248,6 +248,49 @@ def marginal_locality_features(
     }
 
 
+def marginal_support_energy(
+    chains: list[list[dict]],
+    coordinate_radii: tuple[int, ...],
+    *,
+    feature_degree: int = 3,
+) -> dict[str, float]:
+    """Return positive nested-projection increments by unordered lag support.
+
+    The result is an order-averaged marginal attribution under the sampled
+    dependent data measure.  It is not an exact product-measure Fourier level.
+    Keys use comma-separated sorted lags so they can be hash-locked in JSON.
+    """
+    if not chains or feature_degree < 1:
+        raise ValueError("chains and feature_degree must be positive")
+    radii = tuple(int(value) for value in coordinate_radii)
+    if not radii or any(value < 1 for value in radii):
+        raise ValueError("coordinate_radii must be positive")
+    energy: dict[tuple[int, ...], float] = {}
+    for chain in chains:
+        if len(chain) <= feature_degree:
+            raise ValueError("chain does not reach the requested feature degree")
+        for degree in range(1, feature_degree + 1):
+            support_columns = tuple(
+                int(value) for value in chain[degree]["support_columns"]
+            )
+            if len(support_columns) != degree or len(set(support_columns)) != degree:
+                raise ValueError("chain support is not a unique degree-sized set")
+            if any(value < 0 or value >= len(radii) for value in support_columns):
+                raise ValueError("chain support coordinate is out of range")
+            support = tuple(sorted(radii[index] for index in support_columns))
+            increment = max(
+                float(chain[degree]["conditional_collision_energy"])
+                - float(chain[degree - 1]["conditional_collision_energy"]),
+                0.0,
+            )
+            energy[support] = energy.get(support, 0.0) + increment
+    scale = float(len(chains))
+    return {
+        ",".join(str(lag) for lag in support): float(value / scale)
+        for support, value in sorted(energy.items())
+    }
+
+
 def sampled_nested_degree_profile(
     contexts: np.ndarray,
     targets: np.ndarray,
@@ -296,28 +339,38 @@ def sampled_nested_degree_profile(
     folds[rng.permutation(len(y))[len(y) // 2 :]] = 1
     chain_rows: list[list[dict]] = []
     per_support_delta = delta / ((max_degree + 1) * n_chains)
+    # A categorical projection depends on the unordered support, not the order
+    # used to pack its coordinates into an integer key. Random chains revisit
+    # the same supports heavily (especially with seven coordinates), so cache
+    # the expensive cross-fit while retaining every sampled chain for audits.
+    support_cache: dict[tuple[int, ...], dict] = {}
     for _ in range(n_chains):
         order = rng.permutation(x.shape[1])[:max_degree]
         keys = np.zeros(len(y), dtype=np.uint64)
+        if () not in support_cache:
+            support_cache[()] = crossfit_conditional_collision(
+                keys, y, folds, delta=per_support_delta
+            )
         rows = [
             {
                 "degree": 0,
                 "support_columns": [],
-                **crossfit_conditional_collision(
-                    keys, y, folds, delta=per_support_delta
-                ),
+                **support_cache[()],
             }
         ]
         for degree, column in enumerate(order, start=1):
             keys |= x[:, column].astype(np.uint64) << np.uint64(8 * (degree - 1))
+            support_key = tuple(sorted(int(value) for value in order[:degree]))
+            if support_key not in support_cache:
+                support_cache[support_key] = crossfit_conditional_collision(
+                    keys, y, folds, delta=per_support_delta
+                )
             rows.append(
                 {
                     "degree": degree,
                     "support_columns": order[:degree].tolist(),
                     "support_radius": max(radii[index] for index in order[:degree]),
-                    **crossfit_conditional_collision(
-                        keys, y, folds, delta=per_support_delta
-                    ),
+                    **support_cache[support_key],
                 }
             )
         chain_rows.append(rows)
