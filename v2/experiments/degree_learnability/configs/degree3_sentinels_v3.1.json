@@ -1,0 +1,36 @@
+{
+  "name": "degree-three Fourier-character saturation sentinel bank",
+  "date_frozen": "2026-08-11",
+  "parent_protocol_hash": "a33dac6859746c7ea6e5aab8b36842a686bfb37e2ba4f6e53b02ff4ee18d298a",
+  "profile_energy_analysis_sha256": "af0f5efa2faece00054bd5fd209aabcc81a72a3e95018a12abd4e8fcca96ff72",
+  "character_results_sha256_before_sentinels": "a48908b1f466c3981321c3f292e94819d2a33dfb675b50581ed50fd3371098ff",
+  "selection": {
+    "outcomes_observed_before_freeze": false,
+    "high_energy_unmeasured_supports": [
+      [1, 4, 8],
+      [2, 4, 32],
+      [1, 4, 32],
+      [2, 4, 16],
+      [1, 8, 16],
+      [2, 8, 16],
+      [2, 4, 8],
+      [1, 8, 32]
+    ],
+    "geometric_and_boundary_stress_supports": [
+      [4, 8, 16],
+      [8, 16, 32],
+      [1, 8, 64],
+      [16, 32, 64]
+    ]
+  },
+  "cells": 180,
+  "architectures": 5,
+  "seeds_per_cell": 3,
+  "maximum_concurrent_h100s": 1,
+  "pooling_gate": {
+    "minimum_median_normalized_ce_area_for_every_sampled_architecture_support": 0.94,
+    "maximum_within_architecture_range_across_all_17_sampled_degree3_supports": 0.04,
+    "pass_action": "use the architecture-specific median over 17 sampled degree-three supports for all unmeasured degree-three supports, and carry a support-bootstrap sensitivity interval into the pilot",
+    "fail_action": "complete all 35 degree-three supports exactly before the pilot"
+  }
+}

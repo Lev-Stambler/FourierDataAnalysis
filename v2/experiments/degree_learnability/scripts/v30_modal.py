@@ -433,9 +433,14 @@ def _save_cells(path: Path, rows: list[dict], *, key: str = "cell_id") -> None:
     )
 
 
-def _run_character_training(limit: int) -> None:
+def _run_character_training(
+    limit: int,
+    *,
+    selected_supports: tuple[tuple[int, ...], ...] | None = None,
+) -> None:
     spec = PROTOCOL["fourier_character_training"]
-    supports = enumerate_supports(spec["lags"], max_degree=spec["max_degree"])
+    all_supports = enumerate_supports(spec["lags"], max_degree=spec["max_degree"])
+    supports = selected_supports or all_supports
     result_path = OUT / "fourier_character_results.json"
     existing = json.loads(result_path.read_text()) if result_path.exists() else []
     completed = {row["cell_id"] for row in existing}
@@ -462,7 +467,7 @@ def _run_character_training(limit: int) -> None:
         )
         _save_cells(result_path, [result])
         print(cell_id, result["character_hardness"], flush=True)
-    if limit:
+    if limit or selected_supports is not None:
         return
     cells = json.loads(result_path.read_text())
     from dlx.analysis.character_response import empirical_character_ce_kernel
@@ -481,6 +486,43 @@ def _run_character_training(limit: int) -> None:
     digest = write_json_once(OUT / "fourier_ce_kernel.json", kernel)
     write_hash_once(OUT / "fourier_ce_kernel.sha256", digest)
     print(f"Fourier-character CE kernel: {digest}")
+
+
+def _run_degree_three_sentinels(limit: int) -> None:
+    config_path = ROOT / "configs/degree3_sentinels_v3.1.json"
+    lock_path = ROOT / "configs/degree3_sentinels_v3.1.sha256"
+    verify_hash_lock(config_path, lock_path)
+    config = json.loads(config_path.read_text())
+    supports = tuple(
+        tuple(int(value) for value in support)
+        for group in (
+            "high_energy_unmeasured_supports",
+            "geometric_and_boundary_stress_supports",
+        )
+        for support in config["selection"][group]
+    )
+    if len(supports) != len(set(supports)) or any(
+        len(support) != 3 for support in supports
+    ):
+        raise ValueError("degree-three sentinel supports must be unique triples")
+
+    result_path = OUT / "fourier_character_results.json"
+    existing = json.loads(result_path.read_text())
+    sentinel_set = set(supports)
+    pre_sentinel = [
+        row for row in existing if tuple(int(value) for value in row["support"])
+        not in sentinel_set
+    ]
+    pre_sentinel_payload = (
+        json.dumps(
+            sorted(pre_sentinel, key=lambda row: row["cell_id"]), indent=2
+        )
+        + "\n"
+    ).encode()
+    pre_sentinel_hash = hashlib.sha256(pre_sentinel_payload).hexdigest()
+    if pre_sentinel_hash != config["character_results_sha256_before_sentinels"]:
+        raise ValueError("pre-sentinel Fourier-character result lock mismatch")
+    _run_character_training(limit, selected_supports=supports)
 
 
 def _run_profiles() -> None:
@@ -604,9 +646,13 @@ def _run_natural(stage: str, limit: int) -> None:
 def main(stage: str = "character", limit: int = 0) -> None:
     if stage == "character":
         _run_character_training(limit)
+    elif stage == "sentinel":
+        _run_degree_three_sentinels(limit)
     elif stage == "profile":
         _run_profiles()
     elif stage in {"pilot", "confirmation"}:
         _run_natural(stage, limit)
     else:
-        raise ValueError("stage must be character, profile, pilot, or confirmation")
+        raise ValueError(
+            "stage must be character, sentinel, profile, pilot, or confirmation"
+        )

@@ -45,3 +45,23 @@ def test_v31_trains_every_fourier_support_using_heldout_ce() -> None:
     assert protocol["compute"]["fourier_character_training_cells"] == 945
     assert "cross-entropy" in spec["hardness"]
     assert spec["kernel"].startswith("one raw empirical CE-hardness value")
+
+
+def test_v31_degree_three_sentinel_bank_is_frozen() -> None:
+    path = ROOT / "configs/degree3_sentinels_v3.1.json"
+    expected_hash = (
+        ROOT / "configs/degree3_sentinels_v3.1.sha256"
+    ).read_text().strip()
+    assert file_sha256(path) == expected_hash
+    config = json.loads(path.read_text())
+    supports = [
+        tuple(support)
+        for group in (
+            "high_energy_unmeasured_supports",
+            "geometric_and_boundary_stress_supports",
+        )
+        for support in config["selection"][group]
+    ]
+    assert len(supports) == len(set(supports)) == 12
+    assert all(len(support) == 3 for support in supports)
+    assert config["cells"] == len(supports) * 5 * 3 == 180

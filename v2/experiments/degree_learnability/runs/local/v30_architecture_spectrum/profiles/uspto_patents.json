@@ -1,0 +1,190 @@
+{
+  "dataset": "uspto_patents",
+  "panel": "pilot",
+  "stratum": "science",
+  "protocol_hash": "a33dac6859746c7ea6e5aab8b36842a686bfb37e2ba4f6e53b02ff4ee18d298a",
+  "data_sha256": "9b73ae28bc3dcdd7c7b633820da24a34b29f36a6f6e093e07c4e615e84c594d9",
+  "split": {
+    "block_size": 16384,
+    "ctx_len": 128,
+    "blocks": {
+      "train": 93,
+      "profile": 15,
+      "validation": 15
+    },
+    "eligible_windows": {
+      "train": 1511808,
+      "profile": 228608,
+      "validation": 243840
+    }
+  },
+  "sampled_position_sha256": "27f1db6fb5e7c6a6170d2e46910b818bb3be21ca956b572e03b619bec74c7728",
+  "features": {
+    "sampled_nonconstant_energy_through_degree3": 0.14208413920749546,
+    "sampled_mean_degree_through_degree3": 2.1521856712555203,
+    "sampled_geometric_complexity_through_degree3": 13.977979645350059,
+    "sampled_marginal_log1p_radius_through_degree3": 2.052007503045309,
+    "sampled_marginal_radius50_through_degree3": 2.0,
+    "sampled_marginal_radius90_through_degree3": 16.0,
+    "sampled_marginal_positive_energy_through_degree3": 0.14305536124826917,
+    "unigram_entropy_bits": 4.393128961024035,
+    "heldout_bigram_ce_bits": 3.8298850150360817,
+    "lag1_mutual_information_bits": 0.9996192511588102,
+    "zlib_bits_per_byte": 2.4717171016102166
+  },
+  "support_energy": {
+    "1": 0.013683453343864001,
+    "1,2": 0.008810099482481798,
+    "1,2,4": 0.006907384649883485,
+    "1,2,8": 0.0052371467392108035,
+    "1,2,16": 0.003900788492282135,
+    "1,2,32": 0.003255117003642944,
+    "1,2,64": 0.0019976632366624073,
+    "1,4": 0.005660426370522163,
+    "1,4,8": 0.004576303754400711,
+    "1,4,16": 0.0015926850319599706,
+    "1,4,32": 0.002125867623174938,
+    "1,4,64": 0.0012011757665787767,
+    "1,8": 0.004526623488595422,
+    "1,8,16": 0.0017526840043726242,
+    "1,8,32": 0.0014688187739276698,
+    "1,8,64": 0.0009977994394330262,
+    "1,16": 0.0028872673309431143,
+    "1,16,32": 0.0006459824851314695,
+    "1,16,64": 0.0003329514757055593,
+    "1,32": 0.00326501497828106,
+    "1,32,64": 0.0007511798854634941,
+    "1,64": 0.002536427838422986,
+    "2": 0.005687693775454765,
+    "2,4": 0.004976877712905376,
+    "2,4,8": 0.0019104085907117733,
+    "2,4,16": 0.0020940306061838204,
+    "2,4,32": 0.0024895490807475217,
+    "2,4,64": 0.001186596841599441,
+    "2,8": 0.0033995978360897485,
+    "2,8,16": 0.00177168642720635,
+    "2,8,32": 0.0013569971039437173,
+    "2,8,64": 0.00067387949856532,
+    "2,16": 0.0016866320207673026,
+    "2,16,32": 0.0005438222739266032,
+    "2,16,64": 0.0003906846585518824,
+    "2,32": 0.0017356643772989137,
+    "2,32,64": 0.0008109910936107243,
+    "2,64": 0.0015824597858606188,
+    "4": 0.004646705765849457,
+    "4,8": 0.0019531568249746807,
+    "4,8,16": 0.0014413408789221412,
+    "4,8,32": 0.0004819389865365538,
+    "4,8,64": 0.0007158386082893008,
+    "4,16": 0.0014293257656375815,
+    "4,16,32": 0.000445080629717012,
+    "4,16,64": 0.0003339877495646326,
+    "4,32": 0.0021337333953344553,
+    "4,32,64": 0.0003046645180466356,
+    "4,64": 0.0011709876473536998,
+    "8": 0.0033062779843739667,
+    "8,16": 0.0018181024015269838,
+    "8,16,32": 0.0008317121779256732,
+    "8,16,64": 0.00017521927659015129,
+    "8,32": 0.0012611118285527209,
+    "8,32,64": 0.0003801205004812968,
+    "8,64": 0.0012636000440292194,
+    "16": 0.002249785539911244,
+    "16,32": 0.0006387747979241839,
+    "16,32,64": 0.00028573244071950616,
+    "16,64": 0.0006350725964757235,
+    "32": 0.002271753374501278,
+    "32,64": 0.0007197202952191908,
+    "64": 0.0017511843414475586
+  },
+  "remote_wallclock_seconds": 2.0810120760000004,
+  "schema_version": 2,
+  "estimator": "random nested-support cross-fitted conditional collision energy",
+  "interpretation": "basis-invariant cumulative projection diagnostic; increments are not the exact dependent-input Fourier level weights",
+  "n_examples": 200000,
+  "n_coordinates": 7,
+  "coordinate_radii": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+    64
+  ],
+  "max_degree": 3,
+  "n_chains": 512,
+  "seed": 3103,
+  "delta": 0.05,
+  "degree_curve": [
+    {
+      "degree": 0,
+      "mean_conditional_collision_energy": 0.09682982710000003,
+      "mean_increment_from_previous_degree": null,
+      "mean_context_coverage": 1.0,
+      "mean_coverage_identification_interval": [
+        0.09682982710000003,
+        0.0968298271000001
+      ],
+      "support_sampling_hoeffding_interval": [
+        0.02642936950958885,
+        0.1672302846904112
+      ],
+      "support_standard_deviation": 2.7755575615628914e-17,
+      "mean_evaluation_hoeffding_half_width": 0.007748111260440601
+    },
+    {
+      "degree": 1,
+      "mean_conditional_collision_energy": 0.1304266812254022,
+      "mean_increment_from_previous_degree": 0.033596854125402184,
+      "mean_context_coverage": 0.9999379589843751,
+      "mean_coverage_identification_interval": [
+        0.1304266812254022,
+        0.13048872224102714
+      ],
+      "support_sampling_hoeffding_interval": [
+        0.060026223634991036,
+        0.20082713881581338
+      ],
+      "support_standard_deviation": 0.025929396188766586,
+      "mean_evaluation_hoeffding_half_width": 0.007748111260440601
+    },
+    {
+      "degree": 2,
+      "mean_conditional_collision_energy": 0.18451735804459918,
+      "mean_increment_from_previous_degree": 0.054090676819196964,
+      "mean_context_coverage": 0.990238505859375,
+      "mean_coverage_identification_interval": [
+        0.18451735804459918,
+        0.19427885218522412
+      ],
+      "support_sampling_hoeffding_interval": [
+        0.114116900454188,
+        0.25491781563501037
+      ],
+      "support_standard_deviation": 0.05445649347639481,
+      "mean_evaluation_hoeffding_half_width": 0.007748111260440601
+    },
+    {
+      "degree": 3,
+      "mean_conditional_collision_energy": 0.23891396630749534,
+      "mean_increment_from_previous_degree": 0.05439660826289616,
+      "mean_context_coverage": 0.8955611816406249,
+      "mean_coverage_identification_interval": [
+        0.23891396630749534,
+        0.34335278466687036
+      ],
+      "support_sampling_hoeffding_interval": [
+        0.16851350871708415,
+        0.30931442389790653
+      ],
+      "support_standard_deviation": 0.08003753582109639,
+      "mean_evaluation_hoeffding_half_width": 0.007748111260440601
+    }
+  ],
+  "sampled_features": {
+    "sampled_nonconstant_energy_through_degree3": 0.14208413920749546,
+    "sampled_mean_degree_through_degree3": 2.1521856712555203,
+    "sampled_geometric_complexity_through_degree3": 13.977979645350059
+  }
+}

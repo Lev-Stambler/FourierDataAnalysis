@@ -111,5 +111,16 @@ optimization or validation computation. A bounded single-H100 continuation has
 now saved 36 additional cells, leaving 639. The runner is cell-level resumable;
 no partial cell is treated as an observation.
 
+All 72 label-free corpus profiles are now complete and audit-locked. Within the
+measured nonconstant energy through degree three, the mean shares are 19.8% at
+degree one, 36.5% at degree two, and 43.6% at degree three. Degree three therefore
+cannot simply be discarded. Because the five already-measured degree-three
+supports are nevertheless ceiling-saturated for every architecture, a 12-support
+sentinel extension was frozen before observing those new outcomes. It combines
+the eight highest-energy unmeasured triples with four geometric/boundary stress
+triples. Pooling is allowed only if every sampled architecture/support median is
+at least 0.94 and each architecture's range over all 17 sampled triples is at
+most 0.04; otherwise all 35 triples are measured exactly.
+
 Protocol: `configs/protocol_v3.1.json`. Artifacts:
 `runs/local/v30_architecture_spectrum/`.
