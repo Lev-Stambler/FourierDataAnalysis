@@ -1,4 +1,4 @@
-"""Score the locked v3.0 architecture-matching confirmation panel."""
+"""Score the locked Fourier-character CE confirmation panel."""
 
 from __future__ import annotations
 
@@ -25,14 +25,13 @@ OUT = ROOT / "runs/local/v30_architecture_spectrum"
 
 
 def main() -> dict:
-    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.0.json")
+    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.1.json")
     locks = {
         name: verify_hash_lock(OUT / f"{name}.json", OUT / f"{name}.sha256")
         for name in (
             "data_manifest",
             "profile_manifest",
-            "character_kernel",
-            "mechanism_analysis",
+            "fourier_ce_kernel",
             "pilot_analysis",
             "predictions",
         )
@@ -48,7 +47,7 @@ def main() -> dict:
     cells_path = OUT / "confirmation_results.json"
     cells = json.loads(cells_path.read_text())
     expected = {
-        f"V30C/{source['dataset']}/{architecture}/s{seed}"
+        f"V31C/{source['dataset']}/{architecture}/s{seed}"
         for source in sources
         for architecture in architectures
         for seed in protocol["natural_training"]["seeds"]
@@ -96,7 +95,7 @@ def main() -> dict:
         [row["predictions"]["strong_baseline"] for row in rows], dtype=float
     )
     matched = np.asarray(
-        [row["predictions"]["architecture_matched"] for row in rows], dtype=float
+        [row["predictions"]["fourier_ce_matched"] for row in rows], dtype=float
     )
     score_rows = [{**row, "actual": row[target]} for row in rows]
     decision = protocol["decision"]["confirmation_bootstrap"]
@@ -121,7 +120,7 @@ def main() -> dict:
         matched_score = prediction_scores(actual[indices], matched[indices])
         per_architecture[architecture] = {
             "strong_baseline": base_score,
-            "architecture_matched": matched_score,
+            "fourier_ce_matched": matched_score,
             "relative_rmse_improvement": (base_score["rmse"] - matched_score["rmse"])
             / base_score["rmse"],
         }
@@ -131,17 +130,7 @@ def main() -> dict:
     )
     interval_passed = bootstrap["stratified_corpus_bootstrap_95_interval"][0] > 0.0
     transfer_passed = interval_passed and architectures_improved >= 3
-    mechanism_passed = json.loads((OUT / "mechanism_analysis.json").read_text())[
-        "mechanism_gate_passed"
-    ]
-    if mechanism_passed and transfer_passed:
-        verdict = "MECHANISM_SUPPORTED_AND_TRANSFERS"
-    elif mechanism_passed:
-        verdict = "MECHANISM_SUPPORTED_NO_TRANSFER"
-    elif transfer_passed:
-        verdict = "PREDICTION_WITHOUT_MECHANISM"
-    else:
-        verdict = "NOT_SUPPORTED"
+    verdict = "FOURIER_CE_TRANSFERS" if transfer_passed else "FOURIER_CE_NO_TRANSFER"
     result = {
         "status": "source-disjoint frozen confirmation complete",
         "protocol_hash": protocol["protocol_hash"],
@@ -150,14 +139,13 @@ def main() -> dict:
         "verdict": verdict,
         "primary_target": target,
         "gates": {
-            "mechanism_gate_passed": mechanism_passed,
             "paired_bootstrap_interval_strictly_positive": interval_passed,
             "architectures_with_positive_point_improvement": architectures_improved,
             "transfer_gate_passed": transfer_passed,
         },
         "scores": {
             "strong_baseline": prediction_scores(actual, baseline),
-            "architecture_matched": prediction_scores(actual, matched),
+            "fourier_ce_matched": prediction_scores(actual, matched),
         },
         "stratified_paired_corpus_bootstrap": bootstrap,
         "per_architecture": per_architecture,

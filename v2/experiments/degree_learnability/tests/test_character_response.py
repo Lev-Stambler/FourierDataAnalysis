@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
 import torch
 
 from dlx.analysis.character_response import (
     architecture_spectrum_overlap,
-    character_mechanism_analysis,
-    character_ntk_rayleigh,
+    empirical_character_ce_kernel,
     enumerate_supports,
-    standardize_character_kernel,
     walsh_character,
 )
 from dlx.learners.transformer import (
@@ -62,7 +59,7 @@ def test_sliding_attention_excludes_tokens_beyond_window() -> None:
     torch.testing.assert_close(left_logits[:, -1], right_logits[:, -1])
 
 
-def test_walsh_supports_and_ntk_gradient_identity() -> None:
+def test_fourier_character_and_support_enumeration() -> None:
     contexts = torch.tensor(
         [[0, 0, 0, 0], [0, 0, 1, 1], [1, 1, 0, 1], [1, 1, 1, 0]],
         dtype=torch.long,
@@ -71,33 +68,8 @@ def test_walsh_supports_and_ntk_gradient_identity() -> None:
     torch.testing.assert_close(character, torch.tensor([1.0, 1.0, -1.0, -1.0]))
     assert len(enumerate_supports((1, 2, 4, 8, 16, 32, 64))) == 63
 
-    torch.manual_seed(8)
-    model = CausalTransformer(
-        TransformerConfig(
-            vocab=2,
-            ctx_len=4,
-            d_model=8,
-            n_layers=1,
-            n_heads=2,
-            position_encoding="nope",
-        )
-    )
-    direct = character_ntk_rayleigh(model, contexts, (1, 2))
-    gradients = []
-    for context in contexts:
-        model.zero_grad(set_to_none=True)
-        logits = model(context[None, :])[:, -1, :]
-        gradient = torch.autograd.grad(
-            logits[0, 1] - logits[0, 0], tuple(model.parameters())
-        )
-        gradients.append(torch.cat([value.reshape(-1) for value in gradient]))
-    jacobian = torch.stack(gradients)
-    kernel = jacobian @ jacobian.T
-    expected = float(character @ kernel @ character / len(character))
-    assert direct == pytest.approx(expected, rel=2e-5)
 
-
-def test_support_energy_and_architecture_overlap_are_exact() -> None:
+def test_support_energy_and_ce_hardness_overlap_are_exact() -> None:
     chains = [
         [
             {"conditional_collision_energy": 0.1, "support_columns": []},
@@ -112,61 +84,35 @@ def test_support_energy_and_architecture_overlap_are_exact() -> None:
     ]
     energy = marginal_support_energy(chains, (1, 4), feature_degree=2)
     assert energy == pytest.approx({"1": 0.05, "4": 0.1, "1,4": 0.2})
-    overlap = architecture_spectrum_overlap(energy, {"1": -1.0, "4": 2.0, "1,4": 0.5})
-    assert overlap == pytest.approx(0.25 / 0.35)
+    overlap = architecture_spectrum_overlap(energy, {"1": 0.2, "4": 0.8, "1,4": 0.5})
+    assert overlap == pytest.approx(0.19 / 0.35)
 
 
-def test_character_kernel_standardizes_each_architecture() -> None:
+def test_empirical_character_kernel_is_median_heldout_ce_hardness() -> None:
     rows = []
-    for architecture, multiplier in (("a", 1.0), ("b", 10.0)):
-        for support, response in (((1,), 1.0), ((2,), 2.0), ((1, 2), 4.0)):
-            for seed in (0, 1):
+    for architecture, offset in (("a", 0.0), ("b", 0.2)):
+        for support, base in (((1,), 0.1), ((2,), 0.7)):
+            for seed, noise in enumerate((0.02, -0.01, 0.0)):
                 rows.append(
                     {
                         "architecture": architecture,
                         "support": support,
                         "seed": seed,
-                        "ntk_rayleigh": multiplier * response,
+                        "character_hardness": base + offset + noise,
                     }
                 )
-    kernel = standardize_character_kernel(rows)
-    for values in kernel.values():
-        assert np.mean(list(values.values())) == pytest.approx(0.0, abs=1e-12)
-        assert np.std(list(values.values())) == pytest.approx(1.0)
-
-
-def test_mechanism_analysis_clusters_supports_and_detects_direction() -> None:
-    character = []
-    ntk = []
-    supports = ((1,), (2,), (4,), (1, 2), (1, 4), (1, 2, 4))
-    for architecture in ("alibi", "reverse_alibi"):
-        response_rows = []
-        for support in supports:
-            radius = max(support)
-            signed_radius = np.log(radius) * (1 if architecture == "alibi" else -1)
-            response = np.exp(4.0 - signed_radius - 0.2 * len(support))
-            response_rows.append({"support": support, "ntk_rayleigh": response})
-            for seed in range(3):
-                character.append(
-                    {
-                        "architecture": architecture,
-                        "support": support,
-                        "character_hardness": -np.log(response) + seed * 1e-4,
-                        "example_grid": [0, 10, 100],
-                        "floor_independent": {"half_best_learning_at": 100},
-                    }
-                )
-        for seed in range(2):
-            ntk.append(
-                {
-                    "architecture": architecture,
-                    "rows": response_rows,
-                }
-            )
-    result = character_mechanism_analysis(
-        character, ntk, bootstrap_samples=200, bootstrap_seed=7
+    kernel = empirical_character_ce_kernel(
+        rows,
+        architectures=("a", "b"),
+        supports=((1,), (2,)),
+        seeds=(0, 1, 2),
     )
-    assert result["regression"]["mean_log_ntk_response_coefficient"] < 0.0
-    assert result["degree_one_radius_spearman"]["alibi"] > 0.0
-    assert result["degree_one_radius_spearman"]["reverse_alibi"] < 0.0
-    assert result["mechanism_gate_passed"]
+    assert kernel["a"] == pytest.approx({"1": 0.1, "2": 0.7})
+    assert kernel["b"] == pytest.approx({"1": 0.3, "2": 0.9})
+
+
+def test_empirical_character_kernel_rejects_missing_cells() -> None:
+    with pytest.raises(ValueError, match="incomplete"):
+        empirical_character_ce_kernel(
+            [], architectures=("a",), supports=((1,),), seeds=(0,)
+        )

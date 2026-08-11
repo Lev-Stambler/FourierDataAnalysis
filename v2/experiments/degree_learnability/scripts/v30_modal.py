@@ -1,4 +1,4 @@
-"""Resumable Modal runner for v3.0 architecture-spectrum matching."""
+"""Resumable Modal runner for Fourier-character CE spectrum matching."""
 
 from __future__ import annotations
 
@@ -16,10 +16,7 @@ IS_REMOTE = str(Path(__file__).resolve()).startswith("/root/")
 ROOT = Path("/root/pkg") if IS_REMOTE else LOCAL_ROOT
 sys.path.insert(0, str(ROOT))
 
-from dlx.analysis.character_response import (
-    enumerate_supports,
-    standardize_character_kernel,
-)
+from dlx.analysis.character_response import enumerate_supports
 from dlx.protocol.frozen import (
     file_sha256,
     load_frozen_protocol,
@@ -29,7 +26,7 @@ from dlx.protocol.frozen import (
 )
 
 OUT = ROOT / "runs/local/v30_architecture_spectrum"
-PROTOCOL = load_frozen_protocol(ROOT / "configs/protocol_v3.0.json")
+PROTOCOL = load_frozen_protocol(ROOT / "configs/protocol_v3.1.json")
 MANIFEST = (
     {"corpora": []}
     if IS_REMOTE
@@ -52,7 +49,7 @@ def _ignore(path: Path) -> bool:
     )
 
 
-app = modal.App("dlx-v30-architecture-spectrum")
+app = modal.App("dlx-v31-fourier-ce-spectrum")
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("numpy>=1.26", "torch>=2.3")
@@ -109,76 +106,6 @@ def _model_config(
     image=image,
     gpu="H100",
     cpu=8.0,
-    memory=32768,
-    timeout=3600,
-    max_containers=1,
-    block_network=True,
-)
-def ntk_cell(payload: dict) -> dict:
-    import numpy as np
-    import torch
-
-    from dlx.analysis.character_response import (
-        character_ntk_rayleigh,
-        enumerate_supports,
-    )
-    from dlx.learners.transformer import CausalTransformer
-
-    architecture = payload["architecture"]
-    seed = int(payload["seed"])
-    spec = payload["protocol"]["character_kernel"]
-    torch.manual_seed(_seed(payload["protocol"]["protocol_hash"], "ntk_init", seed))
-    np.random.seed(_seed(payload["protocol"]["protocol_hash"], "ntk_numpy", seed))
-    model = CausalTransformer(
-        _model_config(
-            architecture,
-            vocab=spec["alphabet"],
-            ctx_len=spec["context"],
-            attention_window=spec["context"],
-        )
-    ).cuda()
-    rng = np.random.default_rng(
-        _seed(payload["protocol"]["protocol_hash"], "ntk_contexts", seed)
-    )
-    contexts = torch.from_numpy(
-        rng.integers(
-            0,
-            spec["alphabet"],
-            size=(spec["contexts_per_seed"], spec["context"]),
-            dtype=np.int64,
-        )
-    ).cuda()
-    started = time.monotonic()
-    rows = []
-    for support in enumerate_supports(spec["lags"], max_degree=spec["max_degree"]):
-        rows.append(
-            {
-                "architecture": architecture["id"],
-                "support": list(support),
-                "degree": len(support),
-                "radius": max(support),
-                "seed": seed,
-                "ntk_rayleigh": character_ntk_rayleigh(model, contexts, support),
-            }
-        )
-    return {
-        "cell_id": f"V30K/{architecture['id']}/s{seed}",
-        "protocol_hash": payload["protocol"]["protocol_hash"],
-        "architecture": architecture["id"],
-        "seed": seed,
-        "config_hash": model.cfg.config_hash,
-        "rows": rows,
-        "remote": {
-            "gpu": torch.cuda.get_device_name(0),
-            "wallclock_seconds": time.monotonic() - started,
-        },
-    }
-
-
-@app.function(
-    image=image,
-    gpu="H100",
-    cpu=8.0,
     memory=16384,
     timeout=1800,
     max_containers=1,
@@ -197,29 +124,32 @@ def character_train_cell(payload: dict) -> dict:
     support = tuple(int(value) for value in payload["support"])
     seed = int(payload["seed"])
     protocol = payload["protocol"]
-    kernel_spec = protocol["character_kernel"]
-    spec = protocol["character_training"]
+    spec = protocol["fourier_character_training"]
     torch.manual_seed(seed)
     np.random.seed(seed)
     model = CausalTransformer(
         _model_config(
             architecture,
             vocab=2,
-            ctx_len=kernel_spec["context"],
-            attention_window=kernel_spec["context"],
+            ctx_len=spec["context"],
+            attention_window=spec["context"],
         )
     ).cuda()
     train_rng = np.random.default_rng(
         _seed(
-            protocol["protocol_hash"], architecture["id"], support, seed, "char_train"
+            spec["data_seed_namespace"],
+            architecture["id"],
+            support,
+            seed,
+            "char_train",
         )
     )
     val_rng = np.random.default_rng(
-        _seed(protocol["protocol_hash"], support, seed, "char_validation")
+        _seed(spec["data_seed_namespace"], support, seed, "char_validation")
     )
 
     def sample(rng: np.random.Generator, count: int) -> tuple[np.ndarray, np.ndarray]:
-        x = rng.integers(0, 2, size=(count, kernel_spec["context"]), dtype=np.int64)
+        x = rng.integers(0, 2, size=(count, spec["context"]), dtype=np.int64)
         y = np.zeros(count, dtype=np.int64)
         for lag in support:
             y ^= x[:, -lag]
@@ -269,9 +199,9 @@ def character_train_cell(payload: dict) -> dict:
     summary = curve_metrics(example_grid, curve, curve[0])
     support_id = "-".join(str(value) for value in support)
     return {
-        "cell_id": f"V30T/{architecture['id']}/A{support_id}/s{seed}",
+        "cell_id": f"V31F/{architecture['id']}/A{support_id}/s{seed}",
         "protocol_hash": protocol["protocol_hash"],
-        "kernel_hash": payload["kernel_hash"],
+        "data_seed_namespace": spec["data_seed_namespace"],
         "architecture": architecture["id"],
         "support": list(support),
         "degree": len(support),
@@ -469,7 +399,7 @@ def natural_train_cell(payload: dict) -> dict:
     summary = curve_metrics(token_grid, curve, curve[0])
     prefix = "P" if row["panel"] == "pilot" else "C"
     return {
-        "cell_id": f"V30{prefix}/{row['dataset']}/{architecture['id']}/s{seed}",
+        "cell_id": f"V31{prefix}/{row['dataset']}/{architecture['id']}/s{seed}",
         "dataset": row["dataset"],
         "panel": row["panel"],
         "stratum": row["stratum"],
@@ -478,7 +408,7 @@ def natural_train_cell(payload: dict) -> dict:
         "protocol_hash": protocol["protocol_hash"],
         "data_manifest_hash": payload["data_manifest_hash"],
         "profile_manifest_hash": payload["profile_manifest_hash"],
-        "kernel_hash": payload["kernel_hash"],
+        "fourier_ce_kernel_hash": payload["fourier_ce_kernel_hash"],
         "prediction_lock_hash": payload.get("prediction_lock_hash"),
         "data_sha256": row["byte_stream_sha256"],
         "config_hash": model.cfg.config_hash,
@@ -503,62 +433,23 @@ def _save_cells(path: Path, rows: list[dict], *, key: str = "cell_id") -> None:
     )
 
 
-def _run_ntk() -> None:
-    result_path = OUT / "ntk_cells.json"
-    existing = json.loads(result_path.read_text()) if result_path.exists() else []
-    completed = {row["cell_id"] for row in existing}
-    for architecture in PROTOCOL["architectures"]:
-        for seed in PROTOCOL["character_kernel"]["initialization_seeds"]:
-            cell_id = f"V30K/{architecture['id']}/s{seed}"
-            if cell_id in completed:
-                continue
-            result = ntk_cell.remote(
-                {"protocol": PROTOCOL, "architecture": architecture, "seed": seed}
-            )
-            _save_cells(result_path, [result])
-            print(cell_id, result["remote"]["wallclock_seconds"], flush=True)
-    cells = json.loads(result_path.read_text())
-    expected_cells = len(PROTOCOL["architectures"]) * len(
-        PROTOCOL["character_kernel"]["initialization_seeds"]
-    )
-    rows = [row for cell in cells for row in cell["rows"]]
-    expected_rows = expected_cells * len(
-        enumerate_supports(
-            PROTOCOL["character_kernel"]["lags"],
-            max_degree=PROTOCOL["character_kernel"]["max_degree"],
-        )
-    )
-    if len(cells) != expected_cells or len(rows) != expected_rows:
-        raise ValueError("NTK grid is incomplete")
-    kernel = {
-        "protocol_hash": PROTOCOL["protocol_hash"],
-        "estimator": PROTOCOL["character_kernel"]["rayleigh_formula"],
-        "architecture_hardness": standardize_character_kernel(rows),
-        "cells_sha256": file_sha256(result_path),
-    }
-    digest = write_json_once(OUT / "character_kernel.json", kernel)
-    write_hash_once(OUT / "character_kernel.sha256", digest)
-    print(f"character kernel: {digest}")
-
-
 def _run_character_training(limit: int) -> None:
-    kernel_hash = verify_hash_lock(
-        OUT / "character_kernel.json", OUT / "character_kernel.sha256"
-    )
-    result_path = OUT / "character_results.json"
+    spec = PROTOCOL["fourier_character_training"]
+    supports = enumerate_supports(spec["lags"], max_degree=spec["max_degree"])
+    result_path = OUT / "fourier_character_results.json"
     existing = json.loads(result_path.read_text()) if result_path.exists() else []
     completed = {row["cell_id"] for row in existing}
     cells = [
         (architecture, support, seed)
         for architecture in PROTOCOL["architectures"]
-        for support in PROTOCOL["character_training"]["validation_supports"]
-        for seed in PROTOCOL["character_training"]["seeds"]
+        for support in supports
+        for seed in spec["seeds"]
     ]
     if limit:
         cells = cells[:limit]
     for architecture, support, seed in cells:
         support_id = "-".join(str(value) for value in support)
-        cell_id = f"V30T/{architecture['id']}/A{support_id}/s{seed}"
+        cell_id = f"V31F/{architecture['id']}/A{support_id}/s{seed}"
         if cell_id in completed:
             continue
         result = character_train_cell.remote(
@@ -567,11 +458,29 @@ def _run_character_training(limit: int) -> None:
                 "architecture": architecture,
                 "support": support,
                 "seed": seed,
-                "kernel_hash": kernel_hash,
             }
         )
         _save_cells(result_path, [result])
         print(cell_id, result["character_hardness"], flush=True)
+    if limit:
+        return
+    cells = json.loads(result_path.read_text())
+    from dlx.analysis.character_response import empirical_character_ce_kernel
+
+    kernel = {
+        "protocol_hash": PROTOCOL["protocol_hash"],
+        "definition": "median held-out normalized CE curve area for learning each exact Fourier character",
+        "results_sha256": file_sha256(result_path),
+        "architecture_hardness": empirical_character_ce_kernel(
+            cells,
+            architectures=[row["id"] for row in PROTOCOL["architectures"]],
+            supports=supports,
+            seeds=spec["seeds"],
+        ),
+    }
+    digest = write_json_once(OUT / "fourier_ce_kernel.json", kernel)
+    write_hash_once(OUT / "fourier_ce_kernel.sha256", digest)
+    print(f"Fourier-character CE kernel: {digest}")
 
 
 def _run_profiles() -> None:
@@ -650,8 +559,8 @@ def _run_natural(stage: str, limit: int) -> None:
     profile_hash = verify_hash_lock(
         OUT / "profile_manifest.json", OUT / "profile_manifest.sha256"
     )
-    kernel_hash = verify_hash_lock(
-        OUT / "character_kernel.json", OUT / "character_kernel.sha256"
+    fourier_ce_kernel_hash = verify_hash_lock(
+        OUT / "fourier_ce_kernel.json", OUT / "fourier_ce_kernel.sha256"
     )
     prediction_hash = None
     if stage == "confirmation":
@@ -672,7 +581,7 @@ def _run_natural(stage: str, limit: int) -> None:
         cells = cells[:limit]
     for row, architecture, seed in cells:
         prefix = "P" if stage == "pilot" else "C"
-        cell_id = f"V30{prefix}/{row['dataset']}/{architecture['id']}/s{seed}"
+        cell_id = f"V31{prefix}/{row['dataset']}/{architecture['id']}/s{seed}"
         if cell_id in completed:
             continue
         result = natural_train_cell.remote(
@@ -683,7 +592,7 @@ def _run_natural(stage: str, limit: int) -> None:
                 "seed": seed,
                 "data_manifest_hash": data_hash,
                 "profile_manifest_hash": profile_hash,
-                "kernel_hash": kernel_hash,
+                "fourier_ce_kernel_hash": fourier_ce_kernel_hash,
                 "prediction_lock_hash": prediction_hash,
             }
         )
@@ -692,16 +601,12 @@ def _run_natural(stage: str, limit: int) -> None:
 
 
 @app.local_entrypoint()
-def main(stage: str = "ntk", limit: int = 0) -> None:
-    if stage == "ntk":
-        _run_ntk()
-    elif stage == "character":
+def main(stage: str = "character", limit: int = 0) -> None:
+    if stage == "character":
         _run_character_training(limit)
     elif stage == "profile":
         _run_profiles()
     elif stage in {"pilot", "confirmation"}:
         _run_natural(stage, limit)
     else:
-        raise ValueError(
-            "stage must be ntk, character, profile, pilot, or confirmation"
-        )
+        raise ValueError("stage must be character, profile, pilot, or confirmation")

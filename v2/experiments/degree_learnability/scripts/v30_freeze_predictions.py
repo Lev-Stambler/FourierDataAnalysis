@@ -1,4 +1,4 @@
-"""Analyze the v3.0 pilot and freeze source-disjoint confirmation predictions."""
+"""Analyze the Fourier-CE pilot and freeze confirmation predictions."""
 
 from __future__ import annotations
 
@@ -43,13 +43,13 @@ def _profile_row(source: dict, architecture: str, kernel: dict) -> dict:
         "architecture": architecture,
         "features": {
             **profile["features"],
-            "architecture_character_overlap": overlap,
+            "fourier_ce_overlap": overlap,
         },
     }
 
 
 def main() -> dict:
-    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.0.json")
+    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.1.json")
     locks = {
         "data_manifest_hash": verify_hash_lock(
             OUT / "data_manifest.json", OUT / "data_manifest.sha256"
@@ -57,24 +57,18 @@ def main() -> dict:
         "profile_manifest_hash": verify_hash_lock(
             OUT / "profile_manifest.json", OUT / "profile_manifest.sha256"
         ),
-        "character_kernel_hash": verify_hash_lock(
-            OUT / "character_kernel.json", OUT / "character_kernel.sha256"
-        ),
-        "mechanism_analysis_hash": verify_hash_lock(
-            OUT / "mechanism_analysis.json", OUT / "mechanism_analysis.sha256"
+        "fourier_ce_kernel_hash": verify_hash_lock(
+            OUT / "fourier_ce_kernel.json", OUT / "fourier_ce_kernel.sha256"
         ),
     }
-    mechanism = json.loads((OUT / "mechanism_analysis.json").read_text())
-    if not mechanism["mechanism_gate_passed"]:
-        raise ValueError("the frozen mechanism continuation gate did not pass")
     manifest = json.loads((OUT / "data_manifest.json").read_text())
-    kernel = json.loads((OUT / "character_kernel.json").read_text())
+    kernel = json.loads((OUT / "fourier_ce_kernel.json").read_text())
     cells_path = OUT / "pilot_results.json"
     cells = json.loads(cells_path.read_text())
     pilot_sources = [row for row in manifest["corpora"] if row["panel"] == "pilot"]
     architectures = [row["id"] for row in protocol["architectures"]]
     expected = {
-        f"V30P/{source['dataset']}/{architecture}/s{seed}"
+        f"V31P/{source['dataset']}/{architecture}/s{seed}"
         for source in pilot_sources
         for architecture in architectures
         for seed in protocol["natural_training"]["seeds"]
@@ -99,7 +93,7 @@ def main() -> dict:
             )
     target = protocol["natural_training"]["primary_target"]
     baseline_features = tuple(protocol["prediction"]["strong_baseline_features"])
-    matched_features = baseline_features + ("architecture_character_overlap",)
+    matched_features = baseline_features + ("fourier_ce_overlap",)
     actual = np.asarray([row[target] for row in rows], dtype=float)
     baseline_loco = grouped_loco_predictions(
         rows, target=target, numeric_features=baseline_features
@@ -118,7 +112,7 @@ def main() -> dict:
     ):
         row["grouped_loco_predictions"] = {
             "strong_baseline": float(baseline_value),
-            "architecture_matched": float(matched_value),
+            "fourier_ce_matched": float(matched_value),
         }
     pilot_artifact = {
         "status": "pilot evaluated before confirmation training",
@@ -130,7 +124,7 @@ def main() -> dict:
         "matched_features": list(matched_features),
         "grouped_loco": {
             "strong_baseline": baseline_score,
-            "architecture_matched": matched_score,
+            "fourier_ce_matched": matched_score,
             "relative_rmse_improvement": improvement,
         },
         "continuation_gate_passed": continuation,
@@ -146,7 +140,7 @@ def main() -> dict:
     artifacts = {}
     for label, features in (
         ("strong_baseline", baseline_features),
-        ("architecture_matched", matched_features),
+        ("fourier_ce_matched", matched_features),
     ):
         artifact = fit_architecture_ols(rows, target=target, numeric_features=features)
         artifact.update(

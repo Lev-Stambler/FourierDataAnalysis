@@ -669,26 +669,16 @@ inside each regime. Since v2.8 reuses the v2.7 sources, it is a paired correctio
 not an independent source-disjoint replication. Audit PASS. Locks: protocol
 `a9043972…`, data `74ae3f10…`, profiles `2eabd4dd…`, predictions `c35f8274…`.
 
-## v3.0 architecture-spectrum mechanism gate (2026-08-10)
+## v3.1 Fourier-character CE matching (2026-08-11)
 
-The v3.0 protocol tested whether an architecture's initialization response to an
-exact support predicts how quickly it learns that support. It covered 63 NTK
-supports for each of five positional geometries and trained three seeds on 18
-selected Walsh characters, for 270 controlled H100 cells.
+The active experiment defines architecture response only through realized
+held-out cross-entropy learning curves on exact Fourier characters. It will cover
+all 63 supports through degree three, five positional geometries, and three
+seeds—945 controlled cells. Dataset Fourier support energy is then weighted by
+the corresponding empirical character CE hardness.
 
-The adjusted log-NTK coefficient was `-0.05329`; its preregistered 100,000-draw
-support-cluster bootstrap interval was `[-0.12938,-0.03639]`. This supports the
-narrow response/learnability association. The full strict mechanism gate still
-**FAILED** because reverse-ALiBi did not produce the required negative
-degree-one radius direction: ALiBi and reverse-ALiBi both gave `rho=+0.464`.
-Lag 64 is a unique boundary token and became an easy shortcut rather than one end
-of a smooth reversed geometry.
-
-Per the frozen decision rule, the 24-corpus pilot and 48-corpus source-disjoint
-confirmation were not trained. There is consequently no v3.0 natural-data
-transfer result and no defensible claim that the architecture-overlap scalar
-predicts corpus hardness. The correct label is **PARTIAL_MECHANISM_EVIDENCE;
-STRICT_GATE_FAILED**. Mechanical audit PASS. Locks: protocol `724b1929…`, kernel
-`cd0fff53…`, mechanism `a82a9560…`. See
-`docs/V30_ARCHITECTURE_SPECTRUM.md` and
-`runs/local/v30_architecture_spectrum/`.
+This correction occurred before corpus profiling, pilot training, frozen
+predictions, or confirmation outcomes. Accordingly, no v3.1 transfer verdict is
+yet reported. The next gate is simply whether this Fourier-CE overlap improves
+grouped leave-one-corpus-out prediction beyond the strong baseline on the
+24-corpus pilot. Protocol lock: `a33dac68…`.

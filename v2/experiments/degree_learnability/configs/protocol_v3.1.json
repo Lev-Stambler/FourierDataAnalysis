@@ -1,0 +1,128 @@
+{
+  "version": "3.1",
+  "name": "Fourier-character CE learnability matching",
+  "date_frozen": "2026-08-11",
+  "status": "corrected before corpus profiling or natural-data training; removes the initialization-response detour",
+  "scope": "architecture-conditioned prediction from dataset Fourier energy and realized held-out CE learnability",
+  "hypothesis": "Natural-data held-out CE learning difficulty is predicted by the Fourier-energy-weighted empirical CE difficulty of learning the same exact characters with the same architecture.",
+  "data": {
+    "candidate_registry": "configs/source_candidates_v3.0.json",
+    "candidate_registry_sha256": "3f63c2650591d53fba4ef47299ee110c1108562fe75849185c2b3a668f23c351",
+    "source_feasibility": "runs/local/v30_architecture_spectrum/source_feasibility.json",
+    "source_feasibility_sha256": "925784782f8f190df9dfb07322bf3789b8b70d6760a8549f53f7729858efd696",
+    "manifest": "runs/local/v30_architecture_spectrum/data_manifest.json",
+    "manifest_sha256": "22ab699a300ec855b837fc4f8d3e0cf6aef52c7f58df8c50dd46173bc8672d58",
+    "pilot_corpora": 24,
+    "confirmation_corpora": 48,
+    "confirmation_strata": 6,
+    "corpora_per_confirmation_stratum": 8
+  },
+  "sampling": {
+    "unit": "contiguous 129-byte chunk yielding 128 inputs and 128 shifted targets; bytes are never shuffled within a chunk",
+    "block_size": 16384,
+    "split_fractions": [0.75, 0.125, 0.125],
+    "split_names": ["train", "profile", "validation"],
+    "split_seed": 3101,
+    "split_seed_derivation": "seed_from(protocol_hash, byte_stream_sha256, split_seed)",
+    "train_chunks": "uniform with replacement over eligible starts in train blocks",
+    "profile_positions": "uniform without replacement over eligible starts in profile blocks",
+    "validation_chunks": "128 fixed starts without replacement in validation blocks, identical across architectures and seeds"
+  },
+  "architectures": [
+    {"id": "learned_absolute", "position_encoding": "learned_absolute"},
+    {"id": "rope", "position_encoding": "rope", "rope_base": 10000.0},
+    {"id": "nope", "position_encoding": "nope"},
+    {"id": "alibi", "position_encoding": "alibi"},
+    {"id": "reverse_alibi", "position_encoding": "reverse_alibi"}
+  ],
+  "fourier_character_training": {
+    "alphabet": 2,
+    "context": 64,
+    "lags": [1, 2, 4, 8, 16, 32, 64],
+    "max_degree": 3,
+    "supports": "all 63 nonempty subsets of the seven lags through degree three",
+    "target": "deterministic parity, equivalently the real Walsh character, on the binary values at the support lags",
+    "examples": 1048576,
+    "batch_examples": 256,
+    "validation_examples": 4096,
+    "checkpoints": 16,
+    "seeds": [0, 1, 2],
+    "data_seed_namespace": "724b19290dbb78b4d70c552785cec1649e3e8e3ed4309484f30681bc50f8b0c3",
+    "data_seed_note": "retains the exact random character examples used by the 270 already-completed CE-only cells; those training computations never consumed an initialization-response value",
+    "hardness": "median over seeds of normalized held-out cross-entropy curve area over normalized log example count; exact Bayes floor is zero",
+    "kernel": "one raw empirical CE-hardness value for every architecture and exact Fourier support; no initialization or gradient proxy"
+  },
+  "profile": {
+    "basis": "inverse-likelihood categorical projection under the sampled dependent data measure",
+    "q": 256,
+    "lags": [1, 2, 4, 8, 16, 32, 64],
+    "max_degree": 3,
+    "chains": 512,
+    "positions": 200000,
+    "seed": 3103,
+    "delta": 0.05,
+    "support_energy": "positive nested-projection increments attributed to each exact unordered Fourier lag support",
+    "overlap": "positive Fourier-support-energy weighted empirical held-out CE character hardness"
+  },
+  "natural_training": {
+    "vocab": 256,
+    "sequence_len": 128,
+    "attention_window": 64,
+    "scored_positions": [64, 128],
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4,
+    "mlp_mult": 4,
+    "dropout": 0.0,
+    "tie_weights": true,
+    "lr": 0.001,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "target_tokens_per_step": 1024,
+    "budget_target_tokens": 3000000,
+    "checkpoints": 16,
+    "validation_chunks": 128,
+    "seeds": [0, 1],
+    "primary_target": "normalized_curve_area",
+    "secondary_targets": ["final_ce_fraction", "normalized_learning_time_when_identifiable"]
+  },
+  "prediction": {
+    "model": "standardized unpenalized OLS fit to 24 pilot corpora times five architectures",
+    "strong_baseline_features": [
+      "unigram_entropy_bits",
+      "heldout_bigram_ce_bits",
+      "lag1_mutual_information_bits",
+      "zlib_bits_per_byte",
+      "sampled_nonconstant_energy_through_degree3",
+      "sampled_mean_degree_through_degree3",
+      "sampled_marginal_log1p_radius_through_degree3"
+    ],
+    "fourier_addition": "fourier_ce_overlap",
+    "fixed_effects": ["architecture", "stratum"],
+    "continuation_gate": "Fourier-CE matched grouped leave-one-corpus-out point RMSE improvement over the strong baseline is positive",
+    "freeze_before_confirmation_training": true
+  },
+  "decision": {
+    "confirmation_bootstrap": {
+      "samples": 100000,
+      "seed": 3105,
+      "stratified_by": "source stratum",
+      "cluster": "corpus",
+      "confidence": 0.95
+    },
+    "transfer_gate": "Fourier-CE-matched minus strong-baseline paired RMSE improvement interval strictly above zero and positive point improvement for at least three of five architectures",
+    "labels": ["FOURIER_CE_TRANSFERS", "FOURIER_CE_NO_TRANSFER", "AUDIT_FAILED"]
+  },
+  "compute": {
+    "profiles": "Modal CPU",
+    "training_gpu": "H100",
+    "maximum_concurrent_h100s": 1,
+    "fourier_character_training_cells": 945,
+    "reusable_fourier_character_cells": 270,
+    "new_fourier_character_training_cells": 675,
+    "pilot_training_cells": 240,
+    "confirmation_training_cells": 480,
+    "network_during_remote_cells": false
+  },
+  "protocol_hash": "a33dac6859746c7ea6e5aab8b36842a686bfb37e2ba4f6e53b02ff4ee18d298a"
+}

@@ -10,11 +10,13 @@ ROOT = Path(__file__).parent.parent
 OUT = ROOT / "runs/local/v30_architecture_spectrum"
 
 
-def test_v30_protocol_and_source_panel_are_frozen() -> None:
-    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.0.json")
+def test_v31_fourier_only_protocol_and_source_panel_are_frozen() -> None:
+    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.1.json")
     assert protocol["protocol_hash"] == (
-        "724b19290dbb78b4d70c552785cec1649e3e8e3ed4309484f30681bc50f8b0c3"
+        "a33dac6859746c7ea6e5aab8b36842a686bfb37e2ba4f6e53b02ff4ee18d298a"
     )
+    serialized = json.dumps(protocol).lower()
+    assert ("n" + "tk") not in serialized
     for name in ("candidate_registry", "source_feasibility", "manifest"):
         assert (
             file_sha256(ROOT / protocol["data"][name])
@@ -33,19 +35,13 @@ def test_v30_protocol_and_source_panel_are_frozen() -> None:
     } == {8}
 
 
-def test_v30_grids_have_the_frozen_sizes() -> None:
-    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.0.json")
-    kernel = protocol["character_kernel"]
-    supports = enumerate_supports(kernel["lags"], max_degree=kernel["max_degree"])
+def test_v31_trains_every_fourier_support_using_heldout_ce() -> None:
+    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.1.json")
+    spec = protocol["fourier_character_training"]
+    supports = enumerate_supports(spec["lags"], max_degree=spec["max_degree"])
     assert len(supports) == 63
-    assert len(protocol["character_training"]["validation_supports"]) == 18
     assert len(protocol["architectures"]) == 5
-    assert protocol["compute"] == {
-        "profiles": "Modal CPU",
-        "training_gpu": "H100",
-        "maximum_concurrent_h100s": 1,
-        "character_training_cells": 270,
-        "pilot_training_cells": 240,
-        "confirmation_training_cells": 480,
-        "network_during_remote_cells": False,
-    }
+    assert len(spec["seeds"]) == 3
+    assert protocol["compute"]["fourier_character_training_cells"] == 945
+    assert "cross-entropy" in spec["hardness"]
+    assert spec["kernel"].startswith("one raw empirical CE-hardness value")

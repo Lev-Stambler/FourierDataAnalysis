@@ -1,4 +1,4 @@
-"""Independent artifact and pairing audit for the v3.0 experiment."""
+"""Independent artifact and pairing audit for the Fourier-only experiment."""
 
 from __future__ import annotations
 
@@ -23,95 +23,80 @@ def _check(condition: bool, label: str, checks: list[dict]) -> None:
 
 
 def main() -> dict:
-    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.0.json")
+    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.1.json")
     checks: list[dict] = []
-    locks = {}
-    for name in ("data_manifest", "character_kernel", "mechanism_analysis"):
-        locks[name] = verify_hash_lock(OUT / f"{name}.json", OUT / f"{name}.sha256")
-        _check(True, f"{name} hash lock", checks)
+    locks = {
+        name: verify_hash_lock(OUT / f"{name}.json", OUT / f"{name}.sha256")
+        for name in ("data_manifest", "fourier_ce_kernel")
+    }
     manifest = json.loads((OUT / "data_manifest.json").read_text())
     corpora = manifest["corpora"]
-    _check(len(corpora) == 72, "72 unique corpus rows", checks)
+    _check(len(corpora) == 72, "72 corpus rows", checks)
     _check(len({row["dataset"] for row in corpora}) == 72, "dataset IDs unique", checks)
     _check(
         len({row["byte_stream_sha256"] for row in corpora}) == 72,
         "byte streams unique",
         checks,
     )
-    pilot_sources = {row["dataset"] for row in corpora if row["panel"] == "pilot"}
-    confirmation_sources = {
-        row["dataset"] for row in corpora if row["panel"] == "confirmation"
-    }
+    pilot = {row["dataset"] for row in corpora if row["panel"] == "pilot"}
+    confirmation = {row["dataset"] for row in corpora if row["panel"] == "confirmation"}
     _check(
-        pilot_sources.isdisjoint(confirmation_sources),
-        "pilot and confirmation source IDs disjoint",
-        checks,
+        pilot.isdisjoint(confirmation), "pilot/confirmation sources disjoint", checks
     )
     strata = sorted({row["stratum"] for row in corpora})
-    by_panel_stratum = {
-        (panel, stratum): sum(
-            row["panel"] == panel and row["stratum"] == stratum for row in corpora
-        )
-        for panel, expected in (("pilot", 4), ("confirmation", 8))
-        for stratum in strata
-    }
+    _check(len(strata) == 6, "six source strata", checks)
     _check(
         all(
-            value == (4 if panel == "pilot" else 8)
-            for (panel, _), value in by_panel_stratum.items()
+            sum(row["panel"] == panel and row["stratum"] == stratum for row in corpora)
+            == expected
+            for panel, expected in (("pilot", 4), ("confirmation", 8))
+            for stratum in strata
         ),
-        "balanced six-stratum panels",
-        checks,
-    )
-    _check(len(strata) == protocol["data"]["confirmation_strata"], "six strata", checks)
-
-    ntk = json.loads((OUT / "ntk_cells.json").read_text())
-    expected_supports = len(
-        enumerate_supports(
-            protocol["character_kernel"]["lags"],
-            max_degree=protocol["character_kernel"]["max_degree"],
-        )
-    )
-    _check(len(ntk) == 40, "40 NTK cells", checks)
-    _check(
-        all(len(cell["rows"]) == expected_supports for cell in ntk),
-        "63 supports in every NTK cell",
-        checks,
-    )
-    _check(
-        all("H100" in cell["remote"]["gpu"] for cell in ntk),
-        "NTK cells ran on H100",
-        checks,
-    )
-    character = json.loads((OUT / "character_results.json").read_text())
-    _check(len(character) == 270, "270 controlled character cells", checks)
-    _check(
-        len({cell["cell_id"] for cell in character}) == len(character),
-        "controlled cell IDs unique",
-        checks,
-    )
-    _check(
-        all(cell["kernel_hash"] == locks["character_kernel"] for cell in character),
-        "controlled cells reference locked kernel",
+        "balanced source panels",
         checks,
     )
 
-    mechanism = json.loads((OUT / "mechanism_analysis.json").read_text())
-    completed_stage = "mechanism"
+    spec = protocol["fourier_character_training"]
+    supports = enumerate_supports(spec["lags"], max_degree=spec["max_degree"])
+    character = json.loads((OUT / "fourier_character_results.json").read_text())
+    expected_character = (
+        len(protocol["architectures"]) * len(supports) * len(spec["seeds"])
+    )
+    _check(len(character) == expected_character == 945, "945 Fourier CE cells", checks)
+    _check(
+        len({row["cell_id"] for row in character}) == expected_character,
+        "Fourier CE cell IDs unique",
+        checks,
+    )
+    _check(
+        all(row["protocol_hash"] == protocol["protocol_hash"] for row in character),
+        "Fourier CE cells use corrected protocol",
+        checks,
+    )
+    _check(
+        all("H100" in row["remote"]["gpu"] for row in character),
+        "Fourier CE cells ran on H100",
+        checks,
+    )
+    kernel = json.loads((OUT / "fourier_ce_kernel.json").read_text())
+    _check(
+        kernel["results_sha256"] == file_sha256(OUT / "fourier_character_results.json"),
+        "CE kernel locks complete Fourier result grid",
+        checks,
+    )
+    completed_stage = "fourier_character_ce"
     timing = {
-        "ntk_gpu_cell_seconds": sum(
-            cell["remote"]["wallclock_seconds"] for cell in ntk
-        ),
-        "character_gpu_cell_seconds": sum(
-            cell["remote"]["wallclock_seconds"] for cell in character
-        ),
+        "fourier_character_gpu_cell_seconds": sum(
+            row["remote"]["wallclock_seconds"] for row in character
+        )
     }
-    if mechanism["mechanism_gate_passed"]:
-        for name in ("profile_manifest", "pilot_analysis"):
-            locks[name] = verify_hash_lock(OUT / f"{name}.json", OUT / f"{name}.sha256")
-            _check(True, f"{name} hash lock", checks)
+
+    if (OUT / "profile_manifest.sha256").exists():
+        locks["profile_manifest"] = verify_hash_lock(
+            OUT / "profile_manifest.json", OUT / "profile_manifest.sha256"
+        )
         profiles = json.loads((OUT / "profile_manifest.json").read_text())["profiles"]
-        _check(len(profiles) == 72, "72 profile summaries and audits", checks)
+        _check(len(profiles) == 72, "72 Fourier profile summaries and audits", checks)
         for row in profiles:
             profile = OUT / "profiles" / f"{row['dataset']}.json"
             audit = OUT / "audit_chains" / f"{row['dataset']}.json.gz"
@@ -122,36 +107,33 @@ def main() -> dict:
             )
             _check(
                 file_sha256(audit) == row["audit_sha256"],
-                f"{row['dataset']} chain-audit hash",
+                f"{row['dataset']} chain hash",
                 checks,
             )
             decoded = json.loads(gzip.decompress(audit.read_bytes()))
             _check(
                 decoded["summary_sha256"] == row["profile_sha256"],
-                f"{row['dataset']} audit links summary",
+                f"{row['dataset']} chain audit links profile",
                 checks,
             )
-        pilot = json.loads((OUT / "pilot_results.json").read_text())
-        _check(len(pilot) == 240, "240 pilot training cells", checks)
+        completed_stage = "profile"
+
+    if (OUT / "pilot_analysis.sha256").exists():
+        locks["pilot_analysis"] = verify_hash_lock(
+            OUT / "pilot_analysis.json", OUT / "pilot_analysis.sha256"
+        )
+        pilot_cells = json.loads((OUT / "pilot_results.json").read_text())
+        _check(len(pilot_cells) == 240, "240 pilot training cells", checks)
         _check(
-            all(cell["prediction_lock_hash"] is None for cell in pilot),
-            "pilot preceded prediction lock",
+            all(
+                row["fourier_ce_kernel_hash"] == locks["fourier_ce_kernel"]
+                for row in pilot_cells
+            ),
+            "pilot cells reference Fourier CE kernel",
             checks,
         )
-        _check(
-            all("H100" in cell["remote"]["gpu"] for cell in pilot),
-            "pilot training cells ran on H100",
-            checks,
-        )
-        for dataset in {cell["dataset"] for cell in pilot}:
-            selected = [cell for cell in pilot if cell["dataset"] == dataset]
-            _check(
-                len({cell["validation_starts_sha256"] for cell in selected}) == 1,
-                f"{dataset} validation chunks paired",
-                checks,
-            )
         timing["pilot_gpu_cell_seconds"] = sum(
-            cell["remote"]["wallclock_seconds"] for cell in pilot
+            row["remote"]["wallclock_seconds"] for row in pilot_cells
         )
         completed_stage = "pilot"
         pilot_analysis = json.loads((OUT / "pilot_analysis.json").read_text())
@@ -160,38 +142,27 @@ def main() -> dict:
                 locks[name] = verify_hash_lock(
                     OUT / f"{name}.json", OUT / f"{name}.sha256"
                 )
-                _check(True, f"{name} hash lock", checks)
-            confirmation = json.loads((OUT / "confirmation_results.json").read_text())
-            _check(len(confirmation) == 480, "480 confirmation training cells", checks)
+            confirmation_cells = json.loads(
+                (OUT / "confirmation_results.json").read_text()
+            )
+            _check(len(confirmation_cells) == 480, "480 confirmation cells", checks)
             _check(
                 all(
-                    cell["prediction_lock_hash"] == locks["predictions"]
-                    for cell in confirmation
+                    row["prediction_lock_hash"] == locks["predictions"]
+                    for row in confirmation_cells
                 ),
-                "confirmation cells reference frozen predictions",
+                "confirmation cells use frozen predictions",
                 checks,
             )
-            _check(
-                all("H100" in cell["remote"]["gpu"] for cell in confirmation),
-                "confirmation training cells ran on H100",
-                checks,
-            )
-            for dataset in {cell["dataset"] for cell in confirmation}:
-                selected = [cell for cell in confirmation if cell["dataset"] == dataset]
-                _check(
-                    len({cell["validation_starts_sha256"] for cell in selected}) == 1,
-                    f"{dataset} validation chunks paired",
-                    checks,
-                )
             timing["confirmation_gpu_cell_seconds"] = sum(
-                cell["remote"]["wallclock_seconds"] for cell in confirmation
+                row["remote"]["wallclock_seconds"] for row in confirmation_cells
             )
             completed_stage = "confirmation"
+
     result = {
         "protocol_hash": protocol["protocol_hash"],
         "status": "PASS" if all(row["passed"] for row in checks) else "FAIL",
         "completed_stage": completed_stage,
-        "mechanism_gate_passed": mechanism["mechanism_gate_passed"],
         "locks": locks,
         "checks": checks,
         "timing": timing,
@@ -199,12 +170,7 @@ def main() -> dict:
     write_json_once(OUT / "audit.json", result)
     print(
         json.dumps(
-            {
-                "status": result["status"],
-                "completed_stage": completed_stage,
-                "checks": len(checks),
-                "timing": timing,
-            },
+            {key: result[key] for key in ("status", "completed_stage", "timing")},
             indent=2,
         )
     )

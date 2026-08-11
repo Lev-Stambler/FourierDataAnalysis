@@ -1,166 +1,115 @@
-# v3.0 architecture–spectrum matching
+# Fourier spectrum × empirical CE learnability
 
 ## Question
 
-The dataset spectrum is model-independent, but finite-budget learning difficulty
-need not be. This experiment tests a narrower mechanism:
+Does a dataset become harder for a particular architecture when its Fourier
+spectrum places more energy on exact characters that the architecture learns
+slowly in held-out cross-entropy?
 
-> A Transformer learns a corpus more easily when the corpus's categorical
-> projection spectrum puts more mass on supports to which that architecture is
-> responsive at initialization.
+This is a direct Fourier-to-learning test. The dataset side is measured without
+training the student. The architecture side is measured from realized held-out
+CE learning curves—no initialization or gradient proxy is used.
 
-The five positional geometries are learned absolute positions, RoPE, NoPE,
-ALiBi, and reverse-ALiBi. All use the same two-layer, width-64 causal
-Transformer and the same 64-token effective context.
+## Fourier characters
 
-## Character-response kernel
-
-For a binary Walsh character on lag support \(A\),
+For binary inputs and lag support \(A\), the real Fourier character is
 
 \[
-\chi_A(x)=(-1)^{\sum_{j\in A}x_{-j}},
+\chi_A(x)=(-1)^{\sum_{j\in A}x_{-j}}.
 \]
 
-the initialization response of architecture \(m\) is the empirical NTK
-Rayleigh quotient
+The support bank contains all 63 nonempty subsets through degree three of
+\(\{1,2,4,8,16,32,64\}\). Each of five positional geometries—learned absolute,
+RoPE, NoPE, ALiBi, and reverse-ALiBi—is trained from scratch to predict every
+character, with three seeds per cell.
+
+For architecture \(m\), support \(A\), seed \(s\), let
 
 \[
-R_m(A)=\frac{1}{n}\chi_A^\top K_m\chi_A
-=\left\|\nabla_\theta\frac{1}{\sqrt n}
-\sum_i\chi_A(x_i)[z_{i,1}-z_{i,0}]\right\|_2^2.
+H_{m,A,s}
+=
+\operatorname{Area}_{\log n}
+\frac{\operatorname{CE}_{m,A,s}(n)}
+     {\operatorname{CE}_{m,A,s}(0)}.
 \]
 
-It is evaluated for all 63 nonempty subsets through degree three of the lag bank
-\(\{1,2,4,8,16,32,64\}\), then geometrically averaged over eight initialization
-seeds. The architecture-specific hardness kernel is
+The architecture's empirical Fourier-character hardness is simply
 
 \[
-h_m(A)=-\frac{\log R_m(A)-\mathbb E_B[\log R_m(B)]}
-{\operatorname{sd}_B[\log R_m(B)]}.
+h_m(A)=\operatorname{median}_s H_{m,A,s}.
 \]
 
-The sign convention makes positive values denote supports to which the
-architecture has relatively weak gradient response.
+High \(h_m(A)\) means the architecture spends more of its finite training budget
+at high held-out CE on that exact Fourier character.
 
-## Dataset support spectrum
+## Dataset Fourier support energy
 
-For each corpus, 200,000 target positions are sampled uniformly from a held-out
-set of randomized intact 16 KiB blocks. For 512 random nested support chains,
-the code cross-fits the conditional collision energy
+For each corpus, 200,000 target positions are sampled uniformly from held-out
+randomized intact blocks. For random nested support chains, the profiler
+cross-fits conditional collision energy
 
 \[
 C_D(A)=\mathbb E\sum_y \widehat P_1(y\mid X_A)
                          \widehat P_2(y\mid X_A).
 \]
 
-When coordinate \(j\) is added to the current support \(A\), its positive
-marginal increment is
+When coordinate \(j\) is added to support \(A\), its positive projection
+increment is
 
 \[
 \Delta_D(A\cup\{j\})=[C_D(A\cup\{j\})-C_D(A)]_+.
 \]
 
-Averaging those increments by exact unordered support gives \(e_D(A)\). This is
-an order-averaged dependent-data projection attribution in the
-inverse-likelihood categorical basis. It is deliberately not described as an
-exact product-measure Fourier coefficient.
+Averaging these increments by exact unordered lag support gives \(e_D(A)\).
+This is an order-averaged attribution in the dependent-data categorical
+projection basis. It is the scalable dataset Fourier-spectrum estimator used by
+this experiment.
 
-The architecture-matched scalar is
+## Architecture-conditioned Fourier overlap
+
+The proposed difficulty feature is
 
 \[
-\Omega(D,m)=
+\Omega_{\mathrm{CE}}(D,m)
+=
 \frac{\sum_A e_D(A)h_m(A)}{\sum_A e_D(A)}.
 \]
 
-This preserves a model-independent dataset measurement \(e_D\), while making
-the final difficulty prediction explicitly learner-conditional through \(h_m\).
+Every quantity has a direct interpretation:
 
-## Frozen tests
+- \(e_D(A)\): how much dataset projection energy is attributed to Fourier
+  support \(A\);
+- \(h_m(A)\): how difficult that exact Fourier character was to learn in
+  held-out CE with architecture \(m\);
+- \(\Omega_{\mathrm{CE}}\): expected empirical character difficulty under the
+  dataset's measured Fourier energy distribution.
 
-The mechanism stage trains the five architectures on 18 exact character tasks
-with three seeds each. Its regression is
+No monotonic locality assumption is required. If an architecture finds lags 1
+and 64 easy but intermediate lags hard, that non-monotone shape is retained in
+\(h_m\) and used as measured.
 
-\[
-H_{m,A}=\alpha_m+\gamma_{|A|}+\beta\log R_m(A)+\epsilon_{m,A},
-\]
+## Frozen predictive test
 
-where \(H\) is normalized held-out CE curve area. Complete support blocks are
-resampled 100,000 times. The mechanism gate requires the upper 95% bound for
-\(\beta\) to be below zero and opposite degree-one radius directions for ALiBi
-and reverse-ALiBi.
+Both OLS models include architecture and source-stratum fixed effects. The strong
+baseline contains unigram entropy, held-out bigram CE, lag-one mutual
+information, compression rate, low-degree energy, mean degree, and marginal
+radius. The matched model adds only \(\Omega_{\mathrm{CE}}\).
 
-If that gate passes, a strong seven-feature OLS baseline is compared with the
-same model plus \(\Omega(D,m)\). Architecture and source-stratum fixed effects
-are included in both. The continuation decision uses grouped
-leave-one-corpus-out RMSE on 24 pilot corpora. Only a positive point improvement
-permits fitting the full pilot models and hash-locking 240 predictions for 48
-new, source-disjoint corpora before their 480 training cells begin.
+The 24-corpus pilot gate is grouped leave-one-corpus-out RMSE. If the Fourier-CE
+model improves point RMSE, both models are fit on the complete pilot and their
+predictions for 48 new source-disjoint corpora are hash-locked before natural
+training begins. The confirmation unit is the corpus, retaining all five
+architecture outcomes within each bootstrap block.
 
-The final transfer gate requires a strictly positive paired stratified
-corpus-bootstrap interval and positive point improvement for at least three of
-the five architectures.
+## Status
 
-## Result
+Protocol v3.1 corrected the experiment before any corpus profile, pilot outcome,
+or confirmation outcome existed. The full empirical response surface requires
+945 Fourier-character CE cells. Of those, 270 already-completed CE training
+outcomes were reusable because the removed side analysis never entered their
+optimization or validation computation. A bounded single-H100 continuation has
+now saved 36 additional cells, leaving 639. The runner is cell-level resumable;
+no partial cell is treated as an observation.
 
-The strict mechanism gate **did not pass**, so the natural-corpus pilot and
-confirmation stages were not run.
-
-One half of the mechanism test was strongly positive. Across the 90 reduced
-architecture/support cells, controlling for architecture and degree, the
-coefficient of mean log NTK response was
-
-\[
-\widehat\beta=-0.05329,
-\]
-
-with a frozen 100,000-draw support-cluster bootstrap interval of
-`[-0.12938,-0.03639]`. Larger initialization response therefore corresponded to
-smaller held-out learning-curve area in this controlled grid. The standardized
-coefficient was `-0.364`. Adding NTK response raised descriptive in-sample
-\(R^2\) from `0.601` to `0.694` (partial \(R^2=0.233\)).
-
-The engineered directional control failed. Degree-one hardness versus log radius
-had Spearman `rho=+0.464` for both ALiBi and reverse-ALiBi; the frozen gate
-required ALiBi positive and reverse-ALiBi negative. Reverse-ALiBi did make lag 64
-easy, but it did not progressively favor lags 2, 4, 8, 16, and 32. Instead, the
-learner had two easy anchors:
-
-- lag 1, available through the current-token residual stream;
-- lag 64, the unique left boundary, which reverse-ALiBi attends strongly.
-
-Intermediate lags remained hard. Ordinary ALiBi showed the expected increasing
-difficulty from lag 1 through lag 32, but the same boundary shortcut made lag 64
-easy there too. Thus changing the sign of an ALiBi bias does not create the
-smooth opposite geometric kernel assumed by the control.
-
-The degree/architecture separation itself was large. Median character hardness
-by degree was:
-
-| architecture | degree 1 | degree 2 | degree 3 |
-|---|---:|---:|---:|
-| learned absolute | 0.401 | 0.401 | 0.971 |
-| RoPE | 0.401 | 0.401 | 0.973 |
-| NoPE | 0.950 | 0.973 | 0.973 |
-| ALiBi | 0.831 | 0.966 | 0.972 |
-| reverse-ALiBi | 0.959 | 0.974 | 0.973 |
-
-These medians hide the easy lag-1/lag-64 endpoints for NoPE and reverse-ALiBi,
-but they make the architecture dependence unambiguous. The character schedule
-also had limited time resolution: only 7.4% of cells reached half of their best
-learning after the first checkpoint. Easy cells were already solved by 65,536
-examples, while most hard cells stayed near chance.
-
-A clearly labeled post-gate diagnostic found only a `0.57%` RMSE improvement when
-NTK response was tested by grouped leave-one-support-out prediction. Therefore
-the negative coefficient is credible as an association on the frozen support
-grid, but it is not yet a strong claim that the scalar response generalizes to a
-new support shape.
-
-The correct conclusion is **partial mechanism evidence, strict gate failure**:
-the character NTK contains real architecture-specific learnability information,
-but the proposed reverse-ALiBi monotonicity control was misspecified. Running 720
-natural-corpus training cells after that failure would violate the predeclared
-decision rule and spend compute without a validated bridge.
-
-Protocol: `configs/protocol_v3.0.json`. Artifacts:
+Protocol: `configs/protocol_v3.1.json`. Artifacts:
 `runs/local/v30_architecture_spectrum/`.
