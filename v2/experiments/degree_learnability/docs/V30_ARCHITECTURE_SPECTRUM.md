@@ -130,5 +130,21 @@ are 0.96905 (learned absolute), 0.97266 (RoPE), 0.97257 (NoPE), 0.97168
 (ALiBi), and 0.97247 (reverse-ALiBi). Exact support resolution remains necessary
 at degrees one and two, where the observed response variation is large.
 
+All 315 degree-two cells are now complete. Together with degree one and the
+17-support degree-three sample, the response artifact contains 675 measured
+cells, 45 exact supports, and 18 pooled degree-three supports. The exact table
+does retain information that degree and radius alone erase. For example, RoPE's
+degree-two pairs containing lag 1 have hardness near 0.401, while almost every
+pair excluding lag 1 is near 0.97. ALiBi learns `(2,4)` more readily (median
+0.887), but reverse-ALiBi does not (median 0.975); `(4,8)` is hard for both.
+
+This specificity comes with a hard predictive test. Across the 72 profiles and
+five architectures, the strong baseline features plus architecture/stratum
+effects explain 98.48% of the overlap feature's variance. The remaining overlap
+residual has standard deviation 0.00991, and the dataset-by-architecture
+interaction standard deviation is 0.00961. Thus the pilot is testing whether a
+small exact-support matching component predicts held-out CE beyond highly
+correlated degree, locality, entropy, and compression controls.
+
 Protocol: `configs/protocol_v3.1.json`. Artifacts:
 `runs/local/v30_architecture_spectrum/`.

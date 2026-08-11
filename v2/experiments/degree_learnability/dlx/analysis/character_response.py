@@ -67,6 +67,7 @@ def empirical_character_ce_kernel(
     architectures: Iterable[str],
     supports: Iterable[Iterable[int]],
     seeds: Iterable[int],
+    pooled_hardness_by_degree: dict[int, dict[str, float]] | None = None,
 ) -> dict[str, dict[str, float]]:
     """Reduce the complete character-training grid to median held-out CE hardness.
 
@@ -89,10 +90,9 @@ def empirical_character_ce_kernel(
         (str(row["architecture"]), support_key(row["support"]), int(row["seed"]))
         for row in cells
     }
-    if len(cells) != len(expected) or observed != expected:
-        raise ValueError(
-            f"Fourier-character CE grid is incomplete: {len(observed)}/{len(expected)}"
-        )
+    if len(observed) != len(cells) or not observed.issubset(expected):
+        raise ValueError("Fourier-character CE grid contains duplicate or unexpected cells")
+    pooled = pooled_hardness_by_degree or {}
     output: dict[str, dict[str, float]] = {}
     for architecture in architecture_values:
         output[architecture] = {}
@@ -104,11 +104,24 @@ def empirical_character_ce_kernel(
                 if row["architecture"] == architecture
                 and support_key(row["support"]) == key
             ]
-            if len(values) != len(seed_values) or any(
+            if values and len(values) != len(seed_values):
+                raise ValueError("Fourier-character CE support has partial seeds")
+            if values and any(
                 not math.isfinite(value) or value < 0.0 for value in values
             ):
                 raise ValueError("character CE hardness must be complete and finite")
-            output[architecture][key] = float(np.median(values))
+            if values:
+                output[architecture][key] = float(np.median(values))
+                continue
+            degree_pool = pooled.get(len(support), {})
+            if architecture not in degree_pool:
+                raise ValueError(
+                    f"Fourier-character CE grid is incomplete at {architecture}/{key}"
+                )
+            value = float(degree_pool[architecture])
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError("pooled character CE hardness must be finite")
+            output[architecture][key] = value
     return output
 
 

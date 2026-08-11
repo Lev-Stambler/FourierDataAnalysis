@@ -525,6 +525,20 @@ def _run_degree_three_sentinels(limit: int) -> None:
     _run_character_training(limit, selected_supports=supports)
 
 
+def _run_degree_two_completion(limit: int) -> None:
+    spec = PROTOCOL["fourier_character_training"]
+    supports = tuple(
+        support
+        for support in enumerate_supports(
+            spec["lags"], max_degree=spec["max_degree"]
+        )
+        if len(support) == 2
+    )
+    if len(supports) != 21:
+        raise ValueError("expected all 21 degree-two Fourier supports")
+    _run_character_training(limit, selected_supports=supports)
+
+
 def _run_profiles() -> None:
     data_hash = verify_hash_lock(
         OUT / "data_manifest.json", OUT / "data_manifest.sha256"
@@ -648,11 +662,14 @@ def main(stage: str = "character", limit: int = 0) -> None:
         _run_character_training(limit)
     elif stage == "sentinel":
         _run_degree_three_sentinels(limit)
+    elif stage == "degree2":
+        _run_degree_two_completion(limit)
     elif stage == "profile":
         _run_profiles()
     elif stage in {"pilot", "confirmation"}:
         _run_natural(stage, limit)
     else:
         raise ValueError(
-            "stage must be character, sentinel, profile, pilot, or confirmation"
+            "stage must be character, sentinel, degree2, profile, pilot, or "
+            "confirmation"
         )

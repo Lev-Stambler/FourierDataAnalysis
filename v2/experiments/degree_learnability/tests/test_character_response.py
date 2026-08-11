@@ -116,3 +116,23 @@ def test_empirical_character_kernel_rejects_missing_cells() -> None:
         empirical_character_ce_kernel(
             [], architectures=("a",), supports=((1,),), seeds=(0,)
         )
+
+
+def test_empirical_character_kernel_can_pool_a_missing_degree() -> None:
+    cells = [
+        {
+            "architecture": "rope",
+            "support": [1],
+            "seed": seed,
+            "character_hardness": value,
+        }
+        for seed, value in enumerate((0.2, 0.4, 0.3))
+    ]
+    result = empirical_character_ce_kernel(
+        cells,
+        architectures=("rope",),
+        supports=((1,), (1, 2, 4)),
+        seeds=(0, 1, 2),
+        pooled_hardness_by_degree={3: {"rope": 0.97}},
+    )
+    assert result == {"rope": {"1": pytest.approx(0.3), "1,2,4": 0.97}}
