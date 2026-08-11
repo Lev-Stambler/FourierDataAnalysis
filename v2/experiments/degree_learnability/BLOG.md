@@ -521,3 +521,27 @@ categorical coefficient directions under the same measure. Confirmation was
 therefore not run. A stronger next experiment must align the learned synthetic
 characters with the categorical text basis and estimator rather than adding
 more models to this failed bridge.
+
+### A prospective 48-corpus expansion
+
+The 2.04% ordinary-baseline improvement above was discovered in the pilot, so it
+could not be called confirmatory. We instead froze a new v3.2 protocol, fitted
+the ordinary and strong OLS models on those 24 development corpora, serialized
+all predictions for the 48 unused sources, and only then trained the 480 new
+architecture–seed cells.
+
+The narrower effect pointed in the same direction but did not replicate under
+the frozen uncertainty rule. Ordinary-baseline RMSE changed from `0.024867` to
+`0.024593`, a 1.10% improvement, while the 100,000-draw stratified paired-corpus
+bootstrap interval was `[-1.57%, 3.54%]`. Fourier overlap helped four of five
+architectures and five of six source strata, but documentation moved in the
+opposite direction and corpus-level uncertainty crossed zero.
+
+The stronger comparison is clearer. Once low-degree energy, mean degree, and
+locality were present, overlap changed RMSE from `0.023153` to `0.023225`, a
+`-0.31%` improvement with interval `[-0.512%, -0.106%]`; all five architectures
+worsened. Thus the expanded evidence is consistent with Fourier structure being
+a useful aggregate dataset descriptor, but the exact binary-character CE match
+does not add unique predictive information beyond the simpler spectrum
+summaries. This is a real negative result for the current bridge, not a negative
+result for the dataset-Fourier program as a whole.

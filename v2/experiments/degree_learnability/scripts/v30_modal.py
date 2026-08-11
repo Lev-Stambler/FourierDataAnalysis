@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -432,9 +433,11 @@ def _save_cells(path: Path, rows: list[dict], *, key: str = "cell_id") -> None:
     known = {row[key] for row in existing}
     existing.extend(row for row in rows if row[key] not in known)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    temporary.write_text(
         json.dumps(sorted(existing, key=lambda row: row[key]), indent=2) + "\n"
     )
+    temporary.replace(path)
 
 
 def _run_character_training(
@@ -636,6 +639,8 @@ def _run_natural(stage: str, limit: int) -> None:
         expansion_protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.2.json")
         analysis_protocol_hash = expansion_protocol["protocol_hash"]
     result_path = OUT / f"{stage}_results.json"
+    if stage == "expansion" and os.environ.get("DLX_EXPANSION_CHECKPOINT"):
+        result_path = Path(os.environ["DLX_EXPANSION_CHECKPOINT"])
     existing = json.loads(result_path.read_text()) if result_path.exists() else []
     completed = {row["cell_id"] for row in existing}
     cells = [

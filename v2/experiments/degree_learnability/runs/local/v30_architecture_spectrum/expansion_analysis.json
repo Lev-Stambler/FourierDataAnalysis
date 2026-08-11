@@ -1,0 +1,4299 @@
+{
+  "status": "prospective source-disjoint 48-corpus expansion complete",
+  "protocol_hash": "a7dd59ecaddeb5d7edc02ec139f84459171c87ae57b5e2d79a6133651b81f5a1",
+  "measurement_protocol_hash": "a33dac6859746c7ea6e5aab8b36842a686bfb37e2ba4f6e53b02ff4ee18d298a",
+  "prediction_lock_hash": "a7de53cc4654f8848238170624a679d36624eb941f2e671a3ee6bd3ddd7e940a",
+  "expansion_results_sha256": "a1e8fc9d03ff8f799f131f6ebb7749229d8e356f701814a1dd11c49055c4f18b",
+  "verdict": "EXPANDED_FOURIER_SIGNAL_DOES_NOT_REPLICATE",
+  "primary_target": "normalized_curve_area",
+  "primary_gate": {
+    "criterion": "paired relative RMSE improvement interval for primary Fourier model strictly above zero",
+    "interval_strictly_positive": false,
+    "interval": [
+      -0.01565065398290762,
+      0.035431296947603136
+    ]
+  },
+  "comparisons": {
+    "primary_ordinary_controls": {
+      "baseline": {
+        "rmse": 0.024867385860114874,
+        "mae": 0.01835227946562351,
+        "r_squared": 0.06165295618173128
+      },
+      "plus_fourier_ce_overlap": {
+        "rmse": 0.024592760721171277,
+        "mae": 0.017867150074273235,
+        "r_squared": 0.08226394902202572
+      },
+      "relative_rmse_improvement": 0.011043586989337374,
+      "stratified_paired_corpus_bootstrap": {
+        "baseline_rmse": 0.024867385860114874,
+        "matched_rmse": 0.024592760721171277,
+        "relative_rmse_improvement": 0.011043586989337374,
+        "stratified_corpus_bootstrap_95_interval": [
+          -0.01565065398290762,
+          0.035431296947603136
+        ],
+        "samples": 100000,
+        "seed": 3201,
+        "strata": [
+          "application_code",
+          "documentation",
+          "formal",
+          "language",
+          "prose",
+          "science"
+        ]
+      },
+      "per_architecture": {
+        "learned_absolute": {
+          "baseline": {
+            "rmse": 0.024457167111482627,
+            "mae": 0.01805851443421528,
+            "r_squared": -0.1989690047955719
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.024223480613640113,
+            "mae": 0.017690422598044032,
+            "r_squared": -0.17616633899519174
+          },
+          "relative_rmse_improvement": 0.009554929104311445
+        },
+        "rope": {
+          "baseline": {
+            "rmse": 0.024692711852043393,
+            "mae": 0.01857969239878984,
+            "r_squared": -0.12053728872180525
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.02415448551425479,
+            "mae": 0.01781672328772702,
+            "r_squared": -0.07222102610590952
+          },
+          "relative_rmse_improvement": 0.021796971552319078
+        },
+        "nope": {
+          "baseline": {
+            "rmse": 0.02510965958735853,
+            "mae": 0.018540734477949964,
+            "r_squared": -0.30726145649923153
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.025162787143421076,
+            "mae": 0.018294598748628516,
+            "r_squared": -0.3127991723472281
+          },
+          "relative_rmse_improvement": -0.002115821438268077
+        },
+        "alibi": {
+          "baseline": {
+            "rmse": 0.02496404396773179,
+            "mae": 0.018105068431307145,
+            "r_squared": -0.14125809619099283
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.024390221405602954,
+            "mae": 0.017531525245865726,
+            "r_squared": -0.0893952548677528
+          },
+          "relative_rmse_improvement": 0.02298596184458538
+        },
+        "reverse_alibi": {
+          "baseline": {
+            "rmse": 0.02510682895222538,
+            "mae": 0.018477387585855324,
+            "r_squared": -0.2502109677593063
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.025015084627215075,
+            "mae": 0.018002480491100866,
+            "r_squared": -0.24109072433562329
+          },
+          "relative_rmse_improvement": 0.00365415820472114
+        }
+      }
+    },
+    "secondary_strong_controls": {
+      "baseline": {
+        "rmse": 0.023152929106997174,
+        "mae": 0.017026178900534823,
+        "r_squared": 0.18657951077500523
+      },
+      "plus_fourier_ce_overlap": {
+        "rmse": 0.023224836738107067,
+        "mae": 0.017064354341357058,
+        "r_squared": 0.1815190736987352
+      },
+      "relative_rmse_improvement": -0.0031057682065877977,
+      "stratified_paired_corpus_bootstrap": {
+        "baseline_rmse": 0.023152929106997174,
+        "matched_rmse": 0.023224836738107067,
+        "relative_rmse_improvement": -0.0031057682065877977,
+        "stratified_corpus_bootstrap_95_interval": [
+          -0.005117260368349854,
+          -0.0010561977946509204
+        ],
+        "samples": 100000,
+        "seed": 3201,
+        "strata": [
+          "application_code",
+          "documentation",
+          "formal",
+          "language",
+          "prose",
+          "science"
+        ]
+      },
+      "per_architecture": {
+        "learned_absolute": {
+          "baseline": {
+            "rmse": 0.02285977506556838,
+            "mae": 0.01681715352785155,
+            "r_squared": -0.047465094353616344
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.022926807980103568,
+            "mae": 0.01685469775591364,
+            "r_squared": -0.05361717458847215
+          },
+          "relative_rmse_improvement": -0.0029323523238054252
+        },
+        "rope": {
+          "baseline": {
+            "rmse": 0.02277045709110818,
+            "mae": 0.017050794817209794,
+            "r_squared": 0.047133116019258736
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.02280967001462006,
+            "mae": 0.017073851520432757,
+            "r_squared": 0.04384843280939277
+          },
+          "relative_rmse_improvement": -0.0017220964583618712
+        },
+        "nope": {
+          "baseline": {
+            "rmse": 0.02342593029539481,
+            "mae": 0.01719585431193359,
+            "r_squared": -0.137822453937555
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.023544038195401632,
+            "mae": 0.017268180541908148,
+            "r_squared": -0.14932463031998733
+          },
+          "relative_rmse_improvement": -0.005041759217991016
+        },
+        "alibi": {
+          "baseline": {
+            "rmse": 0.0232552051633146,
+            "mae": 0.01694074592403266,
+            "r_squared": 0.009637141876174371
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.023293142798271528,
+            "mae": 0.01697164771997838,
+            "r_squared": 0.006403227482360219
+          },
+          "relative_rmse_improvement": -0.0016313610088796904
+        },
+        "reverse_alibi": {
+          "baseline": {
+            "rmse": 0.02344459045471372,
+            "mae": 0.017126345921646535,
+            "r_squared": -0.090146533367498
+          },
+          "plus_fourier_ce_overlap": {
+            "rmse": 0.023540463063819298,
+            "mae": 0.01715339416855237,
+            "r_squared": -0.09908069590622137
+          },
+          "relative_rmse_improvement": -0.004089327526994734
+        }
+      }
+    }
+  },
+  "rows": [
+    {
+      "dataset": "angular_docs",
+      "stratum": "documentation",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.852835413543957,
+      "final_ce_bits": 1.507479680092596,
+      "learning_amount_bits": 6.3453557334513615,
+      "fractional_learning": 0.808034292615729,
+      "normalized_curve_area": 0.5798631246783342,
+      "final_ce_fraction": 0.19196570738427104,
+      "predictions": {
+        "ordinary_baseline": 0.6240087467208868,
+        "ordinary_plus_fourier": 0.6325717254771909,
+        "strong_baseline": 0.6203499142086298,
+        "strong_plus_fourier": 0.6217392695006875
+      }
+    },
+    {
+      "dataset": "angular_docs",
+      "stratum": "documentation",
+      "architecture": "rope",
+      "initial_ce_bits": 7.846512385393661,
+      "final_ce_bits": 1.2802773448897937,
+      "learning_amount_bits": 6.566235040503867,
+      "fractional_learning": 0.8368107126240851,
+      "normalized_curve_area": 0.5591756020098466,
+      "final_ce_fraction": 0.16318928737591482,
+      "predictions": {
+        "ordinary_baseline": 0.6008953503617038,
+        "ordinary_plus_fourier": 0.6095047537997815,
+        "strong_baseline": 0.5972365178494469,
+        "strong_plus_fourier": 0.5986332261215509
+      }
+    },
+    {
+      "dataset": "angular_docs",
+      "stratum": "documentation",
+      "architecture": "nope",
+      "initial_ce_bits": 7.846555811013003,
+      "final_ce_bits": 1.6982607011274817,
+      "learning_amount_bits": 6.148295109885522,
+      "fractional_learning": 0.7835635578058383,
+      "normalized_curve_area": 0.5849475587312454,
+      "final_ce_fraction": 0.2164364421941618,
+      "predictions": {
+        "ordinary_baseline": 0.6289075234701886,
+        "ordinary_plus_fourier": 0.6277949956481575,
+        "strong_baseline": 0.6252486909579316,
+        "strong_plus_fourier": 0.6251055897184405
+      }
+    },
+    {
+      "dataset": "angular_docs",
+      "stratum": "documentation",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.847523729372059,
+      "final_ce_bits": 1.3521355982766665,
+      "learning_amount_bits": 6.4953881310953925,
+      "fractional_learning": 0.8277240260374044,
+      "normalized_curve_area": 0.5592657469198533,
+      "final_ce_fraction": 0.1722759739625957,
+      "predictions": {
+        "ordinary_baseline": 0.604692084312773,
+        "ordinary_plus_fourier": 0.603361158646661,
+        "strong_baseline": 0.601033251800516,
+        "strong_plus_fourier": 0.6008555595863893
+      }
+    },
+    {
+      "dataset": "angular_docs",
+      "stratum": "documentation",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.849520963896529,
+      "final_ce_bits": 1.710196727053988,
+      "learning_amount_bits": 6.139324236842542,
+      "fractional_learning": 0.7821234064136962,
+      "normalized_curve_area": 0.5822416087698883,
+      "final_ce_fraction": 0.21787659358630385,
+      "predictions": {
+        "ordinary_baseline": 0.630082504275838,
+        "ordinary_plus_fourier": 0.6287035309735143,
+        "strong_baseline": 0.626423671763581,
+        "strong_plus_fourier": 0.6262383695175308
+      }
+    },
+    {
+      "dataset": "beam_docs",
+      "stratum": "documentation",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.964023401205319,
+      "final_ce_bits": 2.251104070307675,
+      "learning_amount_bits": 5.712919330897644,
+      "fractional_learning": 0.7173403637939837,
+      "normalized_curve_area": 0.7009221852899082,
+      "final_ce_fraction": 0.28265963620601625,
+      "predictions": {
+        "ordinary_baseline": 0.733618977517371,
+        "ordinary_plus_fourier": 0.7298236851982389,
+        "strong_baseline": 0.7392658445711061,
+        "strong_plus_fourier": 0.7387249250433235
+      }
+    },
+    {
+      "dataset": "beam_docs",
+      "stratum": "documentation",
+      "architecture": "rope",
+      "initial_ce_bits": 7.984890572182456,
+      "final_ce_bits": 1.8739672493337602,
+      "learning_amount_bits": 6.110923322848697,
+      "fractional_learning": 0.7653127793475438,
+      "normalized_curve_area": 0.6780394356940849,
+      "final_ce_fraction": 0.23468722065245623,
+      "predictions": {
+        "ordinary_baseline": 0.7105055811581881,
+        "ordinary_plus_fourier": 0.7066102823727911,
+        "strong_baseline": 0.7161524482119231,
+        "strong_plus_fourier": 0.7155956891452819
+      }
+    },
+    {
+      "dataset": "beam_docs",
+      "stratum": "documentation",
+      "architecture": "nope",
+      "initial_ce_bits": 7.984885068737629,
+      "final_ce_bits": 2.9906608128558716,
+      "learning_amount_bits": 4.994224255881758,
+      "fractional_learning": 0.6254614799255254,
+      "normalized_curve_area": 0.7050653209696349,
+      "final_ce_fraction": 0.3745385200744745,
+      "predictions": {
+        "ordinary_baseline": 0.7385177542666728,
+        "ordinary_plus_fourier": 0.7440193983182521,
+        "strong_baseline": 0.7441646213204078,
+        "strong_plus_fourier": 0.7450961984261961
+      }
+    },
+    {
+      "dataset": "beam_docs",
+      "stratum": "documentation",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.9863993759784755,
+      "final_ce_bits": 2.034121449418177,
+      "learning_amount_bits": 5.952277926560297,
+      "fractional_learning": 0.7453019078320907,
+      "normalized_curve_area": 0.6779201907110952,
+      "final_ce_fraction": 0.2546980921679093,
+      "predictions": {
+        "ordinary_baseline": 0.7143023151092571,
+        "ordinary_plus_fourier": 0.715070576679223,
+        "strong_baseline": 0.7199491821629923,
+        "strong_plus_fourier": 0.7201310617887013
+      }
+    },
+    {
+      "dataset": "beam_docs",
+      "stratum": "documentation",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.984779729363975,
+      "final_ce_bits": 3.0359747372117107,
+      "learning_amount_bits": 4.948804992152264,
+      "fractional_learning": 0.6197815170640024,
+      "normalized_curve_area": 0.7065267663749062,
+      "final_ce_fraction": 0.3802184829359977,
+      "predictions": {
+        "ordinary_baseline": 0.7396927350723221,
+        "ordinary_plus_fourier": 0.7446418517869521,
+        "strong_baseline": 0.7453396021260573,
+        "strong_plus_fourier": 0.7461836671083704
+      }
+    },
+    {
+      "dataset": "bedrock2_formal",
+      "stratum": "formal",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.9295858531705266,
+      "final_ce_bits": 2.5375777431308224,
+      "learning_amount_bits": 5.392008110039704,
+      "fractional_learning": 0.6799878227934744,
+      "normalized_curve_area": 0.6906865483894561,
+      "final_ce_fraction": 0.32001217720652564,
+      "predictions": {
+        "ordinary_baseline": 0.6769535822360636,
+        "ordinary_plus_fourier": 0.6753581939221097,
+        "strong_baseline": 0.678243960993423,
+        "strong_plus_fourier": 0.677970836526001
+      }
+    },
+    {
+      "dataset": "bedrock2_formal",
+      "stratum": "formal",
+      "architecture": "rope",
+      "initial_ce_bits": 7.930877270895855,
+      "final_ce_bits": 2.217233613566271,
+      "learning_amount_bits": 5.713643657329584,
+      "fractional_learning": 0.7204267017008177,
+      "normalized_curve_area": 0.6689312243397553,
+      "final_ce_fraction": 0.2795732982991823,
+      "predictions": {
+        "ordinary_baseline": 0.6538401858768805,
+        "ordinary_plus_fourier": 0.6522183803001865,
+        "strong_baseline": 0.65513056463424,
+        "strong_plus_fourier": 0.6548532560647761
+      }
+    },
+    {
+      "dataset": "bedrock2_formal",
+      "stratum": "formal",
+      "architecture": "nope",
+      "initial_ce_bits": 7.930793085388258,
+      "final_ce_bits": 3.460709326153596,
+      "learning_amount_bits": 4.470083759234662,
+      "fractional_learning": 0.5636134709434747,
+      "normalized_curve_area": 0.6976820946121922,
+      "final_ce_fraction": 0.4363865290565253,
+      "predictions": {
+        "ordinary_baseline": 0.6818523589853653,
+        "ordinary_plus_fourier": 0.6828914538396119,
+        "strong_baseline": 0.6831427377427247,
+        "strong_plus_fourier": 0.6832868762791235
+      }
+    },
+    {
+      "dataset": "bedrock2_formal",
+      "stratum": "formal",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.935509279631544,
+      "final_ce_bits": 2.4493187619542978,
+      "learning_amount_bits": 5.486190517677246,
+      "fractional_learning": 0.6913414219727432,
+      "normalized_curve_area": 0.6702907647159598,
+      "final_ce_fraction": 0.3086585780272568,
+      "predictions": {
+        "ordinary_baseline": 0.6576369198279497,
+        "ordinary_plus_fourier": 0.6584242648336078,
+        "strong_baseline": 0.6589272985853092,
+        "strong_plus_fourier": 0.6590315636849362
+      }
+    },
+    {
+      "dataset": "bedrock2_formal",
+      "stratum": "formal",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.931354780725975,
+      "final_ce_bits": 3.4392928425896034,
+      "learning_amount_bits": 4.492061938136372,
+      "fractional_learning": 0.5663548842086042,
+      "normalized_curve_area": 0.6977511346250597,
+      "final_ce_fraction": 0.43364511579139564,
+      "predictions": {
+        "ordinary_baseline": 0.6830273397910147,
+        "ordinary_plus_fourier": 0.6835601506690029,
+        "strong_baseline": 0.6843177185483742,
+        "strong_plus_fourier": 0.684381669222778
+      }
+    },
+    {
+      "dataset": "cakeml_formal",
+      "stratum": "formal",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.939577873203005,
+      "final_ce_bits": 2.3653195115678374,
+      "learning_amount_bits": 5.574258361635168,
+      "fractional_learning": 0.7020826216085869,
+      "normalized_curve_area": 0.6924684689124048,
+      "final_ce_fraction": 0.2979173783914131,
+      "predictions": {
+        "ordinary_baseline": 0.6867621331465791,
+        "ordinary_plus_fourier": 0.6865629315992219,
+        "strong_baseline": 0.6810669317819964,
+        "strong_plus_fourier": 0.6810656563842392
+      }
+    },
+    {
+      "dataset": "cakeml_formal",
+      "stratum": "formal",
+      "architecture": "rope",
+      "initial_ce_bits": 7.948292148130898,
+      "final_ce_bits": 1.9851912458626462,
+      "learning_amount_bits": 5.963100902268252,
+      "fractional_learning": 0.7502363622840404,
+      "normalized_curve_area": 0.6699348340856105,
+      "final_ce_fraction": 0.2497636377159595,
+      "predictions": {
+        "ordinary_baseline": 0.6636487367873961,
+        "ordinary_plus_fourier": 0.6634334116667789,
+        "strong_baseline": 0.6579535354228134,
+        "strong_plus_fourier": 0.6579497062905356
+      }
+    },
+    {
+      "dataset": "cakeml_formal",
+      "stratum": "formal",
+      "architecture": "nope",
+      "initial_ce_bits": 7.948256891687471,
+      "final_ce_bits": 3.285983036061573,
+      "learning_amount_bits": 4.662273855625898,
+      "fractional_learning": 0.5865755278114406,
+      "normalized_curve_area": 0.6982748403194523,
+      "final_ce_fraction": 0.41342447218855943,
+      "predictions": {
+        "ordinary_baseline": 0.6916609098958808,
+        "ordinary_plus_fourier": 0.6929781185476823,
+        "strong_baseline": 0.6859657085312982,
+        "strong_plus_fourier": 0.6862046099858219
+      }
+    },
+    {
+      "dataset": "cakeml_formal",
+      "stratum": "formal",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.948865538288874,
+      "final_ce_bits": 2.1538603714847753,
+      "learning_amount_bits": 5.795005166804099,
+      "fractional_learning": 0.7290332701390778,
+      "normalized_curve_area": 0.6697598675497972,
+      "final_ce_fraction": 0.2709667298609223,
+      "predictions": {
+        "ordinary_baseline": 0.6674454707384653,
+        "ordinary_plus_fourier": 0.6689939908217998,
+        "strong_baseline": 0.6617502693738826,
+        "strong_plus_fourier": 0.6620258071234886
+      }
+    },
+    {
+      "dataset": "cakeml_formal",
+      "stratum": "formal",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.949691226995666,
+      "final_ce_bits": 3.335492756657018,
+      "learning_amount_bits": 4.614198470338649,
+      "fractional_learning": 0.580422292199128,
+      "normalized_curve_area": 0.700267457608537,
+      "final_ce_fraction": 0.419577707800872,
+      "predictions": {
+        "ordinary_baseline": 0.6928358907015303,
+        "ordinary_plus_fourier": 0.6935871944548742,
+        "strong_baseline": 0.6871406893369476,
+        "strong_plus_fourier": 0.6872899598609505
+      }
+    },
+    {
+      "dataset": "cather_prose",
+      "stratum": "prose",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.984932191983965,
+      "final_ce_bits": 2.6827663784002906,
+      "learning_amount_bits": 5.302165813583675,
+      "fractional_learning": 0.6640210815192606,
+      "normalized_curve_area": 0.6666101853532829,
+      "final_ce_fraction": 0.33597891848073946,
+      "predictions": {
+        "ordinary_baseline": 0.6591695589157077,
+        "ordinary_plus_fourier": 0.6623485452956493,
+        "strong_baseline": 0.6620897700079255,
+        "strong_plus_fourier": 0.6625393701893452
+      }
+    },
+    {
+      "dataset": "cather_prose",
+      "stratum": "prose",
+      "architecture": "rope",
+      "initial_ce_bits": 8.003823024328712,
+      "final_ce_bits": 2.4218296784774953,
+      "learning_amount_bits": 5.581993345851217,
+      "fractional_learning": 0.6974123732642703,
+      "normalized_curve_area": 0.6447495382297017,
+      "final_ce_fraction": 0.3025876267357297,
+      "predictions": {
+        "ordinary_baseline": 0.6360561625565246,
+        "ordinary_plus_fourier": 0.6393071375083196,
+        "strong_baseline": 0.6389763736487425,
+        "strong_plus_fourier": 0.6394373757506964
+      }
+    },
+    {
+      "dataset": "cather_prose",
+      "stratum": "prose",
+      "architecture": "nope",
+      "initial_ce_bits": 8.003838330784639,
+      "final_ce_bits": 3.3631730633437478,
+      "learning_amount_bits": 4.640665267440891,
+      "fractional_learning": 0.5798009419087815,
+      "normalized_curve_area": 0.6710349061362091,
+      "final_ce_fraction": 0.42019905809121844,
+      "predictions": {
+        "ordinary_baseline": 0.6640683356650094,
+        "ordinary_plus_fourier": 0.6618336275859142,
+        "strong_baseline": 0.6669885467572272,
+        "strong_plus_fourier": 0.666580698146029
+      }
+    },
+    {
+      "dataset": "cather_prose",
+      "stratum": "prose",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.003404332565186,
+      "final_ce_bits": 2.585276271434368,
+      "learning_amount_bits": 5.418128061130819,
+      "fractional_learning": 0.6769755748927129,
+      "normalized_curve_area": 0.6492262276660536,
+      "final_ce_fraction": 0.32302442510728707,
+      "predictions": {
+        "ordinary_baseline": 0.6398528965075938,
+        "ordinary_plus_fourier": 0.6403634067246364,
+        "strong_baseline": 0.6427731075998117,
+        "strong_plus_fourier": 0.6428000607919488
+      }
+    },
+    {
+      "dataset": "cather_prose",
+      "stratum": "prose",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.004866701045472,
+      "final_ce_bits": 3.3613570985332877,
+      "learning_amount_bits": 4.643509602512186,
+      "fractional_learning": 0.5800823896324581,
+      "normalized_curve_area": 0.6714129466835809,
+      "final_ce_fraction": 0.41991761036754194,
+      "predictions": {
+        "ordinary_baseline": 0.6652433164706588,
+        "ordinary_plus_fourier": 0.6641975637360652,
+        "strong_baseline": 0.6681635275628767,
+        "strong_plus_fourier": 0.667943991818674
+      }
+    },
+    {
+      "dataset": "chapel_language",
+      "stratum": "language",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.89859285965854,
+      "final_ce_bits": 2.337652146575585,
+      "learning_amount_bits": 5.560940713082955,
+      "fractional_learning": 0.7040401137392343,
+      "normalized_curve_area": 0.6814777293067191,
+      "final_ce_fraction": 0.29595988626076575,
+      "predictions": {
+        "ordinary_baseline": 0.6752463807787505,
+        "ordinary_plus_fourier": 0.6787907868999106,
+        "strong_baseline": 0.6790277853557849,
+        "strong_plus_fourier": 0.6793459686692203
+      }
+    },
+    {
+      "dataset": "chapel_language",
+      "stratum": "language",
+      "architecture": "rope",
+      "initial_ce_bits": 7.903103362651393,
+      "final_ce_bits": 2.079228048688401,
+      "learning_amount_bits": 5.823875313962992,
+      "fractional_learning": 0.736902154588104,
+      "normalized_curve_area": 0.6620073257023994,
+      "final_ce_fraction": 0.2630978454118959,
+      "predictions": {
+        "ordinary_baseline": 0.6521329844195675,
+        "ordinary_plus_fourier": 0.6556986261516985,
+        "strong_baseline": 0.6559143889966019,
+        "strong_plus_fourier": 0.6562359357154023
+      }
+    },
+    {
+      "dataset": "chapel_language",
+      "stratum": "language",
+      "architecture": "nope",
+      "initial_ce_bits": 7.903044974541425,
+      "final_ce_bits": 3.2188554987030678,
+      "learning_amount_bits": 4.684189475838357,
+      "fractional_learning": 0.5927027487061947,
+      "normalized_curve_area": 0.6885227806339215,
+      "final_ce_fraction": 0.40729725129380534,
+      "predictions": {
+        "ordinary_baseline": 0.6801451575280523,
+        "ordinary_plus_fourier": 0.6815457068169821,
+        "strong_baseline": 0.6839265621050866,
+        "strong_plus_fourier": 0.6839051903390378
+      }
+    },
+    {
+      "dataset": "chapel_language",
+      "stratum": "language",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.907766758220864,
+      "final_ce_bits": 2.2282174790441065,
+      "learning_amount_bits": 5.679549279176757,
+      "fractional_learning": 0.7182236394677293,
+      "normalized_curve_area": 0.6611516578712396,
+      "final_ce_fraction": 0.2817763605322706,
+      "predictions": {
+        "ordinary_baseline": 0.6559297183706366,
+        "ordinary_plus_fourier": 0.6586977500437847,
+        "strong_baseline": 0.6597111229476711,
+        "strong_plus_fourier": 0.6599063400800439
+      }
+    },
+    {
+      "dataset": "chapel_language",
+      "stratum": "language",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.903183162601394,
+      "final_ce_bits": 3.2763448273375824,
+      "learning_amount_bits": 4.626838335263811,
+      "fractional_learning": 0.585440772523522,
+      "normalized_curve_area": 0.6897157121700581,
+      "final_ce_fraction": 0.41455922747647794,
+      "predictions": {
+        "ordinary_baseline": 0.6813201383337016,
+        "ordinary_plus_fourier": 0.6826988844072426,
+        "strong_baseline": 0.6851015429107361,
+        "strong_plus_fourier": 0.6850767178392132
+      }
+    },
+    {
+      "dataset": "clickhouse_docs",
+      "stratum": "documentation",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.976213273524499,
+      "final_ce_bits": 2.736645361236568,
+      "learning_amount_bits": 5.239567912287931,
+      "fractional_learning": 0.6568988304877377,
+      "normalized_curve_area": 0.6852704003389852,
+      "final_ce_fraction": 0.3431011695122623,
+      "predictions": {
+        "ordinary_baseline": 0.7305039001212685,
+        "ordinary_plus_fourier": 0.7333898207006131,
+        "strong_baseline": 0.7331967689590219,
+        "strong_plus_fourier": 0.7334698770273812
+      }
+    },
+    {
+      "dataset": "clickhouse_docs",
+      "stratum": "documentation",
+      "architecture": "rope",
+      "initial_ce_bits": 7.981253913038636,
+      "final_ce_bits": 2.3937686666952493,
+      "learning_amount_bits": 5.5874852463433875,
+      "fractional_learning": 0.7000769635609201,
+      "normalized_curve_area": 0.6653935442397906,
+      "final_ce_fraction": 0.29992303643907997,
+      "predictions": {
+        "ordinary_baseline": 0.7073905037620856,
+        "ordinary_plus_fourier": 0.7102587132035397,
+        "strong_baseline": 0.7100833725998389,
+        "strong_plus_fourier": 0.7103536754870202
+      }
+    },
+    {
+      "dataset": "clickhouse_docs",
+      "stratum": "documentation",
+      "architecture": "nope",
+      "initial_ce_bits": 7.981221494308948,
+      "final_ce_bits": 3.125925619213929,
+      "learning_amount_bits": 4.855295875095019,
+      "fractional_learning": 0.608335434865857,
+      "normalized_curve_area": 0.686918385396199,
+      "final_ce_fraction": 0.391664565134143,
+      "predictions": {
+        "ordinary_baseline": 0.7354026768705704,
+        "ordinary_plus_fourier": 0.7373342957828471,
+        "strong_baseline": 0.7380955457083236,
+        "strong_plus_fourier": 0.7382175065668779
+      }
+    },
+    {
+      "dataset": "clickhouse_docs",
+      "stratum": "documentation",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.981175230975867,
+      "final_ce_bits": 2.511620208155616,
+      "learning_amount_bits": 5.469555022820251,
+      "fractional_learning": 0.6852989856907206,
+      "normalized_curve_area": 0.6667544834205434,
+      "final_ce_fraction": 0.31470101430927955,
+      "predictions": {
+        "ordinary_baseline": 0.7111872377131547,
+        "ordinary_plus_fourier": 0.7113604976447406,
+        "strong_baseline": 0.7138801065509081,
+        "strong_plus_fourier": 0.713723569463856
+      }
+    },
+    {
+      "dataset": "clickhouse_docs",
+      "stratum": "documentation",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.982336371843167,
+      "final_ce_bits": 3.147880494466448,
+      "learning_amount_bits": 4.834455877376719,
+      "fractional_learning": 0.6056406625983153,
+      "normalized_curve_area": 0.687028518475636,
+      "final_ce_fraction": 0.3943593374016848,
+      "predictions": {
+        "ordinary_baseline": 0.7365776576762197,
+        "ordinary_plus_fourier": 0.7380644672430712,
+        "strong_baseline": 0.739270526513973,
+        "strong_plus_fourier": 0.7393220361789725
+      }
+    },
+    {
+      "dataset": "clojure_language",
+      "stratum": "language",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.919067738209058,
+      "final_ce_bits": 2.4923607309987443,
+      "learning_amount_bits": 5.4267070072103145,
+      "fractional_learning": 0.6852715400609882,
+      "normalized_curve_area": 0.6898621851381948,
+      "final_ce_fraction": 0.3147284599390118,
+      "predictions": {
+        "ordinary_baseline": 0.6954267242963735,
+        "ordinary_plus_fourier": 0.6947797782037958,
+        "strong_baseline": 0.6931351663109964,
+        "strong_plus_fourier": 0.6930341373418527
+      }
+    },
+    {
+      "dataset": "clojure_language",
+      "stratum": "language",
+      "architecture": "rope",
+      "initial_ce_bits": 7.92039845397011,
+      "final_ce_bits": 2.1344197321030514,
+      "learning_amount_bits": 5.785978721867059,
+      "fractional_learning": 0.7305111838270862,
+      "normalized_curve_area": 0.6684933155845222,
+      "final_ce_fraction": 0.26948881617291376,
+      "predictions": {
+        "ordinary_baseline": 0.6723133279371906,
+        "ordinary_plus_fourier": 0.671640276990524,
+        "strong_baseline": 0.6700217699518134,
+        "strong_plus_fourier": 0.669916606361518
+      }
+    },
+    {
+      "dataset": "clojure_language",
+      "stratum": "language",
+      "architecture": "nope",
+      "initial_ce_bits": 7.920361133734872,
+      "final_ce_bits": 3.398321200696243,
+      "learning_amount_bits": 4.52203993303863,
+      "fractional_learning": 0.5709312090355472,
+      "normalized_curve_area": 0.6965513970489151,
+      "final_ce_fraction": 0.4290687909644528,
+      "predictions": {
+        "ordinary_baseline": 0.7003255010456753,
+        "ordinary_plus_fourier": 0.7013238120233628,
+        "strong_baseline": 0.6980339430602982,
+        "strong_plus_fourier": 0.698193498374054
+      }
+    },
+    {
+      "dataset": "clojure_language",
+      "stratum": "language",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.9250780159087615,
+      "final_ce_bits": 2.361876010438768,
+      "learning_amount_bits": 5.563202005469993,
+      "fractional_learning": 0.7019743802274389,
+      "normalized_curve_area": 0.6712197329365744,
+      "final_ce_fraction": 0.29802561977256115,
+      "predictions": {
+        "ordinary_baseline": 0.6761100618882596,
+        "ordinary_plus_fourier": 0.6761740512872885,
+        "strong_baseline": 0.6738185039028826,
+        "strong_plus_fourier": 0.6738300765560727
+      }
+    },
+    {
+      "dataset": "clojure_language",
+      "stratum": "language",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.921089480261276,
+      "final_ce_bits": 3.4357633286372717,
+      "learning_amount_bits": 4.4853261516240055,
+      "fractional_learning": 0.5662457727831065,
+      "normalized_curve_area": 0.6979421189970783,
+      "final_ce_fraction": 0.43375422721689344,
+      "predictions": {
+        "ordinary_baseline": 0.7015004818513246,
+        "ordinary_plus_fourier": 0.7021963781842935,
+        "strong_baseline": 0.6992089238659476,
+        "strong_plus_fourier": 0.6993205811917498
+      }
+    },
+    {
+      "dataset": "conrad_prose",
+      "stratum": "prose",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.983857472398723,
+      "final_ce_bits": 2.664789246883915,
+      "learning_amount_bits": 5.319068225514808,
+      "fractional_learning": 0.6662298238573727,
+      "normalized_curve_area": 0.6653216774068684,
+      "final_ce_fraction": 0.3337701761426273,
+      "predictions": {
+        "ordinary_baseline": 0.6617810480247772,
+        "ordinary_plus_fourier": 0.6643704441250544,
+        "strong_baseline": 0.6635416899864203,
+        "strong_plus_fourier": 0.663967556448812
+      }
+    },
+    {
+      "dataset": "conrad_prose",
+      "stratum": "prose",
+      "architecture": "rope",
+      "initial_ce_bits": 8.001183950551223,
+      "final_ce_bits": 2.3861563491049287,
+      "learning_amount_bits": 5.615027601446294,
+      "fractional_learning": 0.7017705193052814,
+      "normalized_curve_area": 0.6440657196719661,
+      "final_ce_fraction": 0.29822948069471855,
+      "predictions": {
+        "ordinary_baseline": 0.6386676516655942,
+        "ordinary_plus_fourier": 0.6413273897949919,
+        "strong_baseline": 0.6404282936272373,
+        "strong_plus_fourier": 0.6408653012222504
+      }
+    },
+    {
+      "dataset": "conrad_prose",
+      "stratum": "prose",
+      "architecture": "nope",
+      "initial_ce_bits": 8.001194871449552,
+      "final_ce_bits": 3.324713228066239,
+      "learning_amount_bits": 4.676481643383314,
+      "fractional_learning": 0.5844679696562207,
+      "normalized_curve_area": 0.670008103129919,
+      "final_ce_fraction": 0.4155320303437793,
+      "predictions": {
+        "ordinary_baseline": 0.666679824774079,
+        "ordinary_plus_fourier": 0.6639861783039156,
+        "strong_baseline": 0.668440466735722,
+        "strong_plus_fourier": 0.6680295777240748
+      }
+    },
+    {
+      "dataset": "conrad_prose",
+      "stratum": "prose",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.001424984236406,
+      "final_ce_bits": 2.522066498862517,
+      "learning_amount_bits": 5.479358485373888,
+      "fractional_learning": 0.6847949075413846,
+      "normalized_curve_area": 0.6476677246103688,
+      "final_ce_fraction": 0.3152050924586154,
+      "predictions": {
+        "ordinary_baseline": 0.6424643856166634,
+        "ordinary_plus_fourier": 0.6424147053297137,
+        "strong_baseline": 0.6442250275783065,
+        "strong_plus_fourier": 0.6442329035392067
+      }
+    },
+    {
+      "dataset": "conrad_prose",
+      "stratum": "prose",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.001332629552893,
+      "final_ce_bits": 3.331286232999564,
+      "learning_amount_bits": 4.670046396553328,
+      "fractional_learning": 0.5836603001024996,
+      "normalized_curve_area": 0.6705128149358571,
+      "final_ce_fraction": 0.4163396998975003,
+      "predictions": {
+        "ordinary_baseline": 0.6678548055797284,
+        "ordinary_plus_fourier": 0.666329790040879,
+        "strong_baseline": 0.6696154475413715,
+        "strong_plus_fourier": 0.6693896523115498
+      }
+    },
+    {
+      "dataset": "cryptol_formal",
+      "stratum": "formal",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.880267592261156,
+      "final_ce_bits": 2.6961021281265065,
+      "learning_amount_bits": 5.184165464134648,
+      "fractional_learning": 0.6578631919344553,
+      "normalized_curve_area": 0.6852213757968937,
+      "final_ce_fraction": 0.34213680806554464,
+      "predictions": {
+        "ordinary_baseline": 0.7209040101976096,
+        "ordinary_plus_fourier": 0.7219478567630572,
+        "strong_baseline": 0.7140608994715731,
+        "strong_plus_fourier": 0.7145870171855802
+      }
+    },
+    {
+      "dataset": "cryptol_formal",
+      "stratum": "formal",
+      "architecture": "rope",
+      "initial_ce_bits": 7.851581058079889,
+      "final_ce_bits": 2.422498089050074,
+      "learning_amount_bits": 5.429082969029816,
+      "fractional_learning": 0.6914382494342647,
+      "normalized_curve_area": 0.6681372466058522,
+      "final_ce_fraction": 0.3085617505657353,
+      "predictions": {
+        "ordinary_baseline": 0.6977906138384267,
+        "ordinary_plus_fourier": 0.6988487951362083,
+        "strong_baseline": 0.6909475031123902,
+        "strong_plus_fourier": 0.6914758912350849
+      }
+    },
+    {
+      "dataset": "cryptol_formal",
+      "stratum": "formal",
+      "architecture": "nope",
+      "initial_ce_bits": 7.85157521066976,
+      "final_ce_bits": 3.162186290837024,
+      "learning_amount_bits": 4.689388919832736,
+      "fractional_learning": 0.597233132807256,
+      "normalized_curve_area": 0.6872770012668252,
+      "final_ce_fraction": 0.40276686719274407,
+      "predictions": {
+        "ordinary_baseline": 0.7258027869469114,
+        "ordinary_plus_fourier": 0.725201076920452,
+        "strong_baseline": 0.718959676220875,
+        "strong_plus_fourier": 0.7192251622122032
+      }
+    },
+    {
+      "dataset": "cryptol_formal",
+      "stratum": "formal",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.854652152276348,
+      "final_ce_bits": 2.5321166490309874,
+      "learning_amount_bits": 5.32253550324536,
+      "fractional_learning": 0.6776188090825555,
+      "normalized_curve_area": 0.6675491835785059,
+      "final_ce_fraction": 0.3223811909174446,
+      "predictions": {
+        "ordinary_baseline": 0.7015873477894957,
+        "ordinary_plus_fourier": 0.7013301712317508,
+        "strong_baseline": 0.6947442370634593,
+        "strong_plus_fourier": 0.6950642920388707
+      }
+    },
+    {
+      "dataset": "cryptol_formal",
+      "stratum": "formal",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.855563918299896,
+      "final_ce_bits": 3.183425739759785,
+      "learning_amount_bits": 4.672138178540111,
+      "fractional_learning": 0.5947449642915414,
+      "normalized_curve_area": 0.6886710591052214,
+      "final_ce_fraction": 0.40525503570845856,
+      "predictions": {
+        "ordinary_baseline": 0.7269777677525608,
+        "ordinary_plus_fourier": 0.7263556964922608,
+        "strong_baseline": 0.7201346570265243,
+        "strong_plus_fourier": 0.7203969181008381
+      }
+    },
+    {
+      "dataset": "curl_code",
+      "stratum": "application_code",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.910555456904604,
+      "final_ce_bits": 2.2495821313366955,
+      "learning_amount_bits": 5.660973325567909,
+      "fractional_learning": 0.7156227337748821,
+      "normalized_curve_area": 0.6729980263062515,
+      "final_ce_fraction": 0.2843772662251179,
+      "predictions": {
+        "ordinary_baseline": 0.6647089611275231,
+        "ordinary_plus_fourier": 0.6630668464257892,
+        "strong_baseline": 0.657895219202297,
+        "strong_plus_fourier": 0.6578333701778404
+      }
+    },
+    {
+      "dataset": "curl_code",
+      "stratum": "application_code",
+      "architecture": "rope",
+      "initial_ce_bits": 7.923514177664465,
+      "final_ce_bits": 1.9270527257167875,
+      "learning_amount_bits": 5.9964614519476775,
+      "fractional_learning": 0.7567975717856581,
+      "normalized_curve_area": 0.6482382943310119,
+      "final_ce_fraction": 0.24320242821434188,
+      "predictions": {
+        "ordinary_baseline": 0.6415955647683401,
+        "ordinary_plus_fourier": 0.639938315769459,
+        "strong_baseline": 0.634781822843114,
+        "strong_plus_fourier": 0.6347175767707792
+      }
+    },
+    {
+      "dataset": "curl_code",
+      "stratum": "application_code",
+      "architecture": "nope",
+      "initial_ce_bits": 7.923463786747763,
+      "final_ce_bits": 3.0420563662136897,
+      "learning_amount_bits": 4.881407420534073,
+      "fractional_learning": 0.6160666383859696,
+      "normalized_curve_area": 0.6788854839692332,
+      "final_ce_fraction": 0.38393336161403047,
+      "predictions": {
+        "ordinary_baseline": 0.6696077378768248,
+        "ordinary_plus_fourier": 0.6693623734466025,
+        "strong_baseline": 0.6627939959515988,
+        "strong_plus_fourier": 0.6629533714241946
+      }
+    },
+    {
+      "dataset": "curl_code",
+      "stratum": "application_code",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.92561804143247,
+      "final_ce_bits": 2.137783325792963,
+      "learning_amount_bits": 5.787834715639507,
+      "fractional_learning": 0.7302729387730431,
+      "normalized_curve_area": 0.6530636703285888,
+      "final_ce_fraction": 0.26972706122695683,
+      "predictions": {
+        "ordinary_baseline": 0.6453922987194093,
+        "ordinary_plus_fourier": 0.6443002838231175,
+        "strong_baseline": 0.6385785567941833,
+        "strong_plus_fourier": 0.638603835408267
+      }
+    },
+    {
+      "dataset": "curl_code",
+      "stratum": "application_code",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.9250446512744945,
+      "final_ce_bits": 3.055762932032997,
+      "learning_amount_bits": 4.869281719241497,
+      "fractional_learning": 0.6144135274490974,
+      "normalized_curve_area": 0.6802392534705772,
+      "final_ce_fraction": 0.3855864725509026,
+      "predictions": {
+        "ordinary_baseline": 0.6707827186824743,
+        "ordinary_plus_fourier": 0.6703771882999273,
+        "strong_baseline": 0.6639689767572482,
+        "strong_plus_fourier": 0.6641029843219434
+      }
+    },
+    {
+      "dataset": "deno_language",
+      "stratum": "language",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.9071551879143955,
+      "final_ce_bits": 2.8009794058949398,
+      "learning_amount_bits": 5.106175782019456,
+      "fractional_learning": 0.64576476913362,
+      "normalized_curve_area": 0.6962355151386604,
+      "final_ce_fraction": 0.35423523086638,
+      "predictions": {
+        "ordinary_baseline": 0.6689819756348244,
+        "ordinary_plus_fourier": 0.6722650930010547,
+        "strong_baseline": 0.6820004380371588,
+        "strong_plus_fourier": 0.6819428526759712
+      }
+    },
+    {
+      "dataset": "deno_language",
+      "stratum": "language",
+      "architecture": "rope",
+      "initial_ce_bits": 7.924375982727939,
+      "final_ce_bits": 2.4792496981037124,
+      "learning_amount_bits": 5.4451262846242265,
+      "fractional_learning": 0.6871309215974544,
+      "normalized_curve_area": 0.678796995000658,
+      "final_ce_fraction": 0.31286907840254563,
+      "predictions": {
+        "ordinary_baseline": 0.6458685792756415,
+        "ordinary_plus_fourier": 0.6491552102516993,
+        "strong_baseline": 0.6588870416779758,
+        "strong_plus_fourier": 0.6588300128203972
+      }
+    },
+    {
+      "dataset": "deno_language",
+      "stratum": "language",
+      "architecture": "nope",
+      "initial_ce_bits": 7.924324129958704,
+      "final_ce_bits": 3.566658464295701,
+      "learning_amount_bits": 4.357665665663003,
+      "fractional_learning": 0.5498988536671008,
+      "normalized_curve_area": 0.7013116448581547,
+      "final_ce_fraction": 0.45010114633289916,
+      "predictions": {
+        "ordinary_baseline": 0.6738807523841261,
+        "ordinary_plus_fourier": 0.678073114540075,
+        "strong_baseline": 0.6868992147864607,
+        "strong_plus_fourier": 0.6869856402949365
+      }
+    },
+    {
+      "dataset": "deno_language",
+      "stratum": "language",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.929279122112712,
+      "final_ce_bits": 2.6691412463661672,
+      "learning_amount_bits": 5.260137875746545,
+      "fractional_learning": 0.663376399308684,
+      "normalized_curve_area": 0.6791124268152198,
+      "final_ce_fraction": 0.336623600691316,
+      "predictions": {
+        "ordinary_baseline": 0.6496653132267105,
+        "ordinary_plus_fourier": 0.6543040990782875,
+        "strong_baseline": 0.6626837756290451,
+        "strong_plus_fourier": 0.6628409080201698
+      }
+    },
+    {
+      "dataset": "deno_language",
+      "stratum": "language",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.9251437132813916,
+      "final_ce_bits": 3.5673275198032197,
+      "learning_amount_bits": 4.357816193478172,
+      "fractional_learning": 0.5498668264494642,
+      "normalized_curve_area": 0.7025402576617614,
+      "final_ce_fraction": 0.4501331735505358,
+      "predictions": {
+        "ordinary_baseline": 0.6750557331897755,
+        "ordinary_plus_fourier": 0.6790805395089949,
+        "strong_baseline": 0.68807419559211,
+        "strong_plus_fourier": 0.6881340827447575
+      }
+    },
+    {
+      "dataset": "docusaurus_docs",
+      "stratum": "documentation",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.97345879938828,
+      "final_ce_bits": 2.1708346936618015,
+      "learning_amount_bits": 5.802624105726478,
+      "fractional_learning": 0.7277434851944083,
+      "normalized_curve_area": 0.6725420069261658,
+      "final_ce_fraction": 0.2722565148055917,
+      "predictions": {
+        "ordinary_baseline": 0.7093352990170116,
+        "ordinary_plus_fourier": 0.7096510391865722,
+        "strong_baseline": 0.7143916437912988,
+        "strong_plus_fourier": 0.7143742218510589
+      }
+    },
+    {
+      "dataset": "docusaurus_docs",
+      "stratum": "documentation",
+      "architecture": "rope",
+      "initial_ce_bits": 7.9778623291722965,
+      "final_ce_bits": 1.8597106829969934,
+      "learning_amount_bits": 6.118151646175303,
+      "fractional_learning": 0.7668903843900007,
+      "normalized_curve_area": 0.6422369506758517,
+      "final_ce_fraction": 0.23310961560999932,
+      "predictions": {
+        "ordinary_baseline": 0.6862219026578286,
+        "ordinary_plus_fourier": 0.6864928993049351,
+        "strong_baseline": 0.6912782474321159,
+        "strong_plus_fourier": 0.6912537387824955
+      }
+    },
+    {
+      "dataset": "docusaurus_docs",
+      "stratum": "documentation",
+      "architecture": "nope",
+      "initial_ce_bits": 7.97787204619207,
+      "final_ce_bits": 2.8631375690502585,
+      "learning_amount_bits": 5.114734477141812,
+      "fractional_learning": 0.6411192551104828,
+      "normalized_curve_area": 0.6786457807761332,
+      "final_ce_fraction": 0.35888074488951716,
+      "predictions": {
+        "ordinary_baseline": 0.7142340757663134,
+        "ordinary_plus_fourier": 0.7158646212734584,
+        "strong_baseline": 0.7192904205406007,
+        "strong_plus_fourier": 0.7194812442370087
+      }
+    },
+    {
+      "dataset": "docusaurus_docs",
+      "stratum": "documentation",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.979433304696603,
+      "final_ce_bits": 2.0356319730407053,
+      "learning_amount_bits": 5.943801331655898,
+      "fractional_learning": 0.7448888859687712,
+      "normalized_curve_area": 0.6473671640059545,
+      "final_ce_fraction": 0.2551111140312288,
+      "predictions": {
+        "ordinary_baseline": 0.6900186366088977,
+        "ordinary_plus_fourier": 0.6893014730944352,
+        "strong_baseline": 0.695074981383185,
+        "strong_plus_fourier": 0.6948939628411314
+      }
+    },
+    {
+      "dataset": "docusaurus_docs",
+      "stratum": "documentation",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.979017794612119,
+      "final_ce_bits": 2.8882908271587047,
+      "learning_amount_bits": 5.090726967453414,
+      "fractional_learning": 0.6380131999218881,
+      "normalized_curve_area": 0.6808258729592207,
+      "final_ce_fraction": 0.3619868000781119,
+      "predictions": {
+        "ordinary_baseline": 0.7154090565719627,
+        "ordinary_plus_fourier": 0.7163350152481097,
+        "strong_baseline": 0.72046540134625,
+        "strong_plus_fourier": 0.7205446289538678
+      }
+    },
+    {
+      "dataset": "elasticsearch_code",
+      "stratum": "application_code",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.906272142993541,
+      "final_ce_bits": 1.936958496449858,
+      "learning_amount_bits": 5.969313646543683,
+      "fractional_learning": 0.7550079597038296,
+      "normalized_curve_area": 0.6661411486549688,
+      "final_ce_fraction": 0.24499204029617042,
+      "predictions": {
+        "ordinary_baseline": 0.656385104444432,
+        "ordinary_plus_fourier": 0.6547978649699348,
+        "strong_baseline": 0.6596526387566274,
+        "strong_plus_fourier": 0.6593422550072071
+      }
+    },
+    {
+      "dataset": "elasticsearch_code",
+      "stratum": "application_code",
+      "architecture": "rope",
+      "initial_ce_bits": 7.918005917322632,
+      "final_ce_bits": 1.6018484846769259,
+      "learning_amount_bits": 6.316157432645706,
+      "fractional_learning": 0.7977060126500628,
+      "normalized_curve_area": 0.6414318993697153,
+      "final_ce_fraction": 0.20229398734993714,
+      "predictions": {
+        "ordinary_baseline": 0.633271708085249,
+        "ordinary_plus_fourier": 0.6316455646098672,
+        "strong_baseline": 0.6365392423974444,
+        "strong_plus_fourier": 0.6362226968321258
+      }
+    },
+    {
+      "dataset": "elasticsearch_code",
+      "stratum": "application_code",
+      "architecture": "nope",
+      "initial_ce_bits": 7.917988117118268,
+      "final_ce_bits": 2.809114787220029,
+      "learning_amount_bits": 5.108873329898239,
+      "fractional_learning": 0.6452240923654,
+      "normalized_curve_area": 0.6734654836158882,
+      "final_ce_fraction": 0.3547759076346,
+      "predictions": {
+        "ordinary_baseline": 0.6612838811937337,
+        "ordinary_plus_fourier": 0.6633133410761491,
+        "strong_baseline": 0.6645514155059291,
+        "strong_plus_fourier": 0.6648138632157484
+      }
+    },
+    {
+      "dataset": "elasticsearch_code",
+      "stratum": "application_code",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.922718757904226,
+      "final_ce_bits": 1.792738617954868,
+      "learning_amount_bits": 6.129980139949358,
+      "fractional_learning": 0.7737196028082135,
+      "normalized_curve_area": 0.64182106533308,
+      "final_ce_fraction": 0.2262803971917865,
+      "predictions": {
+        "ordinary_baseline": 0.6370684420363182,
+        "ordinary_plus_fourier": 0.6373456637337164,
+        "strong_baseline": 0.6403359763485136,
+        "strong_plus_fourier": 0.6403208955558488
+      }
+    },
+    {
+      "dataset": "elasticsearch_code",
+      "stratum": "application_code",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.918331136515414,
+      "final_ce_bits": 2.8079679424105817,
+      "learning_amount_bits": 5.110363194104832,
+      "fractional_learning": 0.6453879701063354,
+      "normalized_curve_area": 0.6749422005605119,
+      "final_ce_fraction": 0.35461202989366464,
+      "predictions": {
+        "ordinary_baseline": 0.6624588619993832,
+        "ordinary_plus_fourier": 0.6641888328803386,
+        "strong_baseline": 0.6657263963115786,
+        "strong_plus_fourier": 0.6659414094118816
+      }
+    },
+    {
+      "dataset": "eliot_prose",
+      "stratum": "prose",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.9864080611023445,
+      "final_ce_bits": 2.4725987420338833,
+      "learning_amount_bits": 5.513809319068461,
+      "fractional_learning": 0.6903992205006936,
+      "normalized_curve_area": 0.6588567201630211,
+      "final_ce_fraction": 0.3096007794993064,
+      "predictions": {
+        "ordinary_baseline": 0.6612453826761836,
+        "ordinary_plus_fourier": 0.6627840523037892,
+        "strong_baseline": 0.6600367896428424,
+        "strong_plus_fourier": 0.6603399174556756
+      }
+    },
+    {
+      "dataset": "eliot_prose",
+      "stratum": "prose",
+      "architecture": "rope",
+      "initial_ce_bits": 8.005615943463956,
+      "final_ce_bits": 2.2171783211440186,
+      "learning_amount_bits": 5.788437622319938,
+      "fractional_learning": 0.7230479617563026,
+      "normalized_curve_area": 0.635255555745787,
+      "final_ce_fraction": 0.2769520382436975,
+      "predictions": {
+        "ordinary_baseline": 0.6381319863170006,
+        "ordinary_plus_fourier": 0.6397349342819229,
+        "strong_baseline": 0.6369233932836594,
+        "strong_plus_fourier": 0.6372367018303963
+      }
+    },
+    {
+      "dataset": "eliot_prose",
+      "stratum": "prose",
+      "architecture": "nope",
+      "initial_ce_bits": 8.005633485694345,
+      "final_ce_bits": 3.2762863102406268,
+      "learning_amount_bits": 4.729347175453718,
+      "fractional_learning": 0.5907512244837829,
+      "normalized_curve_area": 0.6646814661155598,
+      "final_ce_fraction": 0.4092487755162171,
+      "predictions": {
+        "ordinary_baseline": 0.6661441594254853,
+        "ordinary_plus_fourier": 0.6625453363044468,
+        "strong_baseline": 0.6649355663921441,
+        "strong_plus_fourier": 0.664424991660857
+      }
+    },
+    {
+      "dataset": "eliot_prose",
+      "stratum": "prose",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.005222619141433,
+      "final_ce_bits": 2.359809015451542,
+      "learning_amount_bits": 5.6454136036898905,
+      "fractional_learning": 0.7052137262460834,
+      "normalized_curve_area": 0.6413186146036762,
+      "final_ce_fraction": 0.2947862737539167,
+      "predictions": {
+        "ordinary_baseline": 0.6419287202680697,
+        "ordinary_plus_fourier": 0.6408367426199257,
+        "strong_baseline": 0.6407201272347286,
+        "strong_plus_fourier": 0.6406065995921305
+      }
+    },
+    {
+      "dataset": "eliot_prose",
+      "stratum": "prose",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.00707779599629,
+      "final_ce_bits": 3.293959247443288,
+      "learning_amount_bits": 4.713118548553002,
+      "fractional_learning": 0.5886154207304576,
+      "normalized_curve_area": 0.665543171503597,
+      "final_ce_fraction": 0.4113845792695424,
+      "predictions": {
+        "ordinary_baseline": 0.6673191402311347,
+        "ordinary_plus_fourier": 0.6647248659600608,
+        "strong_baseline": 0.6661105471977936,
+        "strong_plus_fourier": 0.6657590780837601
+      }
+    },
+    {
+      "dataset": "ffmpeg_code",
+      "stratum": "application_code",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.904439323883295,
+      "final_ce_bits": 2.4290391482060016,
+      "learning_amount_bits": 5.475400175677294,
+      "fractional_learning": 0.6926996307724995,
+      "normalized_curve_area": 0.6786297601269977,
+      "final_ce_fraction": 0.3073003692275006,
+      "predictions": {
+        "ordinary_baseline": 0.6437481463175646,
+        "ordinary_plus_fourier": 0.6448445848344404,
+        "strong_baseline": 0.6442090398984059,
+        "strong_plus_fourier": 0.6441621316466433
+      }
+    },
+    {
+      "dataset": "ffmpeg_code",
+      "stratum": "application_code",
+      "architecture": "rope",
+      "initial_ce_bits": 7.916158651669715,
+      "final_ce_bits": 2.1440351531258024,
+      "learning_amount_bits": 5.7721234985439125,
+      "fractional_learning": 0.7291433736394441,
+      "normalized_curve_area": 0.6602171736597953,
+      "final_ce_fraction": 0.27085662636055585,
+      "predictions": {
+        "ordinary_baseline": 0.6206347499583816,
+        "ordinary_plus_fourier": 0.6217292705374232,
+        "strong_baseline": 0.621095643539223,
+        "strong_plus_fourier": 0.6210484315145945
+      }
+    },
+    {
+      "dataset": "ffmpeg_code",
+      "stratum": "application_code",
+      "architecture": "nope",
+      "initial_ce_bits": 7.9161218473824295,
+      "final_ce_bits": 3.232178693695771,
+      "learning_amount_bits": 4.683943153686659,
+      "fractional_learning": 0.5916945064817356,
+      "normalized_curve_area": 0.6842437539603397,
+      "final_ce_fraction": 0.4083054935182643,
+      "predictions": {
+        "ordinary_baseline": 0.6486469230668663,
+        "ordinary_plus_fourier": 0.6504704900321535,
+        "strong_baseline": 0.6491078166477077,
+        "strong_plus_fourier": 0.6491760747421226
+      }
+    },
+    {
+      "dataset": "ffmpeg_code",
+      "stratum": "application_code",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.921250971970437,
+      "final_ce_bits": 2.33060070740539,
+      "learning_amount_bits": 5.590650264565047,
+      "fractional_learning": 0.7057791736705069,
+      "normalized_curve_area": 0.6610709340170697,
+      "final_ce_fraction": 0.2942208263294931,
+      "predictions": {
+        "ordinary_baseline": 0.6244314839094507,
+        "ordinary_plus_fourier": 0.625929110433883,
+        "strong_baseline": 0.6248923774902921,
+        "strong_plus_fourier": 0.6249090114600743
+      }
+    },
+    {
+      "dataset": "ffmpeg_code",
+      "stratum": "application_code",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.91728995354709,
+      "final_ce_bits": 3.252931023257794,
+      "learning_amount_bits": 4.664358930289296,
+      "fractional_learning": 0.5891372900261639,
+      "normalized_curve_area": 0.6854360496556781,
+      "final_ce_fraction": 0.4108627099738362,
+      "predictions": {
+        "ordinary_baseline": 0.6498219038725157,
+        "ordinary_plus_fourier": 0.6515989612821034,
+        "strong_baseline": 0.6502827974533572,
+        "strong_plus_fourier": 0.6503436891249563
+      }
+    },
+    {
+      "dataset": "flink_docs",
+      "stratum": "documentation",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.975129438858762,
+      "final_ce_bits": 3.079937028416587,
+      "learning_amount_bits": 4.895192410442174,
+      "fractional_learning": 0.6138100835151097,
+      "normalized_curve_area": 0.7245868488950603,
+      "final_ce_fraction": 0.3861899164848903,
+      "predictions": {
+        "ordinary_baseline": 0.774023289946475,
+        "ordinary_plus_fourier": 0.7740429000467421,
+        "strong_baseline": 0.7512342023603157,
+        "strong_plus_fourier": 0.7516887475730237
+      }
+    },
+    {
+      "dataset": "flink_docs",
+      "stratum": "documentation",
+      "architecture": "rope",
+      "initial_ce_bits": 7.991618447492884,
+      "final_ce_bits": 2.535863850023649,
+      "learning_amount_bits": 5.455754597469236,
+      "fractional_learning": 0.6826840554727389,
+      "normalized_curve_area": 0.7002535925077984,
+      "final_ce_fraction": 0.3173159445272611,
+      "predictions": {
+        "ordinary_baseline": 0.750909893587292,
+        "ordinary_plus_fourier": 0.7509174846461248,
+        "strong_baseline": 0.7281208060011327,
+        "strong_plus_fourier": 0.7285734475761966
+      }
+    },
+    {
+      "dataset": "flink_docs",
+      "stratum": "documentation",
+      "architecture": "nope",
+      "initial_ce_bits": 7.9915812992402975,
+      "final_ce_bits": 3.6703238878126605,
+      "learning_amount_bits": 4.321257411427636,
+      "fractional_learning": 0.5407262682003089,
+      "normalized_curve_area": 0.7254666140165611,
+      "final_ce_fraction": 0.4592737317996911,
+      "predictions": {
+        "ordinary_baseline": 0.7789220666957768,
+        "ordinary_plus_fourier": 0.7786377408978229,
+        "strong_baseline": 0.7561329791096174,
+        "strong_plus_fourier": 0.7565393853904122
+      }
+    },
+    {
+      "dataset": "flink_docs",
+      "stratum": "documentation",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.992478446738524,
+      "final_ce_bits": 2.7847296896216616,
+      "learning_amount_bits": 5.207748757116862,
+      "fractional_learning": 0.6515811964404266,
+      "normalized_curve_area": 0.7031720089378365,
+      "final_ce_fraction": 0.34841880355957355,
+      "predictions": {
+        "ordinary_baseline": 0.7547066275383612,
+        "ordinary_plus_fourier": 0.7540439578042625,
+        "strong_baseline": 0.7319175399522019,
+        "strong_plus_fourier": 0.73226402217306
+      }
+    },
+    {
+      "dataset": "flink_docs",
+      "stratum": "documentation",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.992558504662499,
+      "final_ce_bits": 3.7118033514783564,
+      "learning_amount_bits": 4.280755153184144,
+      "fractional_learning": 0.5355926751785662,
+      "normalized_curve_area": 0.7271891772686192,
+      "final_ce_fraction": 0.4644073248214337,
+      "predictions": {
+        "ordinary_baseline": 0.7800970475014262,
+        "ordinary_plus_fourier": 0.7795588129728283,
+        "strong_baseline": 0.7573079599152669,
+        "strong_plus_fourier": 0.7576741508244382
+      }
+    },
+    {
+      "dataset": "flutter_docs",
+      "stratum": "documentation",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.918469324575382,
+      "final_ce_bits": 2.6229100095462887,
+      "learning_amount_bits": 5.295559315029093,
+      "fractional_learning": 0.6687642379614236,
+      "normalized_curve_area": 0.6849930353181939,
+      "final_ce_fraction": 0.3312357620385764,
+      "predictions": {
+        "ordinary_baseline": 0.6833139590662116,
+        "ordinary_plus_fourier": 0.6863921410274575,
+        "strong_baseline": 0.6940197980608306,
+        "strong_plus_fourier": 0.694010586653109
+      }
+    },
+    {
+      "dataset": "flutter_docs",
+      "stratum": "documentation",
+      "architecture": "rope",
+      "initial_ce_bits": 7.928561352519337,
+      "final_ce_bits": 2.2055721579418677,
+      "learning_amount_bits": 5.72298919457747,
+      "fractional_learning": 0.7218383667341131,
+      "normalized_curve_area": 0.662104066092037,
+      "final_ce_fraction": 0.27816163326588705,
+      "predictions": {
+        "ordinary_baseline": 0.6602005627070286,
+        "ordinary_plus_fourier": 0.6632731189823289,
+        "strong_baseline": 0.6709064017016476,
+        "strong_plus_fourier": 0.6708962992688307
+      }
+    },
+    {
+      "dataset": "flutter_docs",
+      "stratum": "documentation",
+      "architecture": "nope",
+      "initial_ce_bits": 7.928511305567936,
+      "final_ce_bits": 3.432478159036153,
+      "learning_amount_bits": 4.496033146531783,
+      "fractional_learning": 0.5670637070151199,
+      "normalized_curve_area": 0.6888168254766958,
+      "final_ce_fraction": 0.4329362929848801,
+      "predictions": {
+        "ordinary_baseline": 0.6882127358155133,
+        "ordinary_plus_fourier": 0.6910807872707122,
+        "strong_baseline": 0.6989185748101323,
+        "strong_plus_fourier": 0.6988760818513248
+      }
+    },
+    {
+      "dataset": "flutter_docs",
+      "stratum": "documentation",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.930958360715737,
+      "final_ce_bits": 2.495413229571077,
+      "learning_amount_bits": 5.43554513114466,
+      "fractional_learning": 0.6853612690334245,
+      "normalized_curve_area": 0.6670190208809139,
+      "final_ce_fraction": 0.31463873096657546,
+      "predictions": {
+        "ordinary_baseline": 0.6639972966580977,
+        "ordinary_plus_fourier": 0.6671125453568942,
+        "strong_baseline": 0.6747031356527168,
+        "strong_plus_fourier": 0.6746997950656702
+      }
+    },
+    {
+      "dataset": "flutter_docs",
+      "stratum": "documentation",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.928499782730328,
+      "final_ce_bits": 3.4507934084441247,
+      "learning_amount_bits": 4.477706374286203,
+      "fractional_learning": 0.5647497472057722,
+      "normalized_curve_area": 0.6901249852630882,
+      "final_ce_fraction": 0.43525025279422785,
+      "predictions": {
+        "ordinary_baseline": 0.6893877166211628,
+        "ordinary_plus_fourier": 0.6918736327292647,
+        "strong_baseline": 0.7000935556157817,
+        "strong_plus_fourier": 0.6999905380938567
+      }
+    },
+    {
+      "dataset": "fsharp_language",
+      "stratum": "language",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.9144287641760105,
+      "final_ce_bits": 2.160186151357486,
+      "learning_amount_bits": 5.7542426128185244,
+      "fractional_learning": 0.7270614467497236,
+      "normalized_curve_area": 0.645261025995896,
+      "final_ce_fraction": 0.2729385532502764,
+      "predictions": {
+        "ordinary_baseline": 0.624780145129044,
+        "ordinary_plus_fourier": 0.6389140747422437,
+        "strong_baseline": 0.6303145817162625,
+        "strong_plus_fourier": 0.631962446926534
+      }
+    },
+    {
+      "dataset": "fsharp_language",
+      "stratum": "language",
+      "architecture": "rope",
+      "initial_ce_bits": 7.913049205342115,
+      "final_ce_bits": 1.852473674546518,
+      "learning_amount_bits": 6.060575530795598,
+      "fractional_learning": 0.7658972756408775,
+      "normalized_curve_area": 0.6267978583099709,
+      "final_ce_fraction": 0.23410272435912258,
+      "predictions": {
+        "ordinary_baseline": 0.601666748769861,
+        "ordinary_plus_fourier": 0.6158855598596507,
+        "strong_baseline": 0.6072011853570797,
+        "strong_plus_fourier": 0.608862494532497
+      }
+    },
+    {
+      "dataset": "fsharp_language",
+      "stratum": "language",
+      "architecture": "nope",
+      "initial_ce_bits": 7.913098220397611,
+      "final_ce_bits": 2.8683277904749844,
+      "learning_amount_bits": 5.044770429922626,
+      "fractional_learning": 0.637514963058628,
+      "normalized_curve_area": 0.6496530875480033,
+      "final_ce_fraction": 0.362485036941372,
+      "predictions": {
+        "ordinary_baseline": 0.6296789218783457,
+        "ordinary_plus_fourier": 0.6326850228994007,
+        "strong_baseline": 0.6352133584655644,
+        "strong_plus_fourier": 0.6350987409086626
+      }
+    },
+    {
+      "dataset": "fsharp_language",
+      "stratum": "language",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.918514126055931,
+      "final_ce_bits": 2.0050704410040705,
+      "learning_amount_bits": 5.91344368505186,
+      "fractional_learning": 0.7467910136078002,
+      "normalized_curve_area": 0.626047196525681,
+      "final_ce_fraction": 0.25320898639219985,
+      "predictions": {
+        "ordinary_baseline": 0.6054634827209302,
+        "ordinary_plus_fourier": 0.6092853133027127,
+        "strong_baseline": 0.6109979193081488,
+        "strong_plus_fourier": 0.6110125011976215
+      }
+    },
+    {
+      "dataset": "fsharp_language",
+      "stratum": "language",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.913961573304942,
+      "final_ce_bits": 2.818702433044666,
+      "learning_amount_bits": 5.095259140260277,
+      "fractional_learning": 0.6438247528401762,
+      "normalized_curve_area": 0.6479405950997692,
+      "final_ce_fraction": 0.35617524715982385,
+      "predictions": {
+        "ordinary_baseline": 0.6308539026839952,
+        "ordinary_plus_fourier": 0.6334380844320139,
+        "strong_baseline": 0.6363883392712137,
+        "strong_plus_fourier": 0.636206895968237
+      }
+    },
+    {
+      "dataset": "git_code",
+      "stratum": "application_code",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.962165128662747,
+      "final_ce_bits": 2.595045702920967,
+      "learning_amount_bits": 5.367119425741779,
+      "fractional_learning": 0.6740798947124578,
+      "normalized_curve_area": 0.6911544297396481,
+      "final_ce_fraction": 0.3259201052875422,
+      "predictions": {
+        "ordinary_baseline": 0.6917511769871819,
+        "ordinary_plus_fourier": 0.6961928012958918,
+        "strong_baseline": 0.6961141861463684,
+        "strong_plus_fourier": 0.6964020833316953
+      }
+    },
+    {
+      "dataset": "git_code",
+      "stratum": "application_code",
+      "architecture": "rope",
+      "initial_ce_bits": 7.97964303753933,
+      "final_ce_bits": 2.2547252080172537,
+      "learning_amount_bits": 5.7249178295220755,
+      "fractional_learning": 0.7174360294211848,
+      "normalized_curve_area": 0.6708026176023423,
+      "final_ce_fraction": 0.2825639705788152,
+      "predictions": {
+        "ordinary_baseline": 0.668637780627999,
+        "ordinary_plus_fourier": 0.6730978490623,
+        "strong_baseline": 0.6730007897871855,
+        "strong_plus_fourier": 0.673291608248055
+      }
+    },
+    {
+      "dataset": "git_code",
+      "stratum": "application_code",
+      "architecture": "nope",
+      "initial_ce_bits": 7.9796451013311405,
+      "final_ce_bits": 3.409616118295995,
+      "learning_amount_bits": 4.5700289830351455,
+      "fractional_learning": 0.5727104212826717,
+      "normalized_curve_area": 0.6963416536269634,
+      "final_ce_fraction": 0.4272895787173282,
+      "predictions": {
+        "ordinary_baseline": 0.6966499537364836,
+        "ordinary_plus_fourier": 0.7000242324510021,
+        "strong_baseline": 0.7010129628956702,
+        "strong_plus_fourier": 0.7011318083921789
+      }
+    },
+    {
+      "dataset": "git_code",
+      "stratum": "application_code",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.9825007012660665,
+      "final_ce_bits": 2.4461576993336083,
+      "learning_amount_bits": 5.536343001932458,
+      "fractional_learning": 0.693560654750185,
+      "normalized_curve_area": 0.673350297535775,
+      "final_ce_fraction": 0.306439345249815,
+      "predictions": {
+        "ordinary_baseline": 0.6724345145790681,
+        "ordinary_plus_fourier": 0.6770025344018213,
+        "strong_baseline": 0.6767975237382546,
+        "strong_plus_fourier": 0.6771054400956512
+      }
+    },
+    {
+      "dataset": "git_code",
+      "stratum": "application_code",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.979389621103284,
+      "final_ce_bits": 3.4414453344521396,
+      "learning_amount_bits": 4.537944286651145,
+      "fractional_learning": 0.5687069572853527,
+      "normalized_curve_area": 0.6976722031976043,
+      "final_ce_fraction": 0.4312930427146474,
+      "predictions": {
+        "ordinary_baseline": 0.6978249345421331,
+        "ordinary_plus_fourier": 0.7012176681499751,
+        "strong_baseline": 0.7021879437013197,
+        "strong_plus_fourier": 0.70230971217882
+      }
+    },
+    {
+      "dataset": "gleam_language",
+      "stratum": "language",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.843144879098442,
+      "final_ce_bits": 1.9206472103875707,
+      "learning_amount_bits": 5.9224976687108715,
+      "fractional_learning": 0.7551162742591586,
+      "normalized_curve_area": 0.644287064515499,
+      "final_ce_fraction": 0.24488372574084147,
+      "predictions": {
+        "ordinary_baseline": 0.5956741699543529,
+        "ordinary_plus_fourier": 0.5976808098499404,
+        "strong_baseline": 0.6002543366940107,
+        "strong_plus_fourier": 0.6002366720333238
+      }
+    },
+    {
+      "dataset": "gleam_language",
+      "stratum": "language",
+      "architecture": "rope",
+      "initial_ce_bits": 7.854772970088578,
+      "final_ce_bits": 1.6333979818003572,
+      "learning_amount_bits": 6.22137498828822,
+      "fractional_learning": 0.7920205060768204,
+      "normalized_curve_area": 0.6231014289834391,
+      "final_ce_fraction": 0.2079794939231796,
+      "predictions": {
+        "ordinary_baseline": 0.5725607735951699,
+        "ordinary_plus_fourier": 0.5745780724029883,
+        "strong_baseline": 0.5771409403348278,
+        "strong_plus_fourier": 0.5771249638875212
+      }
+    },
+    {
+      "dataset": "gleam_language",
+      "stratum": "language",
+      "architecture": "nope",
+      "initial_ce_bits": 7.85471157228222,
+      "final_ce_bits": 2.7521435993169012,
+      "learning_amount_bits": 5.102567972965318,
+      "fractional_learning": 0.6495958010818148,
+      "normalized_curve_area": 0.6498050312029361,
+      "final_ce_fraction": 0.3504041989181851,
+      "predictions": {
+        "ordinary_baseline": 0.6005729467036547,
+        "ordinary_plus_fourier": 0.601891284077549,
+        "strong_baseline": 0.6051531134433125,
+        "strong_plus_fourier": 0.6050264318865581
+      }
+    },
+    {
+      "dataset": "gleam_language",
+      "stratum": "language",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.863203731616523,
+      "final_ce_bits": 1.810516249596243,
+      "learning_amount_bits": 6.05268748202028,
+      "fractional_learning": 0.769720094431942,
+      "normalized_curve_area": 0.6237551128527321,
+      "final_ce_fraction": 0.23027990556805802,
+      "predictions": {
+        "ordinary_baseline": 0.576357507546239,
+        "ordinary_plus_fourier": 0.5783417067646295,
+        "strong_baseline": 0.5809376742858969,
+        "strong_plus_fourier": 0.5809164553552536
+      }
+    },
+    {
+      "dataset": "gleam_language",
+      "stratum": "language",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.856305679473067,
+      "final_ce_bits": 2.775271095278666,
+      "learning_amount_bits": 5.081034584194402,
+      "fractional_learning": 0.6467308522308237,
+      "normalized_curve_area": 0.6511245480184487,
+      "final_ce_fraction": 0.3532691477691763,
+      "predictions": {
+        "ordinary_baseline": 0.6017479275093041,
+        "ordinary_plus_fourier": 0.6029807924189095,
+        "strong_baseline": 0.606328094248962,
+        "strong_plus_fourier": 0.606187875123388
+      }
+    },
+    {
+      "dataset": "haclstar_formal",
+      "stratum": "formal",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.962474009503697,
+      "final_ce_bits": 2.006276942295536,
+      "learning_amount_bits": 5.95619706720816,
+      "fractional_learning": 0.7480317883564298,
+      "normalized_curve_area": 0.6881885865536579,
+      "final_ce_fraction": 0.2519682116435702,
+      "predictions": {
+        "ordinary_baseline": 0.7072113589928113,
+        "ordinary_plus_fourier": 0.7034132787149605,
+        "strong_baseline": 0.7055501819699781,
+        "strong_plus_fourier": 0.7050460149320698
+      }
+    },
+    {
+      "dataset": "haclstar_formal",
+      "stratum": "formal",
+      "architecture": "rope",
+      "initial_ce_bits": 7.965174051130916,
+      "final_ce_bits": 1.6998135109842907,
+      "learning_amount_bits": 6.2653605401466255,
+      "fractional_learning": 0.7865975681447752,
+      "normalized_curve_area": 0.6662980812004178,
+      "final_ce_fraction": 0.21340243185522478,
+      "predictions": {
+        "ordinary_baseline": 0.6840979626336283,
+        "ordinary_plus_fourier": 0.6802244995477243,
+        "strong_baseline": 0.6824367856107951,
+        "strong_plus_fourier": 0.6819206790557533
+      }
+    },
+    {
+      "dataset": "haclstar_formal",
+      "stratum": "formal",
+      "architecture": "nope",
+      "initial_ce_bits": 7.9651293356416915,
+      "final_ce_bits": 3.054420736430001,
+      "learning_amount_bits": 4.9107085992116914,
+      "fractional_learning": 0.6165211179657236,
+      "normalized_curve_area": 0.6948842092289457,
+      "final_ce_fraction": 0.3834788820342764,
+      "predictions": {
+        "ordinary_baseline": 0.712110135742113,
+        "ordinary_plus_fourier": 0.715816736684276,
+        "strong_baseline": 0.7104489587192798,
+        "strong_plus_fourier": 0.7111334217194671
+      }
+    },
+    {
+      "dataset": "haclstar_formal",
+      "stratum": "formal",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.967560052437662,
+      "final_ce_bits": 1.834639030656382,
+      "learning_amount_bits": 6.13292102178128,
+      "fractional_learning": 0.7697317850984619,
+      "normalized_curve_area": 0.6673718854852283,
+      "final_ce_fraction": 0.2302682149015382,
+      "predictions": {
+        "ordinary_baseline": 0.6878946965846975,
+        "ordinary_plus_fourier": 0.688556210838049,
+        "strong_baseline": 0.6862335195618643,
+        "strong_plus_fourier": 0.6864356860592669
+      }
+    },
+    {
+      "dataset": "haclstar_formal",
+      "stratum": "formal",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.96628789676923,
+      "final_ce_bits": 3.1133918245886867,
+      "learning_amount_bits": 4.852896072180543,
+      "fractional_learning": 0.609188205747333,
+      "normalized_curve_area": 0.6973328923731505,
+      "final_ce_fraction": 0.390811794252667,
+      "predictions": {
+        "ordinary_baseline": 0.7132851165477625,
+        "ordinary_plus_fourier": 0.7162863319299141,
+        "strong_baseline": 0.7116239395249293,
+        "strong_plus_fourier": 0.7121966799295142
+      }
+    },
+    {
+      "dataset": "hardy_prose",
+      "stratum": "prose",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.9839170643872475,
+      "final_ce_bits": 2.5960231663171456,
+      "learning_amount_bits": 5.387893898070102,
+      "fractional_learning": 0.6748430671766968,
+      "normalized_curve_area": 0.6631565179045956,
+      "final_ce_fraction": 0.32515693282330316,
+      "predictions": {
+        "ordinary_baseline": 0.6608575377850033,
+        "ordinary_plus_fourier": 0.6632130665913321,
+        "strong_baseline": 0.6604765409784248,
+        "strong_plus_fourier": 0.6608975844129769
+      }
+    },
+    {
+      "dataset": "hardy_prose",
+      "stratum": "prose",
+      "architecture": "rope",
+      "initial_ce_bits": 8.000089968909084,
+      "final_ce_bits": 2.340348125112679,
+      "learning_amount_bits": 5.6597418437964055,
+      "fractional_learning": 0.7074546368668775,
+      "normalized_curve_area": 0.642094934421175,
+      "final_ce_fraction": 0.2925453631331225,
+      "predictions": {
+        "ordinary_baseline": 0.6377441414258204,
+        "ordinary_plus_fourier": 0.6401703213607267,
+        "strong_baseline": 0.6373631446192418,
+        "strong_plus_fourier": 0.6377953781431782
+      }
+    },
+    {
+      "dataset": "hardy_prose",
+      "stratum": "prose",
+      "architecture": "nope",
+      "initial_ce_bits": 8.000102781616572,
+      "final_ce_bits": 3.2830689620253537,
+      "learning_amount_bits": 4.71703381959122,
+      "fractional_learning": 0.5896187042034391,
+      "normalized_curve_area": 0.667663948489964,
+      "final_ce_fraction": 0.4103812957965609,
+      "predictions": {
+        "ordinary_baseline": 0.6657563145343051,
+        "ordinary_plus_fourier": 0.6626500607241154,
+        "strong_baseline": 0.6653753177277265,
+        "strong_plus_fourier": 0.6649312959197698
+      }
+    },
+    {
+      "dataset": "hardy_prose",
+      "stratum": "prose",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.999595432796528,
+      "final_ce_bits": 2.476226716053834,
+      "learning_amount_bits": 5.523368716742693,
+      "fractional_learning": 0.6904517900671834,
+      "normalized_curve_area": 0.6462464769834543,
+      "final_ce_fraction": 0.30954820993281673,
+      "predictions": {
+        "ordinary_baseline": 0.6415408753768895,
+        "ordinary_plus_fourier": 0.6410512008170809,
+        "strong_baseline": 0.641159878570311,
+        "strong_plus_fourier": 0.6411302840515196
+      }
+    },
+    {
+      "dataset": "hardy_prose",
+      "stratum": "prose",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.000981612962482,
+      "final_ce_bits": 3.2947124024670797,
+      "learning_amount_bits": 4.706269210495402,
+      "fractional_learning": 0.5882049248307795,
+      "normalized_curve_area": 0.6680866177466251,
+      "final_ce_fraction": 0.41179507516922054,
+      "predictions": {
+        "ordinary_baseline": 0.6669312953399545,
+        "ordinary_plus_fourier": 0.6649663010988458,
+        "strong_baseline": 0.666550298533376,
+        "strong_plus_fourier": 0.6662870352900144
+      }
+    },
+    {
+      "dataset": "helm_docs",
+      "stratum": "documentation",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.947650050903901,
+      "final_ce_bits": 2.7520849317351255,
+      "learning_amount_bits": 5.195565119168776,
+      "fractional_learning": 0.6537268346354718,
+      "normalized_curve_area": 0.6972149739503996,
+      "final_ce_fraction": 0.34627316536452823,
+      "predictions": {
+        "ordinary_baseline": 0.7095181823237373,
+        "ordinary_plus_fourier": 0.7125375909544269,
+        "strong_baseline": 0.7135073436138287,
+        "strong_plus_fourier": 0.7137952893259667
+      }
+    },
+    {
+      "dataset": "helm_docs",
+      "stratum": "documentation",
+      "architecture": "rope",
+      "initial_ce_bits": 7.9621221330000305,
+      "final_ce_bits": 2.323980794204042,
+      "learning_amount_bits": 5.638141338795989,
+      "fractional_learning": 0.7081092742948412,
+      "normalized_curve_area": 0.6732264518122757,
+      "final_ce_fraction": 0.2918907257051587,
+      "predictions": {
+        "ordinary_baseline": 0.6864047859645543,
+        "ordinary_plus_fourier": 0.6894395950876029,
+        "strong_baseline": 0.6903939472546458,
+        "strong_plus_fourier": 0.6906843321760296
+      }
+    },
+    {
+      "dataset": "helm_docs",
+      "stratum": "documentation",
+      "architecture": "nope",
+      "initial_ce_bits": 7.962097023533005,
+      "final_ce_bits": 3.5285418203979884,
+      "learning_amount_bits": 4.433555203135016,
+      "fractional_learning": 0.5568261549743955,
+      "normalized_curve_area": 0.7016108137149855,
+      "final_ce_fraction": 0.44317384502560453,
+      "predictions": {
+        "ordinary_baseline": 0.714416959073039,
+        "ordinary_plus_fourier": 0.7144059671922799,
+        "strong_baseline": 0.7184061203631305,
+        "strong_plus_fourier": 0.7182140956448441
+      }
+    },
+    {
+      "dataset": "helm_docs",
+      "stratum": "documentation",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.963468413190984,
+      "final_ce_bits": 2.569930216502217,
+      "learning_amount_bits": 5.393538196688768,
+      "fractional_learning": 0.6772741169340252,
+      "normalized_curve_area": 0.6782446488115104,
+      "final_ce_fraction": 0.32272588306597483,
+      "predictions": {
+        "ordinary_baseline": 0.6902015199156235,
+        "ordinary_plus_fourier": 0.6920634451224016,
+        "strong_baseline": 0.6941906812057149,
+        "strong_plus_fourier": 0.6942952987356258
+      }
+    },
+    {
+      "dataset": "helm_docs",
+      "stratum": "documentation",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.963155146792438,
+      "final_ce_bits": 3.5460047667839474,
+      "learning_amount_bits": 4.417150380008492,
+      "fractional_learning": 0.5546965118440564,
+      "normalized_curve_area": 0.7028178521041424,
+      "final_ce_fraction": 0.4453034881559436,
+      "predictions": {
+        "ordinary_baseline": 0.7155919398786885,
+        "ordinary_plus_fourier": 0.7154118567321304,
+        "strong_baseline": 0.7195811011687798,
+        "strong_plus_fourier": 0.7193622949055063
+      }
+    },
+    {
+      "dataset": "hott_formal",
+      "stratum": "formal",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.95235076670861,
+      "final_ce_bits": 2.5141336271088193,
+      "learning_amount_bits": 5.43821713959979,
+      "fractional_learning": 0.6838522035164181,
+      "normalized_curve_area": 0.6947315258297515,
+      "final_ce_fraction": 0.3161477964835819,
+      "predictions": {
+        "ordinary_baseline": 0.6815815408496727,
+        "ordinary_plus_fourier": 0.685252500540354,
+        "strong_baseline": 0.6844365858566082,
+        "strong_plus_fourier": 0.6848131665611998
+      }
+    },
+    {
+      "dataset": "hott_formal",
+      "stratum": "formal",
+      "architecture": "rope",
+      "initial_ce_bits": 7.955929639681739,
+      "final_ce_bits": 2.2045555899904485,
+      "learning_amount_bits": 5.75137404969129,
+      "fractional_learning": 0.7229027864673407,
+      "normalized_curve_area": 0.6743847974475208,
+      "final_ce_fraction": 0.27709721353265926,
+      "predictions": {
+        "ordinary_baseline": 0.6584681444904897,
+        "ordinary_plus_fourier": 0.6621522851201088,
+        "strong_baseline": 0.6613231894974252,
+        "strong_plus_fourier": 0.6617018578669679
+      }
+    },
+    {
+      "dataset": "hott_formal",
+      "stratum": "formal",
+      "architecture": "nope",
+      "initial_ce_bits": 7.955874605233463,
+      "final_ce_bits": 3.3684423107965453,
+      "learning_amount_bits": 4.587432294436917,
+      "fractional_learning": 0.5766029194477992,
+      "normalized_curve_area": 0.7007618825673783,
+      "final_ce_fraction": 0.4233970805522008,
+      "predictions": {
+        "ordinary_baseline": 0.6864803175989744,
+        "ordinary_plus_fourier": 0.6873184528879647,
+        "strong_baseline": 0.6893353626059099,
+        "strong_plus_fourier": 0.6892632660012615
+      }
+    },
+    {
+      "dataset": "hott_formal",
+      "stratum": "formal",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.958007534069463,
+      "final_ce_bits": 2.3648407333656665,
+      "learning_amount_bits": 5.593166800703797,
+      "fractional_learning": 0.70283264433782,
+      "normalized_curve_area": 0.677325837462291,
+      "final_ce_fraction": 0.29716735566218,
+      "predictions": {
+        "ordinary_baseline": 0.6622648784415588,
+        "ordinary_plus_fourier": 0.6639017477291352,
+        "strong_baseline": 0.6651199234484944,
+        "strong_plus_fourier": 0.6651743344456126
+      }
+    },
+    {
+      "dataset": "hott_formal",
+      "stratum": "formal",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.95646192598616,
+      "final_ce_bits": 3.392399365074746,
+      "learning_amount_bits": 4.564062560911413,
+      "fractional_learning": 0.5736267906637302,
+      "normalized_curve_area": 0.7020500725020891,
+      "final_ce_fraction": 0.4263732093362699,
+      "predictions": {
+        "ordinary_baseline": 0.6876552984046238,
+        "ordinary_plus_fourier": 0.6882149117279878,
+        "strong_baseline": 0.6905103434115593,
+        "strong_plus_fourier": 0.6903941330644471
+      }
+    },
+    {
+      "dataset": "idris2_language",
+      "stratum": "language",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.932631751908632,
+      "final_ce_bits": 2.8082718787503187,
+      "learning_amount_bits": 5.124359873158314,
+      "fractional_learning": 0.6459848538286382,
+      "normalized_curve_area": 0.6931322956916226,
+      "final_ce_fraction": 0.3540151461713618,
+      "predictions": {
+        "ordinary_baseline": 0.7101735344385129,
+        "ordinary_plus_fourier": 0.7166749135247567,
+        "strong_baseline": 0.7215003360867491,
+        "strong_plus_fourier": 0.721881173423486
+      }
+    },
+    {
+      "dataset": "idris2_language",
+      "stratum": "language",
+      "architecture": "rope",
+      "initial_ce_bits": 7.9207212654057795,
+      "final_ce_bits": 2.4821049755711684,
+      "learning_amount_bits": 5.438616289834611,
+      "fractional_learning": 0.6866130433289296,
+      "normalized_curve_area": 0.6764536356092576,
+      "final_ce_fraction": 0.3133869566710704,
+      "predictions": {
+        "ordinary_baseline": 0.68706013807933,
+        "ordinary_plus_fourier": 0.6935812452785652,
+        "strong_baseline": 0.6983869397275663,
+        "strong_plus_fourier": 0.6987709017043788
+      }
+    },
+    {
+      "dataset": "idris2_language",
+      "stratum": "language",
+      "architecture": "nope",
+      "initial_ce_bits": 7.9207348520351974,
+      "final_ce_bits": 3.4610271500923906,
+      "learning_amount_bits": 4.459707701942807,
+      "fractional_learning": 0.5630287297515748,
+      "normalized_curve_area": 0.6986156182689125,
+      "final_ce_fraction": 0.4369712702484252,
+      "predictions": {
+        "ordinary_baseline": 0.7150723111878147,
+        "ordinary_plus_fourier": 0.7181566910572255,
+        "strong_baseline": 0.726399112836051,
+        "strong_plus_fourier": 0.7262387482495875
+      }
+    },
+    {
+      "dataset": "idris2_language",
+      "stratum": "language",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.92315327207163,
+      "final_ce_bits": 2.6539046153956276,
+      "learning_amount_bits": 5.269248656676003,
+      "fractional_learning": 0.6650357595776022,
+      "normalized_curve_area": 0.6759478944188086,
+      "final_ce_fraction": 0.33496424042239786,
+      "predictions": {
+        "ordinary_baseline": 0.6908568720303991,
+        "ordinary_plus_fourier": 0.695539779465682,
+        "strong_baseline": 0.7021836736786354,
+        "strong_plus_fourier": 0.7022764921156495
+      }
+    },
+    {
+      "dataset": "idris2_language",
+      "stratum": "language",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.923546166437527,
+      "final_ce_bits": 3.4463194517645794,
+      "learning_amount_bits": 4.4772267146729465,
+      "fractional_learning": 0.5650489335482944,
+      "normalized_curve_area": 0.6997187866857736,
+      "final_ce_fraction": 0.4349510664517056,
+      "predictions": {
+        "ordinary_baseline": 0.7162472919934642,
+        "ordinary_plus_fourier": 0.7190493453599349,
+        "strong_baseline": 0.7275740936417003,
+        "strong_plus_fourier": 0.7273690127305713
+      }
+    },
+    {
+      "dataset": "lawrence_prose",
+      "stratum": "prose",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.98697921548586,
+      "final_ce_bits": 2.523894308978056,
+      "learning_amount_bits": 5.463084906507804,
+      "fractional_learning": 0.6839988967412751,
+      "normalized_curve_area": 0.659099544479635,
+      "final_ce_fraction": 0.316001103258725,
+      "predictions": {
+        "ordinary_baseline": 0.6602330351501516,
+        "ordinary_plus_fourier": 0.6637795160460175,
+        "strong_baseline": 0.6609739536852464,
+        "strong_plus_fourier": 0.6614008237036032
+      }
+    },
+    {
+      "dataset": "lawrence_prose",
+      "stratum": "prose",
+      "architecture": "rope",
+      "initial_ce_bits": 8.004644069503932,
+      "final_ce_bits": 2.220975977546877,
+      "learning_amount_bits": 5.783668091957054,
+      "fractional_learning": 0.7225314988539223,
+      "normalized_curve_area": 0.6351417257520379,
+      "final_ce_fraction": 0.2774685011460777,
+      "predictions": {
+        "ordinary_baseline": 0.6371196387909686,
+        "ordinary_plus_fourier": 0.6407366920006625,
+        "strong_baseline": 0.6378605573260634,
+        "strong_plus_fourier": 0.6382986049507189
+      }
+    },
+    {
+      "dataset": "lawrence_prose",
+      "stratum": "prose",
+      "architecture": "nope",
+      "initial_ce_bits": 8.004688784993157,
+      "final_ce_bits": 3.2388731183806057,
+      "learning_amount_bits": 4.76581566661255,
+      "fractional_learning": 0.5953756736571871,
+      "normalized_curve_area": 0.6639024714328414,
+      "final_ce_fraction": 0.4046243263428129,
+      "predictions": {
+        "ordinary_baseline": 0.6651318118994534,
+        "ordinary_plus_fourier": 0.6632361445752141,
+        "strong_baseline": 0.6658727304345481,
+        "strong_plus_fourier": 0.665437645007158
+      }
+    },
+    {
+      "dataset": "lawrence_prose",
+      "stratum": "prose",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.004386267510288,
+      "final_ce_bits": 2.38183464006706,
+      "learning_amount_bits": 5.622551627443228,
+      "fractional_learning": 0.7024342025599266,
+      "normalized_curve_area": 0.6391290048910063,
+      "final_ce_fraction": 0.2975657974400734,
+      "predictions": {
+        "ordinary_baseline": 0.6409163727420377,
+        "ordinary_plus_fourier": 0.6416890006979314,
+        "strong_baseline": 0.6416572912771326,
+        "strong_plus_fourier": 0.6416448241898814
+      }
+    },
+    {
+      "dataset": "lawrence_prose",
+      "stratum": "prose",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.004816396120095,
+      "final_ce_bits": 3.24301949110592,
+      "learning_amount_bits": 4.761796905014176,
+      "fractional_learning": 0.5948630802758273,
+      "normalized_curve_area": 0.6645184976828509,
+      "final_ce_fraction": 0.4051369197241727,
+      "predictions": {
+        "ordinary_baseline": 0.6663067927051027,
+        "ordinary_plus_fourier": 0.6655251028067956,
+        "strong_baseline": 0.6670477112401975,
+        "strong_plus_fourier": 0.6667890632911498
+      }
+    },
+    {
+      "dataset": "neovim_code",
+      "stratum": "application_code",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.955277739443643,
+      "final_ce_bits": 2.712119603327626,
+      "learning_amount_bits": 5.243158136116017,
+      "fractional_learning": 0.6590783926055708,
+      "normalized_curve_area": 0.6976127465251802,
+      "final_ce_fraction": 0.3409216073944292,
+      "predictions": {
+        "ordinary_baseline": 0.6818168881868061,
+        "ordinary_plus_fourier": 0.6846545577425148,
+        "strong_baseline": 0.6921991073576679,
+        "strong_plus_fourier": 0.6922322484293524
+      }
+    },
+    {
+      "dataset": "neovim_code",
+      "stratum": "application_code",
+      "architecture": "rope",
+      "initial_ce_bits": 7.952061147924557,
+      "final_ce_bits": 2.3403410738239936,
+      "learning_amount_bits": 5.611720074100564,
+      "fractional_learning": 0.7056945073013416,
+      "normalized_curve_area": 0.677283755965183,
+      "final_ce_fraction": 0.2943054926986584,
+      "predictions": {
+        "ordinary_baseline": 0.6587034918276231,
+        "ordinary_plus_fourier": 0.6615454330467186,
+        "strong_baseline": 0.6690857109984849,
+        "strong_plus_fourier": 0.6691195286382028
+      }
+    },
+    {
+      "dataset": "neovim_code",
+      "stratum": "application_code",
+      "architecture": "nope",
+      "initial_ce_bits": 7.9521439575709465,
+      "final_ce_bits": 3.555362428808718,
+      "learning_amount_bits": 4.396781528762229,
+      "fractional_learning": 0.5529029758105777,
+      "normalized_curve_area": 0.7023976624524774,
+      "final_ce_fraction": 0.4470970241894224,
+      "predictions": {
+        "ordinary_baseline": 0.6867156649361078,
+        "ordinary_plus_fourier": 0.6887363095533588,
+        "strong_baseline": 0.6970978841069696,
+        "strong_plus_fourier": 0.6970016205636874
+      }
+    },
+    {
+      "dataset": "neovim_code",
+      "stratum": "application_code",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.9510383670998745,
+      "final_ce_bits": 2.578229432800084,
+      "learning_amount_bits": 5.372808934299791,
+      "fractional_learning": 0.6757310864193379,
+      "normalized_curve_area": 0.6815676676483828,
+      "final_ce_fraction": 0.3242689135806621,
+      "predictions": {
+        "ordinary_baseline": 0.6625002257786923,
+        "ordinary_plus_fourier": 0.6659782332839042,
+        "strong_baseline": 0.6728824449495541,
+        "strong_plus_fourier": 0.6730170060414896
+      }
+    },
+    {
+      "dataset": "neovim_code",
+      "stratum": "application_code",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.953279129057966,
+      "final_ce_bits": 3.5788394795083613,
+      "learning_amount_bits": 4.374439649549606,
+      "fractional_learning": 0.5500142085687216,
+      "normalized_curve_area": 0.7034907229146918,
+      "final_ce_fraction": 0.44998579143127837,
+      "predictions": {
+        "ordinary_baseline": 0.6878906457417573,
+        "ordinary_plus_fourier": 0.6897487807771959,
+        "strong_baseline": 0.6982728649126191,
+        "strong_plus_fourier": 0.6981508622653353
+      }
+    },
+    {
+      "dataset": "pandas_code",
+      "stratum": "application_code",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.875774373524713,
+      "final_ce_bits": 2.3557134421017265,
+      "learning_amount_bits": 5.520060931422987,
+      "fractional_learning": 0.700893564282208,
+      "normalized_curve_area": 0.6721466056142451,
+      "final_ce_fraction": 0.29910643571779205,
+      "predictions": {
+        "ordinary_baseline": 0.620661035452257,
+        "ordinary_plus_fourier": 0.6245947780584825,
+        "strong_baseline": 0.6308631069257032,
+        "strong_plus_fourier": 0.6308649651856639
+      }
+    },
+    {
+      "dataset": "pandas_code",
+      "stratum": "application_code",
+      "architecture": "rope",
+      "initial_ce_bits": 7.876272693255588,
+      "final_ce_bits": 2.032428581190072,
+      "learning_amount_bits": 5.843844112065516,
+      "fractional_learning": 0.7419631435376002,
+      "normalized_curve_area": 0.6504413707308971,
+      "final_ce_fraction": 0.2580368564623998,
+      "predictions": {
+        "ordinary_baseline": 0.597547639093074,
+        "ordinary_plus_fourier": 0.6014956829183626,
+        "strong_baseline": 0.6077497105665203,
+        "strong_plus_fourier": 0.6077538339271643
+      }
+    },
+    {
+      "dataset": "pandas_code",
+      "stratum": "application_code",
+      "architecture": "nope",
+      "initial_ce_bits": 7.876260654470028,
+      "final_ce_bits": 3.2207466199319557,
+      "learning_amount_bits": 4.655514034538072,
+      "fractional_learning": 0.591080512382664,
+      "normalized_curve_area": 0.6785454525914949,
+      "final_ce_fraction": 0.408919487617336,
+      "predictions": {
+        "ordinary_baseline": 0.6255598122015587,
+        "ordinary_plus_fourier": 0.6286617387498157,
+        "strong_baseline": 0.635761883675005,
+        "strong_plus_fourier": 0.6356319946263611
+      }
+    },
+    {
+      "dataset": "pandas_code",
+      "stratum": "application_code",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.8813625198078725,
+      "final_ce_bits": 2.2596984088344225,
+      "learning_amount_bits": 5.62166411097345,
+      "fractional_learning": 0.7133021466396505,
+      "normalized_curve_area": 0.6540118466936466,
+      "final_ce_fraction": 0.2866978533603496,
+      "predictions": {
+        "ordinary_baseline": 0.6013443730441431,
+        "ordinary_plus_fourier": 0.6059477843515793,
+        "strong_baseline": 0.6115464445175894,
+        "strong_plus_fourier": 0.6116543683532215
+      }
+    },
+    {
+      "dataset": "pandas_code",
+      "stratum": "application_code",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.8780241645719755,
+      "final_ce_bits": 3.2168532766817233,
+      "learning_amount_bits": 4.661170887890252,
+      "fractional_learning": 0.5916577815043321,
+      "normalized_curve_area": 0.6789154598786362,
+      "final_ce_fraction": 0.40834221849566793,
+      "predictions": {
+        "ordinary_baseline": 0.6267347930072081,
+        "ordinary_plus_fourier": 0.6297875208505003,
+        "strong_baseline": 0.6369368644806545,
+        "strong_plus_fourier": 0.6367991830878933
+      }
+    },
+    {
+      "dataset": "perennial_formal",
+      "stratum": "formal",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.986500071820555,
+      "final_ce_bits": 1.094600811928179,
+      "learning_amount_bits": 6.8918992598923765,
+      "fractional_learning": 0.862943601570807,
+      "normalized_curve_area": 0.6327275168668616,
+      "final_ce_fraction": 0.13705639842919304,
+      "predictions": {
+        "ordinary_baseline": 0.6480619644457002,
+        "ordinary_plus_fourier": 0.6455614485084918,
+        "strong_baseline": 0.647187416473612,
+        "strong_plus_fourier": 0.6470945005560459
+      }
+    },
+    {
+      "dataset": "perennial_formal",
+      "stratum": "formal",
+      "architecture": "rope",
+      "initial_ce_bits": 7.999345542004825,
+      "final_ce_bits": 0.9127815703536093,
+      "learning_amount_bits": 7.086563971651216,
+      "fractional_learning": 0.8858985710463473,
+      "normalized_curve_area": 0.5993630594849366,
+      "final_ce_fraction": 0.1141014289536527,
+      "predictions": {
+        "ordinary_baseline": 0.6249485680865172,
+        "ordinary_plus_fourier": 0.6223994654685512,
+        "strong_baseline": 0.624074020114429,
+        "strong_plus_fourier": 0.6239734087882897
+      }
+    },
+    {
+      "dataset": "perennial_formal",
+      "stratum": "formal",
+      "architecture": "nope",
+      "initial_ce_bits": 7.999327139861182,
+      "final_ce_bits": 1.7604826053527765,
+      "learning_amount_bits": 6.238844534508406,
+      "fractional_learning": 0.7799197172664263,
+      "normalized_curve_area": 0.6396401867144261,
+      "final_ce_fraction": 0.22008028273357375,
+      "predictions": {
+        "ordinary_baseline": 0.6529607411950019,
+        "ordinary_plus_fourier": 0.6545034915061301,
+        "strong_baseline": 0.6520861932229137,
+        "strong_plus_fourier": 0.6526336706243836
+      }
+    },
+    {
+      "dataset": "perennial_formal",
+      "stratum": "formal",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.000332378455475,
+      "final_ce_bits": 1.0063013503352076,
+      "learning_amount_bits": 6.994031028120267,
+      "fractional_learning": 0.8742180215554157,
+      "normalized_curve_area": 0.599688665710933,
+      "final_ce_fraction": 0.12578197844458427,
+      "predictions": {
+        "ordinary_baseline": 0.6287453020375864,
+        "ordinary_plus_fourier": 0.6272037323146131,
+        "strong_baseline": 0.6278707540654982,
+        "strong_plus_fourier": 0.6279297209850229
+      }
+    },
+    {
+      "dataset": "perennial_formal",
+      "stratum": "formal",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.9980687428048185,
+      "final_ce_bits": 1.8035635929611378,
+      "learning_amount_bits": 6.194505149843682,
+      "fractional_learning": 0.774499329956619,
+      "normalized_curve_area": 0.6427490125338658,
+      "final_ce_fraction": 0.22550067004338104,
+      "predictions": {
+        "ordinary_baseline": 0.6541357220006514,
+        "ordinary_plus_fourier": 0.6551399596077226,
+        "strong_baseline": 0.6532611740285632,
+        "strong_plus_fourier": 0.6537233590162486
+      }
+    },
+    {
+      "dataset": "pubmed26_0004",
+      "stratum": "science",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.99133863171993,
+      "final_ce_bits": 2.6683482773587013,
+      "learning_amount_bits": 5.322990354361229,
+      "fractional_learning": 0.6660942017226078,
+      "normalized_curve_area": 0.672050596672297,
+      "final_ce_fraction": 0.3339057982773922,
+      "predictions": {
+        "ordinary_baseline": 0.6830204877372719,
+        "ordinary_plus_fourier": 0.683232374558658,
+        "strong_baseline": 0.6800584388754034,
+        "strong_plus_fourier": 0.6803704588021088
+      }
+    },
+    {
+      "dataset": "pubmed26_0004",
+      "stratum": "science",
+      "architecture": "rope",
+      "initial_ce_bits": 8.006201716372797,
+      "final_ce_bits": 2.2636613620625914,
+      "learning_amount_bits": 5.742540354310205,
+      "fractional_learning": 0.7172590629927287,
+      "normalized_curve_area": 0.6486944122151496,
+      "final_ce_fraction": 0.28274093700727143,
+      "predictions": {
+        "ordinary_baseline": 0.6599070913780889,
+        "ordinary_plus_fourier": 0.6601541262184832,
+        "strong_baseline": 0.6569450425162204,
+        "strong_plus_fourier": 0.6572626293670826
+      }
+    },
+    {
+      "dataset": "pubmed26_0004",
+      "stratum": "science",
+      "architecture": "nope",
+      "initial_ce_bits": 8.006138770722579,
+      "final_ce_bits": 3.404664694781992,
+      "learning_amount_bits": 4.601474075940587,
+      "fractional_learning": 0.574741139867463,
+      "normalized_curve_area": 0.6759009819084727,
+      "final_ce_fraction": 0.42525886013253694,
+      "predictions": {
+        "ordinary_baseline": 0.6879192644865736,
+        "ordinary_plus_fourier": 0.6840464769334819,
+        "strong_baseline": 0.6849572156247052,
+        "strong_plus_fourier": 0.6846222838002294
+      }
+    },
+    {
+      "dataset": "pubmed26_0004",
+      "stratum": "science",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.006819048098068,
+      "final_ce_bits": 2.483485480309644,
+      "learning_amount_bits": 5.523333567788423,
+      "fractional_learning": 0.6898255152062414,
+      "normalized_curve_area": 0.6554274512737162,
+      "final_ce_fraction": 0.31017448479375864,
+      "predictions": {
+        "ordinary_baseline": 0.6637038253291581,
+        "ordinary_plus_fourier": 0.6622530719240853,
+        "strong_baseline": 0.6607417764672896,
+        "strong_plus_fourier": 0.6607904588773467
+      }
+    },
+    {
+      "dataset": "pubmed26_0004",
+      "stratum": "science",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.006438966439662,
+      "final_ce_bits": 3.414959404279989,
+      "learning_amount_bits": 4.591479562159672,
+      "fractional_learning": 0.573468355425486,
+      "normalized_curve_area": 0.6762942330092301,
+      "final_ce_fraction": 0.4265316445745141,
+      "predictions": {
+        "ordinary_baseline": 0.6890942452922231,
+        "ordinary_plus_fourier": 0.6854698715982922,
+        "strong_baseline": 0.6861321964303546,
+        "strong_plus_fourier": 0.6858366096714748
+      }
+    },
+    {
+      "dataset": "pubmed26_0005",
+      "stratum": "science",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.9893689144195985,
+      "final_ce_bits": 2.653215222939644,
+      "learning_amount_bits": 5.336153691479954,
+      "fractional_learning": 0.6679062697186464,
+      "normalized_curve_area": 0.6736351260034343,
+      "final_ce_fraction": 0.3320937302813536,
+      "predictions": {
+        "ordinary_baseline": 0.6830848632718144,
+        "ordinary_plus_fourier": 0.6829490544740634,
+        "strong_baseline": 0.6794631583558858,
+        "strong_plus_fourier": 0.6797097842170816
+      }
+    },
+    {
+      "dataset": "pubmed26_0005",
+      "stratum": "science",
+      "architecture": "rope",
+      "initial_ce_bits": 8.008305064192847,
+      "final_ce_bits": 2.2466124639085847,
+      "learning_amount_bits": 5.761692600284263,
+      "fractional_learning": 0.7194618607812189,
+      "normalized_curve_area": 0.6501301884037969,
+      "final_ce_fraction": 0.2805381392187811,
+      "predictions": {
+        "ordinary_baseline": 0.6599714669126314,
+        "ordinary_plus_fourier": 0.6598671962317741,
+        "strong_baseline": 0.6563497619967028,
+        "strong_plus_fourier": 0.6566013830271784
+      }
+    },
+    {
+      "dataset": "pubmed26_0005",
+      "stratum": "science",
+      "architecture": "nope",
+      "initial_ce_bits": 8.00823463729732,
+      "final_ce_bits": 3.4281539132541834,
+      "learning_amount_bits": 4.580080724043136,
+      "fractional_learning": 0.5719202177626284,
+      "normalized_curve_area": 0.6772606910446425,
+      "final_ce_fraction": 0.42807978223737164,
+      "predictions": {
+        "ordinary_baseline": 0.6879836400211161,
+        "ordinary_plus_fourier": 0.6841532644830793,
+        "strong_baseline": 0.6843619351051875,
+        "strong_plus_fourier": 0.6840233964701832
+      }
+    },
+    {
+      "dataset": "pubmed26_0005",
+      "stratum": "science",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.008663390045921,
+      "final_ce_bits": 2.477589506579271,
+      "learning_amount_bits": 5.53107388346665,
+      "fractional_learning": 0.6906360765445045,
+      "normalized_curve_area": 0.657185973220516,
+      "final_ce_fraction": 0.3093639234554954,
+      "predictions": {
+        "ordinary_baseline": 0.6637682008637006,
+        "ordinary_plus_fourier": 0.6623097684210594,
+        "strong_baseline": 0.660146495947772,
+        "strong_plus_fourier": 0.6601836378685682
+      }
+    },
+    {
+      "dataset": "pubmed26_0005",
+      "stratum": "science",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.007978469138859,
+      "final_ce_bits": 3.4339060019992784,
+      "learning_amount_bits": 4.5740724671395805,
+      "fractional_learning": 0.5711866008578939,
+      "normalized_curve_area": 0.6778465529624125,
+      "final_ce_fraction": 0.42881339914210626,
+      "predictions": {
+        "ordinary_baseline": 0.6891586208267656,
+        "ordinary_plus_fourier": 0.6855112697838652,
+        "strong_baseline": 0.685536915910837,
+        "strong_plus_fourier": 0.6852273656373963
+      }
+    },
+    {
+      "dataset": "pubmed26_0006",
+      "stratum": "science",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.98755140176528,
+      "final_ce_bits": 2.7083737566983404,
+      "learning_amount_bits": 5.279177645066939,
+      "fractional_learning": 0.6609282580556282,
+      "normalized_curve_area": 0.673768506732031,
+      "final_ce_fraction": 0.33907174194437195,
+      "predictions": {
+        "ordinary_baseline": 0.6817720205600453,
+        "ordinary_plus_fourier": 0.681291198902563,
+        "strong_baseline": 0.6768746448156264,
+        "strong_plus_fourier": 0.6771516677391678
+      }
+    },
+    {
+      "dataset": "pubmed26_0006",
+      "stratum": "science",
+      "architecture": "rope",
+      "initial_ce_bits": 8.004561517831517,
+      "final_ce_bits": 2.3166562680821077,
+      "learning_amount_bits": 5.687905249749409,
+      "fractional_learning": 0.7105789558012428,
+      "normalized_curve_area": 0.6501644649520542,
+      "final_ce_fraction": 0.2894210441987573,
+      "predictions": {
+        "ordinary_baseline": 0.6586586242008623,
+        "ordinary_plus_fourier": 0.6582119465982107,
+        "strong_baseline": 0.6537612484564435,
+        "strong_plus_fourier": 0.6540436792911278
+      }
+    },
+    {
+      "dataset": "pubmed26_0006",
+      "stratum": "science",
+      "architecture": "nope",
+      "initial_ce_bits": 8.004478020254524,
+      "final_ce_bits": 3.4689954072765037,
+      "learning_amount_bits": 4.5354826129780195,
+      "fractional_learning": 0.5666164665359059,
+      "normalized_curve_area": 0.678548762074074,
+      "final_ce_fraction": 0.43338353346409403,
+      "predictions": {
+        "ordinary_baseline": 0.6866707973093471,
+        "ordinary_plus_fourier": 0.6820425348390786,
+        "strong_baseline": 0.6817734215649282,
+        "strong_plus_fourier": 0.6813935514657314
+      }
+    },
+    {
+      "dataset": "pubmed26_0006",
+      "stratum": "science",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.005079013627963,
+      "final_ce_bits": 2.553814711190105,
+      "learning_amount_bits": 5.451264302437858,
+      "fractional_learning": 0.6809708674131381,
+      "normalized_curve_area": 0.6575851208582416,
+      "final_ce_fraction": 0.31902913258686205,
+      "predictions": {
+        "ordinary_baseline": 0.6624553581519315,
+        "ordinary_plus_fourier": 0.6603216397184533,
+        "strong_baseline": 0.6575579824075126,
+        "strong_plus_fourier": 0.6575732110322394
+      }
+    },
+    {
+      "dataset": "pubmed26_0006",
+      "stratum": "science",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.005058891657812,
+      "final_ce_bits": 3.4778168273958845,
+      "learning_amount_bits": 4.527242064261928,
+      "fractional_learning": 0.565545934059011,
+      "normalized_curve_area": 0.6789501255783444,
+      "final_ce_fraction": 0.434454065940989,
+      "predictions": {
+        "ordinary_baseline": 0.6878457781149965,
+        "ordinary_plus_fourier": 0.6833927660966964,
+        "strong_baseline": 0.6829484023705776,
+        "strong_plus_fourier": 0.6825962893399747
+      }
+    },
+    {
+      "dataset": "pubmed26_0007",
+      "stratum": "science",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.991001975680867,
+      "final_ce_bits": 2.701402912897906,
+      "learning_amount_bits": 5.28959906278296,
+      "fractional_learning": 0.661943755846281,
+      "normalized_curve_area": 0.6764027567336897,
+      "final_ce_fraction": 0.33805624415371904,
+      "predictions": {
+        "ordinary_baseline": 0.6883851475445453,
+        "ordinary_plus_fourier": 0.6883574067043522,
+        "strong_baseline": 0.6856515163369467,
+        "strong_plus_fourier": 0.6858836330917475
+      }
+    },
+    {
+      "dataset": "pubmed26_0007",
+      "stratum": "science",
+      "architecture": "rope",
+      "initial_ce_bits": 8.007362771248772,
+      "final_ce_bits": 2.3241868294197747,
+      "learning_amount_bits": 5.683175941828996,
+      "fractional_learning": 0.7097383561863103,
+      "normalized_curve_area": 0.6536533230781654,
+      "final_ce_fraction": 0.2902616438136897,
+      "predictions": {
+        "ordinary_baseline": 0.6652717511853623,
+        "ordinary_plus_fourier": 0.6652729138150919,
+        "strong_baseline": 0.6625381199777637,
+        "strong_plus_fourier": 0.6627748146128964
+      }
+    },
+    {
+      "dataset": "pubmed26_0007",
+      "stratum": "science",
+      "architecture": "nope",
+      "initial_ce_bits": 8.007278241775872,
+      "final_ce_bits": 3.4503334408443926,
+      "learning_amount_bits": 4.556944800931479,
+      "fractional_learning": 0.5690974437450035,
+      "normalized_curve_area": 0.6798532633361904,
+      "final_ce_fraction": 0.4309025562549965,
+      "predictions": {
+        "ordinary_baseline": 0.693283924293847,
+        "ordinary_plus_fourier": 0.6898325785497605,
+        "strong_baseline": 0.6905502930862484,
+        "strong_plus_fourier": 0.6902401616751329
+      }
+    },
+    {
+      "dataset": "pubmed26_0007",
+      "stratum": "science",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.007206868975764,
+      "final_ce_bits": 2.5667597378313918,
+      "learning_amount_bits": 5.4404471311443725,
+      "fractional_learning": 0.6794388909073079,
+      "normalized_curve_area": 0.6597003856505189,
+      "final_ce_fraction": 0.3205611090926922,
+      "predictions": {
+        "ordinary_baseline": 0.6690684851364315,
+        "ordinary_plus_fourier": 0.667983698294497,
+        "strong_baseline": 0.6663348539288328,
+        "strong_plus_fourier": 0.6663995502972795
+      }
+    },
+    {
+      "dataset": "pubmed26_0007",
+      "stratum": "science",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.007583682963803,
+      "final_ce_bits": 3.4601404935358673,
+      "learning_amount_bits": 4.547443189427936,
+      "fractional_learning": 0.5678913369560101,
+      "normalized_curve_area": 0.6807518931128577,
+      "final_ce_fraction": 0.43210866304398976,
+      "predictions": {
+        "ordinary_baseline": 0.6944589050994965,
+        "ordinary_plus_fourier": 0.6911586165922008,
+        "strong_baseline": 0.6917252738918978,
+        "strong_plus_fourier": 0.6914390677034343
+      }
+    },
+    {
+      "dataset": "pubmed26_0008",
+      "stratum": "science",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.990184370158664,
+      "final_ce_bits": 2.663190001711373,
+      "learning_amount_bits": 5.326994368447291,
+      "fractional_learning": 0.6666919778279434,
+      "normalized_curve_area": 0.6759891871316159,
+      "final_ce_fraction": 0.33330802217205663,
+      "predictions": {
+        "ordinary_baseline": 0.6875792552900898,
+        "ordinary_plus_fourier": 0.6875354590191743,
+        "strong_baseline": 0.6852362478827814,
+        "strong_plus_fourier": 0.6854504642580692
+      }
+    },
+    {
+      "dataset": "pubmed26_0008",
+      "stratum": "science",
+      "architecture": "rope",
+      "initial_ce_bits": 8.009926774599158,
+      "final_ce_bits": 2.272392018337979,
+      "learning_amount_bits": 5.737534756261179,
+      "fractional_learning": 0.716301135117128,
+      "normalized_curve_area": 0.6533177346911615,
+      "final_ce_fraction": 0.283698864882872,
+      "predictions": {
+        "ordinary_baseline": 0.6644658589309068,
+        "ordinary_plus_fourier": 0.6644499815563095,
+        "strong_baseline": 0.6621228515235985,
+        "strong_plus_fourier": 0.6623414898373832
+      }
+    },
+    {
+      "dataset": "pubmed26_0008",
+      "stratum": "science",
+      "architecture": "nope",
+      "initial_ce_bits": 8.009861163217854,
+      "final_ce_bits": 3.4925120999771706,
+      "learning_amount_bits": 4.517349063240683,
+      "fractional_learning": 0.5639721753225242,
+      "normalized_curve_area": 0.6805077347991739,
+      "final_ce_fraction": 0.4360278246774758,
+      "predictions": {
+        "ordinary_baseline": 0.6924780320393915,
+        "ordinary_plus_fourier": 0.6890819112597572,
+        "strong_baseline": 0.6901350246320832,
+        "strong_plus_fourier": 0.6898182825973214
+      }
+    },
+    {
+      "dataset": "pubmed26_0008",
+      "stratum": "science",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.010277877180895,
+      "final_ce_bits": 2.520516483723785,
+      "learning_amount_bits": 5.489761393457111,
+      "fractional_learning": 0.6853377302601658,
+      "normalized_curve_area": 0.6593766984252791,
+      "final_ce_fraction": 0.3146622697398343,
+      "predictions": {
+        "ordinary_baseline": 0.668262592881976,
+        "ordinary_plus_fourier": 0.667197299310758,
+        "strong_baseline": 0.6659195854746677,
+        "strong_plus_fourier": 0.6659720118499037
+      }
+    },
+    {
+      "dataset": "pubmed26_0008",
+      "stratum": "science",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.010150266053955,
+      "final_ce_bits": 3.506765893093692,
+      "learning_amount_bits": 4.503384372960264,
+      "fractional_learning": 0.5622079046805974,
+      "normalized_curve_area": 0.6809468175315122,
+      "final_ce_fraction": 0.4377920953194027,
+      "predictions": {
+        "ordinary_baseline": 0.693653012845041,
+        "ordinary_plus_fourier": 0.6904132194899839,
+        "strong_baseline": 0.6913100054377326,
+        "strong_plus_fourier": 0.69101802334509
+      }
+    },
+    {
+      "dataset": "pubmed26_0009",
+      "stratum": "science",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.983750499189886,
+      "final_ce_bits": 2.7300720768314344,
+      "learning_amount_bits": 5.253678422358451,
+      "fractional_learning": 0.6580468598870276,
+      "normalized_curve_area": 0.6748154740737087,
+      "final_ce_fraction": 0.3419531401129724,
+      "predictions": {
+        "ordinary_baseline": 0.6795372263434831,
+        "ordinary_plus_fourier": 0.6802999892973107,
+        "strong_baseline": 0.6768352190544654,
+        "strong_plus_fourier": 0.6771932383998863
+      }
+    },
+    {
+      "dataset": "pubmed26_0009",
+      "stratum": "science",
+      "architecture": "rope",
+      "initial_ce_bits": 8.003838932723918,
+      "final_ce_bits": 2.326282889474997,
+      "learning_amount_bits": 5.67755604324892,
+      "fractional_learning": 0.7093541862201467,
+      "normalized_curve_area": 0.6525476015858018,
+      "final_ce_fraction": 0.2906458137798533,
+      "predictions": {
+        "ordinary_baseline": 0.6564238299843002,
+        "ordinary_plus_fourier": 0.6572251251105762,
+        "strong_baseline": 0.6537218226952825,
+        "strong_plus_fourier": 0.6540859449645002
+      }
+    },
+    {
+      "dataset": "pubmed26_0009",
+      "stratum": "science",
+      "architecture": "nope",
+      "initial_ce_bits": 8.003754575233668,
+      "final_ce_bits": 3.4650983234036152,
+      "learning_amount_bits": 4.538656251830053,
+      "fractional_learning": 0.5670614913749527,
+      "normalized_curve_area": 0.6785031664227011,
+      "final_ce_fraction": 0.43293850862504735,
+      "predictions": {
+        "ordinary_baseline": 0.6844360030927849,
+        "ordinary_plus_fourier": 0.6807972809114925,
+        "strong_baseline": 0.6817339958037671,
+        "strong_plus_fourier": 0.6813948852791167
+      }
+    },
+    {
+      "dataset": "pubmed26_0009",
+      "stratum": "science",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.004014183045145,
+      "final_ce_bits": 2.5825159283901886,
+      "learning_amount_bits": 5.421498254654957,
+      "fractional_learning": 0.6773448151843638,
+      "normalized_curve_area": 0.6589807614007719,
+      "final_ce_fraction": 0.32265518481563615,
+      "predictions": {
+        "ordinary_baseline": 0.6602205639353692,
+        "ordinary_plus_fourier": 0.6591432117121525,
+        "strong_baseline": 0.6575185566463516,
+        "strong_plus_fourier": 0.6575851290789898
+      }
+    },
+    {
+      "dataset": "pubmed26_0009",
+      "stratum": "science",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.0046226576639,
+      "final_ce_bits": 3.4734458453285435,
+      "learning_amount_bits": 4.531176812335356,
+      "fractional_learning": 0.5660654440222285,
+      "normalized_curve_area": 0.679077894361148,
+      "final_ce_fraction": 0.43393455597777153,
+      "predictions": {
+        "ordinary_baseline": 0.6856109838984342,
+        "ordinary_plus_fourier": 0.682245691966544,
+        "strong_baseline": 0.6829089766094166,
+        "strong_plus_fourier": 0.6826131733750074
+      }
+    },
+    {
+      "dataset": "pubmed26_0010",
+      "stratum": "science",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.986149055230145,
+      "final_ce_bits": 2.669557809844388,
+      "learning_amount_bits": 5.316591245385757,
+      "fractional_learning": 0.6657309706484,
+      "normalized_curve_area": 0.6710310814654148,
+      "final_ce_fraction": 0.33426902935159997,
+      "predictions": {
+        "ordinary_baseline": 0.6780684255073489,
+        "ordinary_plus_fourier": 0.6785313722667013,
+        "strong_baseline": 0.6746230776585967,
+        "strong_plus_fourier": 0.6749460094098781
+      }
+    },
+    {
+      "dataset": "pubmed26_0010",
+      "stratum": "science",
+      "architecture": "rope",
+      "initial_ce_bits": 8.006160010579961,
+      "final_ce_bits": 2.2216606619777934,
+      "learning_amount_bits": 5.784499348602168,
+      "fractional_learning": 0.7225033819478682,
+      "normalized_curve_area": 0.6464857545715308,
+      "final_ce_fraction": 0.27749661805213177,
+      "predictions": {
+        "ordinary_baseline": 0.654955029148166,
+        "ordinary_plus_fourier": 0.6554551062970122,
+        "strong_baseline": 0.6515096812994138,
+        "strong_plus_fourier": 0.6518384939528927
+      }
+    },
+    {
+      "dataset": "pubmed26_0010",
+      "stratum": "science",
+      "architecture": "nope",
+      "initial_ce_bits": 8.006089755667084,
+      "final_ce_bits": 3.4000073616009647,
+      "learning_amount_bits": 4.606082394066119,
+      "fractional_learning": 0.5753211828493963,
+      "normalized_curve_area": 0.6748200130446735,
+      "final_ce_fraction": 0.42467881715060374,
+      "predictions": {
+        "ordinary_baseline": 0.6829672022566506,
+        "ordinary_plus_fourier": 0.679221237602751,
+        "strong_baseline": 0.6795218544078985,
+        "strong_plus_fourier": 0.6791781571063518
+      }
+    },
+    {
+      "dataset": "pubmed26_0010",
+      "stratum": "science",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.006690749040525,
+      "final_ce_bits": 2.4750329414785326,
+      "learning_amount_bits": 5.5316578075619915,
+      "fractional_learning": 0.6908742096882847,
+      "normalized_curve_area": 0.6535209695785795,
+      "final_ce_fraction": 0.3091257903117154,
+      "predictions": {
+        "ordinary_baseline": 0.6587517630992351,
+        "ordinary_plus_fourier": 0.6574409244744022,
+        "strong_baseline": 0.6553064152504829,
+        "strong_plus_fourier": 0.655348405742973
+      }
+    },
+    {
+      "dataset": "pubmed26_0010",
+      "stratum": "science",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.006916132304479,
+      "final_ce_bits": 3.4099639102117028,
+      "learning_amount_bits": 4.596952222092776,
+      "fractional_learning": 0.5741210858555098,
+      "normalized_curve_area": 0.6755183840814392,
+      "final_ce_fraction": 0.4258789141444902,
+      "predictions": {
+        "ordinary_baseline": 0.6841421830623001,
+        "ordinary_plus_fourier": 0.6806374800359495,
+        "strong_baseline": 0.6806968352135478,
+        "strong_plus_fourier": 0.680391350170342
+      }
+    },
+    {
+      "dataset": "pubmed26_0011",
+      "stratum": "science",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.987147414518403,
+      "final_ce_bits": 2.7481443362515687,
+      "learning_amount_bits": 5.239003078266833,
+      "fractional_learning": 0.6559304163235607,
+      "normalized_curve_area": 0.6783757842631524,
+      "final_ce_fraction": 0.34406958367643925,
+      "predictions": {
+        "ordinary_baseline": 0.682019148207251,
+        "ordinary_plus_fourier": 0.6813450712112729,
+        "strong_baseline": 0.6775673156003339,
+        "strong_plus_fourier": 0.677792032160471
+      }
+    },
+    {
+      "dataset": "pubmed26_0011",
+      "stratum": "science",
+      "architecture": "rope",
+      "initial_ce_bits": 8.004241716092237,
+      "final_ce_bits": 2.387438135801809,
+      "learning_amount_bits": 5.616803580290428,
+      "fractional_learning": 0.7017272968459858,
+      "normalized_curve_area": 0.6548880108790989,
+      "final_ce_fraction": 0.29827270315401433,
+      "predictions": {
+        "ordinary_baseline": 0.658905751848068,
+        "ordinary_plus_fourier": 0.6582610232414978,
+        "strong_baseline": 0.6544539192411509,
+        "strong_plus_fourier": 0.6546832841502581
+      }
+    },
+    {
+      "dataset": "pubmed26_0011",
+      "stratum": "science",
+      "architecture": "nope",
+      "initial_ce_bits": 8.004172923031893,
+      "final_ce_bits": 3.513994194922468,
+      "learning_amount_bits": 4.4901787281094245,
+      "fractional_learning": 0.5609774656323325,
+      "normalized_curve_area": 0.6826629185565359,
+      "final_ce_fraction": 0.43902253436766747,
+      "predictions": {
+        "ordinary_baseline": 0.6869179249565527,
+        "ordinary_plus_fourier": 0.6826277947704554,
+        "strong_baseline": 0.6824660923496356,
+        "strong_plus_fourier": 0.6821180797937558
+      }
+    },
+    {
+      "dataset": "pubmed26_0011",
+      "stratum": "science",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.003864644130221,
+      "final_ce_bits": 2.593960685874505,
+      "learning_amount_bits": 5.4099039582557165,
+      "fractional_learning": 0.6759090571715342,
+      "normalized_curve_area": 0.6623936569718165,
+      "final_ce_fraction": 0.3240909428284659,
+      "predictions": {
+        "ordinary_baseline": 0.6627024857991372,
+        "ordinary_plus_fourier": 0.6606951604021981,
+        "strong_baseline": 0.6582506531922201,
+        "strong_plus_fourier": 0.6582642030084056
+      }
+    },
+    {
+      "dataset": "pubmed26_0011",
+      "stratum": "science",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.004635728345363,
+      "final_ce_bits": 3.5361704118466473,
+      "learning_amount_bits": 4.468465316498716,
+      "fractional_learning": 0.5582317381128195,
+      "normalized_curve_area": 0.6831895389869276,
+      "final_ce_fraction": 0.44176826188718055,
+      "predictions": {
+        "ordinary_baseline": 0.6880929057622022,
+        "ordinary_plus_fourier": 0.6839755202380517,
+        "strong_baseline": 0.6836410731552851,
+        "strong_plus_fourier": 0.6833204207880783
+      }
+    },
+    {
+      "dataset": "rust_book_docs",
+      "stratum": "documentation",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.960377626981003,
+      "final_ce_bits": 2.5215137896183073,
+      "learning_amount_bits": 5.438863837362696,
+      "fractional_learning": 0.6832378636963219,
+      "normalized_curve_area": 0.6916667967581406,
+      "final_ce_fraction": 0.31676213630367817,
+      "predictions": {
+        "ordinary_baseline": 0.6848283416266517,
+        "ordinary_plus_fourier": 0.6811401325591881,
+        "strong_baseline": 0.6796700979741336,
+        "strong_plus_fourier": 0.6793352128113284
+      }
+    },
+    {
+      "dataset": "rust_book_docs",
+      "stratum": "documentation",
+      "architecture": "rope",
+      "initial_ce_bits": 7.982449364444784,
+      "final_ce_bits": 2.0352939841360973,
+      "learning_amount_bits": 5.947155380308686,
+      "fractional_learning": 0.7450247434499722,
+      "normalized_curve_area": 0.6634008313315516,
+      "final_ce_fraction": 0.25497525655002795,
+      "predictions": {
+        "ordinary_baseline": 0.6617149452674688,
+        "ordinary_plus_fourier": 0.6579959758252587,
+        "strong_baseline": 0.6565567016149506,
+        "strong_plus_fourier": 0.6562169444656699
+      }
+    },
+    {
+      "dataset": "rust_book_docs",
+      "stratum": "documentation",
+      "architecture": "nope",
+      "initial_ce_bits": 7.9824332840669285,
+      "final_ce_bits": 3.337356704627069,
+      "learning_amount_bits": 4.645076579439859,
+      "fractional_learning": 0.5819103746894223,
+      "normalized_curve_area": 0.6940739664882611,
+      "final_ce_fraction": 0.41808962531057775,
+      "predictions": {
+        "ordinary_baseline": 0.6897271183759535,
+        "ordinary_plus_fourier": 0.689030710213568,
+        "strong_baseline": 0.6845688747234353,
+        "strong_plus_fourier": 0.6847078463867261
+      }
+    },
+    {
+      "dataset": "rust_book_docs",
+      "stratum": "documentation",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.98392342774533,
+      "final_ce_bits": 2.2632269768821742,
+      "learning_amount_bits": 5.720696450863155,
+      "fractional_learning": 0.7165273650528581,
+      "normalized_curve_area": 0.6691256549754794,
+      "final_ce_fraction": 0.283472634947142,
+      "predictions": {
+        "ordinary_baseline": 0.6655116792185378,
+        "ordinary_plus_fourier": 0.6641144574822492,
+        "strong_baseline": 0.6603534355660198,
+        "strong_plus_fourier": 0.6603814087683998
+      }
+    },
+    {
+      "dataset": "rust_book_docs",
+      "stratum": "documentation",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.982569064369784,
+      "final_ce_bits": 3.378964080389344,
+      "learning_amount_bits": 4.603604983980441,
+      "fractional_learning": 0.5767033020792084,
+      "normalized_curve_area": 0.6954565554185759,
+      "final_ce_fraction": 0.4232966979207916,
+      "predictions": {
+        "ordinary_baseline": 0.690902099181603,
+        "ordinary_plus_fourier": 0.689776684558326,
+        "strong_baseline": 0.6857438555290848,
+        "strong_plus_fourier": 0.6858148789410103
+      }
+    },
+    {
+      "dataset": "sail_formal",
+      "stratum": "formal",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.956879929819081,
+      "final_ce_bits": 1.7337640041518396,
+      "learning_amount_bits": 6.223115925667242,
+      "fractional_learning": 0.7821053999671028,
+      "normalized_curve_area": 0.6699533143034537,
+      "final_ce_fraction": 0.21789460003289718,
+      "predictions": {
+        "ordinary_baseline": 0.7038143089752698,
+        "ordinary_plus_fourier": 0.6998222709145536,
+        "strong_baseline": 0.6994540803411343,
+        "strong_plus_fourier": 0.6991206408789858
+      }
+    },
+    {
+      "dataset": "sail_formal",
+      "stratum": "formal",
+      "architecture": "rope",
+      "initial_ce_bits": 7.9718831803324,
+      "final_ce_bits": 1.517776732854211,
+      "learning_amount_bits": 6.454106447478189,
+      "fractional_learning": 0.8096048711921434,
+      "normalized_curve_area": 0.6495571017337399,
+      "final_ce_fraction": 0.19039512880785658,
+      "predictions": {
+        "ordinary_baseline": 0.6807009126160868,
+        "ordinary_plus_fourier": 0.6766345173886391,
+        "strong_baseline": 0.6763406839819515,
+        "strong_plus_fourier": 0.6759954674490207
+      }
+    },
+    {
+      "dataset": "sail_formal",
+      "stratum": "formal",
+      "architecture": "nope",
+      "initial_ce_bits": 7.971838636825826,
+      "final_ce_bits": 2.7127620015242613,
+      "learning_amount_bits": 5.2590766353015646,
+      "fractional_learning": 0.6597058359538223,
+      "normalized_curve_area": 0.6794146739255427,
+      "final_ce_fraction": 0.34029416404617774,
+      "predictions": {
+        "ordinary_baseline": 0.7087130857245715,
+        "ordinary_plus_fourier": 0.7123740531429341,
+        "strong_baseline": 0.7043528570904362,
+        "strong_plus_fourier": 0.7052315400259564
+      }
+    },
+    {
+      "dataset": "sail_formal",
+      "stratum": "formal",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.973239177543128,
+      "final_ce_bits": 1.611969996896588,
+      "learning_amount_bits": 6.3612691806465405,
+      "fractional_learning": 0.797820729061679,
+      "normalized_curve_area": 0.6446409355553645,
+      "final_ce_fraction": 0.20217927093832105,
+      "predictions": {
+        "ordinary_baseline": 0.684497646567156,
+        "ordinary_plus_fourier": 0.6851759167330473,
+        "strong_baseline": 0.6801374179330206,
+        "strong_plus_fourier": 0.6805436859258011
+      }
+    },
+    {
+      "dataset": "sail_formal",
+      "stratum": "formal",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.9728772400543875,
+      "final_ce_bits": 2.7781050683952455,
+      "learning_amount_bits": 5.194772171659142,
+      "fractional_learning": 0.6515603812425329,
+      "normalized_curve_area": 0.6823141134812583,
+      "final_ce_fraction": 0.3484396187574671,
+      "predictions": {
+        "ordinary_baseline": 0.709888066530221,
+        "ordinary_plus_fourier": 0.7129259549896801,
+        "strong_baseline": 0.7055278378960855,
+        "strong_plus_fourier": 0.7063078343791177
+      }
+    },
+    {
+      "dataset": "scala3_language",
+      "stratum": "language",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.933887655216558,
+      "final_ce_bits": 2.5861911331456326,
+      "learning_amount_bits": 5.347696522070925,
+      "fractional_learning": 0.6740323886626243,
+      "normalized_curve_area": 0.6924324300564944,
+      "final_ce_fraction": 0.32596761133737573,
+      "predictions": {
+        "ordinary_baseline": 0.6909728819105418,
+        "ordinary_plus_fourier": 0.6972935697895213,
+        "strong_baseline": 0.7067817972781651,
+        "strong_plus_fourier": 0.7071382416942349
+      }
+    },
+    {
+      "dataset": "scala3_language",
+      "stratum": "language",
+      "architecture": "rope",
+      "initial_ce_bits": 7.93701455778322,
+      "final_ce_bits": 2.283774991054973,
+      "learning_amount_bits": 5.653239566728247,
+      "fractional_learning": 0.712258620345095,
+      "normalized_curve_area": 0.6740964740205109,
+      "final_ce_fraction": 0.287741379654905,
+      "predictions": {
+        "ordinary_baseline": 0.6678594855513588,
+        "ordinary_plus_fourier": 0.6742153356706893,
+        "strong_baseline": 0.6836684009189822,
+        "strong_plus_fourier": 0.6840304145116581
+      }
+    },
+    {
+      "dataset": "scala3_language",
+      "stratum": "language",
+      "architecture": "nope",
+      "initial_ce_bits": 7.936936391668403,
+      "final_ce_bits": 3.539385541513202,
+      "learning_amount_bits": 4.3975508501552,
+      "fractional_learning": 0.5540469574370166,
+      "normalized_curve_area": 0.7002790131723411,
+      "final_ce_fraction": 0.4459530425629835,
+      "predictions": {
+        "ordinary_baseline": 0.6958716586598436,
+        "ordinary_plus_fourier": 0.6987445220871704,
+        "strong_baseline": 0.7116805740274669,
+        "strong_plus_fourier": 0.7114909342609885
+      }
+    },
+    {
+      "dataset": "scala3_language",
+      "stratum": "language",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.942037139119018,
+      "final_ce_bits": 2.5312613148147527,
+      "learning_amount_bits": 5.410775824304265,
+      "fractional_learning": 0.6812771233216239,
+      "normalized_curve_area": 0.6750709820838205,
+      "final_ce_fraction": 0.318722876678376,
+      "predictions": {
+        "ordinary_baseline": 0.6716562195024279,
+        "ordinary_plus_fourier": 0.6775933542283049,
+        "strong_baseline": 0.6874651348700513,
+        "strong_plus_fourier": 0.6877608301635909
+      }
+    },
+    {
+      "dataset": "scala3_language",
+      "stratum": "language",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.938159188316037,
+      "final_ce_bits": 3.5203885958728725,
+      "learning_amount_bits": 4.417770592443164,
+      "fractional_learning": 0.556513356372317,
+      "normalized_curve_area": 0.7012718647469651,
+      "final_ce_fraction": 0.44348664362768286,
+      "predictions": {
+        "ordinary_baseline": 0.697046639465493,
+        "ordinary_plus_fourier": 0.6999065540824964,
+        "strong_baseline": 0.7128555548331164,
+        "strong_plus_fourier": 0.7126638641674117
+      }
+    },
+    {
+      "dataset": "systemd_code",
+      "stratum": "application_code",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.848836816911397,
+      "final_ce_bits": 2.19730555385417,
+      "learning_amount_bits": 5.651531263057226,
+      "fractional_learning": 0.7200490438484755,
+      "normalized_curve_area": 0.6473408226742177,
+      "final_ce_fraction": 0.27995095615152465,
+      "predictions": {
+        "ordinary_baseline": 0.5862874986997281,
+        "ordinary_plus_fourier": 0.590802861290735,
+        "strong_baseline": 0.5929481555182402,
+        "strong_plus_fourier": 0.5931305927985143
+      }
+    },
+    {
+      "dataset": "systemd_code",
+      "stratum": "application_code",
+      "architecture": "rope",
+      "initial_ce_bits": 7.849501357874331,
+      "final_ce_bits": 1.7956405027207079,
+      "learning_amount_bits": 6.053860855153623,
+      "fractional_learning": 0.7712126616118659,
+      "normalized_curve_area": 0.624248933869624,
+      "final_ce_fraction": 0.22878733838813406,
+      "predictions": {
+        "ordinary_baseline": 0.5631741023405451,
+        "ordinary_plus_fourier": 0.5677238398568736,
+        "strong_baseline": 0.5698347591590573,
+        "strong_plus_fourier": 0.5700226409169309
+      }
+    },
+    {
+      "dataset": "systemd_code",
+      "stratum": "application_code",
+      "architecture": "nope",
+      "initial_ce_bits": 7.849466703370181,
+      "final_ce_bits": 2.7828041503647705,
+      "learning_amount_bits": 5.066662553005411,
+      "fractional_learning": 0.6454438050238084,
+      "normalized_curve_area": 0.6525158961150543,
+      "final_ce_fraction": 0.3545561949761916,
+      "predictions": {
+        "ordinary_baseline": 0.5911862754490298,
+        "ordinary_plus_fourier": 0.5921385394485915,
+        "strong_baseline": 0.597846932267542,
+        "strong_plus_fourier": 0.5974650276536936
+      }
+    },
+    {
+      "dataset": "systemd_code",
+      "stratum": "application_code",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.855372243635509,
+      "final_ce_bits": 2.0157853256159566,
+      "learning_amount_bits": 5.8395869180195525,
+      "fractional_learning": 0.7433625565513997,
+      "normalized_curve_area": 0.6274958171333995,
+      "final_ce_fraction": 0.25663744344860034,
+      "predictions": {
+        "ordinary_baseline": 0.5669708362916143,
+        "ordinary_plus_fourier": 0.5696836178794628,
+        "strong_baseline": 0.5736314931101265,
+        "strong_plus_fourier": 0.5735284283332657
+      }
+    },
+    {
+      "dataset": "systemd_code",
+      "stratum": "application_code",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.850328766407632,
+      "final_ce_bits": 2.795784540938641,
+      "learning_amount_bits": 5.054544225468991,
+      "fractional_learning": 0.6438444383337809,
+      "normalized_curve_area": 0.6541396086897668,
+      "final_ce_fraction": 0.3561555616662191,
+      "predictions": {
+        "ordinary_baseline": 0.5923612562546793,
+        "ordinary_plus_fourier": 0.5931817308893061,
+        "strong_baseline": 0.5990219130731914,
+        "strong_plus_fourier": 0.598619134981407
+      }
+    },
+    {
+      "dataset": "tolstoy_prose",
+      "stratum": "prose",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.984440321602497,
+      "final_ce_bits": 2.5319386469873444,
+      "learning_amount_bits": 5.452501674615153,
+      "fractional_learning": 0.6828888311532852,
+      "normalized_curve_area": 0.6600294146937526,
+      "final_ce_fraction": 0.3171111688467147,
+      "predictions": {
+        "ordinary_baseline": 0.6607697467557982,
+        "ordinary_plus_fourier": 0.6630671728277617,
+        "strong_baseline": 0.6601295455055503,
+        "strong_plus_fourier": 0.6604457620783777
+      }
+    },
+    {
+      "dataset": "tolstoy_prose",
+      "stratum": "prose",
+      "architecture": "rope",
+      "initial_ce_bits": 8.003070428248536,
+      "final_ce_bits": 2.267580115749489,
+      "learning_amount_bits": 5.735490312499048,
+      "fractional_learning": 0.7166523632066462,
+      "normalized_curve_area": 0.6398047806811842,
+      "final_ce_fraction": 0.28334763679335384,
+      "predictions": {
+        "ordinary_baseline": 0.6376563503966153,
+        "ordinary_plus_fourier": 0.6400178382966204,
+        "strong_baseline": 0.6370161491463673,
+        "strong_plus_fourier": 0.6373425121612452
+      }
+    },
+    {
+      "dataset": "tolstoy_prose",
+      "stratum": "prose",
+      "architecture": "nope",
+      "initial_ce_bits": 8.003095279741586,
+      "final_ce_bits": 3.2663885367008207,
+      "learning_amount_bits": 4.736706743040765,
+      "fractional_learning": 0.5918551655158313,
+      "normalized_curve_area": 0.6647666913410666,
+      "final_ce_fraction": 0.40814483448416883,
+      "predictions": {
+        "ordinary_baseline": 0.6656685235051,
+        "ordinary_plus_fourier": 0.6628037049206448,
+        "strong_baseline": 0.665028322254852,
+        "strong_plus_fourier": 0.6645269159490081
+      }
+    },
+    {
+      "dataset": "tolstoy_prose",
+      "stratum": "prose",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.003056583645144,
+      "final_ce_bits": 2.3897486152269938,
+      "learning_amount_bits": 5.613307968418149,
+      "fractional_learning": 0.7013949214367461,
+      "normalized_curve_area": 0.6424916732676549,
+      "final_ce_fraction": 0.2986050785632539,
+      "predictions": {
+        "ordinary_baseline": 0.6414530843476844,
+        "ordinary_plus_fourier": 0.6412544504781178,
+        "strong_baseline": 0.6408128830974364,
+        "strong_plus_fourier": 0.6407337608495451
+      }
+    },
+    {
+      "dataset": "tolstoy_prose",
+      "stratum": "prose",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.002645717092232,
+      "final_ce_bits": 3.269299343066674,
+      "learning_amount_bits": 4.733346374025557,
+      "fractional_learning": 0.5914672986031946,
+      "normalized_curve_area": 0.6650991754075737,
+      "final_ce_fraction": 0.4085327013968054,
+      "predictions": {
+        "ordinary_baseline": 0.6668435043107495,
+        "ordinary_plus_fourier": 0.664956692107542,
+        "strong_baseline": 0.6662033030605015,
+        "strong_plus_fourier": 0.6658567984391023
+      }
+    },
+    {
+      "dataset": "v_language",
+      "stratum": "language",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.963145601755315,
+      "final_ce_bits": 3.019792072674437,
+      "learning_amount_bits": 4.943353529080878,
+      "fractional_learning": 0.6207797891521882,
+      "normalized_curve_area": 0.7062138977851352,
+      "final_ce_fraction": 0.37922021084781177,
+      "predictions": {
+        "ordinary_baseline": 0.7569860411217557,
+        "ordinary_plus_fourier": 0.759977011650201,
+        "strong_baseline": 0.7600921286858972,
+        "strong_plus_fourier": 0.7603299957719417
+      }
+    },
+    {
+      "dataset": "v_language",
+      "stratum": "language",
+      "architecture": "rope",
+      "initial_ce_bits": 7.970406709274743,
+      "final_ce_bits": 2.5789304770806636,
+      "learning_amount_bits": 5.39147623219408,
+      "fractional_learning": 0.6764334802492681,
+      "normalized_curve_area": 0.69192465456926,
+      "final_ce_fraction": 0.3235665197507319,
+      "predictions": {
+        "ordinary_baseline": 0.7338726447625727,
+        "ordinary_plus_fourier": 0.7368580944621075,
+        "strong_baseline": 0.7369787323267142,
+        "strong_plus_fourier": 0.7372157249954603
+      }
+    },
+    {
+      "dataset": "v_language",
+      "stratum": "language",
+      "architecture": "nope",
+      "initial_ce_bits": 7.970388479113751,
+      "final_ce_bits": 3.6450636779932095,
+      "learning_amount_bits": 4.3253248011205425,
+      "fractional_learning": 0.542668240277808,
+      "normalized_curve_area": 0.7085067694924276,
+      "final_ce_fraction": 0.4573317597221919,
+      "predictions": {
+        "ordinary_baseline": 0.7618848178710574,
+        "ordinary_plus_fourier": 0.7658002690212323,
+        "strong_baseline": 0.7649909054351989,
+        "strong_plus_fourier": 0.7653751965203994
+      }
+    },
+    {
+      "dataset": "v_language",
+      "stratum": "language",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.973635855527343,
+      "final_ce_bits": 2.782848134927728,
+      "learning_amount_bits": 5.190787720599614,
+      "fractional_learning": 0.6509984580857008,
+      "normalized_curve_area": 0.6920846940150533,
+      "final_ce_fraction": 0.3490015419142992,
+      "predictions": {
+        "ordinary_baseline": 0.7376693787136418,
+        "ordinary_plus_fourier": 0.7410340158684844,
+        "strong_baseline": 0.7407754662777833,
+        "strong_plus_fourier": 0.7410725166073726
+      }
+    },
+    {
+      "dataset": "v_language",
+      "stratum": "language",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.969129480118109,
+      "final_ce_bits": 3.67567375213305,
+      "learning_amount_bits": 4.29345572798506,
+      "fractional_learning": 0.5387559445880725,
+      "normalized_curve_area": 0.7099131213058818,
+      "final_ce_fraction": 0.4612440554119275,
+      "predictions": {
+        "ordinary_baseline": 0.7630597986767068,
+        "ordinary_plus_fourier": 0.7668885396959331,
+        "strong_baseline": 0.7661658862408482,
+        "strong_plus_fourier": 0.7665364437292136
+      }
+    },
+    {
+      "dataset": "verifast_formal",
+      "stratum": "formal",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.914167092572724,
+      "final_ce_bits": 1.9882800112764798,
+      "learning_amount_bits": 5.925887081296244,
+      "fractional_learning": 0.7487689908463973,
+      "normalized_curve_area": 0.6686321686771745,
+      "final_ce_fraction": 0.25123100915360264,
+      "predictions": {
+        "ordinary_baseline": 0.6489044993654478,
+        "ordinary_plus_fourier": 0.6499137453134954,
+        "strong_baseline": 0.646979421210707,
+        "strong_plus_fourier": 0.6470626974643187
+      }
+    },
+    {
+      "dataset": "verifast_formal",
+      "stratum": "formal",
+      "architecture": "rope",
+      "initial_ce_bits": 7.913923565139101,
+      "final_ce_bits": 1.7297858304590694,
+      "learning_amount_bits": 6.184137734680032,
+      "fractional_learning": 0.7814229831704078,
+      "normalized_curve_area": 0.650100533241128,
+      "final_ce_fraction": 0.21857701682959219,
+      "predictions": {
+        "ordinary_baseline": 0.6257911030062648,
+        "ordinary_plus_fourier": 0.6267783813003037,
+        "strong_baseline": 0.623866024851524,
+        "strong_plus_fourier": 0.6239458217550267
+      }
+    },
+    {
+      "dataset": "verifast_formal",
+      "stratum": "formal",
+      "architecture": "nope",
+      "initial_ce_bits": 7.913892608261946,
+      "final_ce_bits": 2.9364720247718963,
+      "learning_amount_bits": 4.97742058349005,
+      "fractional_learning": 0.6289351792530485,
+      "normalized_curve_area": 0.6763214869589425,
+      "final_ce_fraction": 0.37106482074695146,
+      "predictions": {
+        "ordinary_baseline": 0.6538032761147495,
+        "ordinary_plus_fourier": 0.6569853387832246,
+        "strong_baseline": 0.6518781979600087,
+        "strong_plus_fourier": 0.6523056161092534
+      }
+    },
+    {
+      "dataset": "verifast_formal",
+      "stratum": "formal",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.919071693810029,
+      "final_ce_bits": 1.842587724813959,
+      "learning_amount_bits": 6.07648396899607,
+      "fractional_learning": 0.7673135093042094,
+      "normalized_curve_area": 0.6468891929751305,
+      "final_ce_fraction": 0.23268649069579056,
+      "predictions": {
+        "ordinary_baseline": 0.629587836957334,
+        "ordinary_plus_fourier": 0.6314145180924987,
+        "strong_baseline": 0.6276627588025931,
+        "strong_plus_fourier": 0.6278755046484658
+      }
+    },
+    {
+      "dataset": "verifast_formal",
+      "stratum": "formal",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.914637035166205,
+      "final_ce_bits": 2.9692972354548504,
+      "learning_amount_bits": 4.9453397997113555,
+      "fractional_learning": 0.6248243477429353,
+      "normalized_curve_area": 0.6774674830297303,
+      "final_ce_fraction": 0.3751756522570648,
+      "predictions": {
+        "ordinary_baseline": 0.654978256920399,
+        "ordinary_plus_fourier": 0.6579115658902678,
+        "strong_baseline": 0.6530531787656582,
+        "strong_plus_fourier": 0.6534411980237863
+      }
+    },
+    {
+      "dataset": "vscode_code",
+      "stratum": "application_code",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.939704710408016,
+      "final_ce_bits": 2.818120314767158,
+      "learning_amount_bits": 5.121584395640857,
+      "fractional_learning": 0.6450635041744883,
+      "normalized_curve_area": 0.7014679080461602,
+      "final_ce_fraction": 0.3549364958255116,
+      "predictions": {
+        "ordinary_baseline": 0.7251864889552423,
+        "ordinary_plus_fourier": 0.7275307729623287,
+        "strong_baseline": 0.7300121700568362,
+        "strong_plus_fourier": 0.7301181435938189
+      }
+    },
+    {
+      "dataset": "vscode_code",
+      "stratum": "application_code",
+      "architecture": "rope",
+      "initial_ce_bits": 7.945965566830026,
+      "final_ce_bits": 2.3098778083744955,
+      "learning_amount_bits": 5.63608775845553,
+      "fractional_learning": 0.7093097051547275,
+      "normalized_curve_area": 0.6845262070507709,
+      "final_ce_fraction": 0.29069029484527253,
+      "predictions": {
+        "ordinary_baseline": 0.7020730925960593,
+        "ordinary_plus_fourier": 0.704395848289757,
+        "strong_baseline": 0.7068987736976532,
+        "strong_plus_fourier": 0.7070013374695555
+      }
+    },
+    {
+      "dataset": "vscode_code",
+      "stratum": "application_code",
+      "architecture": "nope",
+      "initial_ce_bits": 7.94598414095632,
+      "final_ce_bits": 3.4163293320854367,
+      "learning_amount_bits": 4.529654808870882,
+      "fractional_learning": 0.570048899843232,
+      "normalized_curve_area": 0.7035630608785213,
+      "final_ce_fraction": 0.4299511001567679,
+      "predictions": {
+        "ordinary_baseline": 0.730085265704544,
+        "ordinary_plus_fourier": 0.7344393196283252,
+        "strong_baseline": 0.7349109468061379,
+        "strong_plus_fourier": 0.7353352380467792
+      }
+    },
+    {
+      "dataset": "vscode_code",
+      "stratum": "application_code",
+      "architecture": "alibi",
+      "initial_ce_bits": 7.9491936811867205,
+      "final_ce_bits": 2.492053247516833,
+      "learning_amount_bits": 5.457140433669887,
+      "fractional_learning": 0.6865013058126554,
+      "normalized_curve_area": 0.6840941362003056,
+      "final_ce_fraction": 0.31349869418734455,
+      "predictions": {
+        "ordinary_baseline": 0.7058698265471284,
+        "ordinary_plus_fourier": 0.7090227683771483,
+        "strong_baseline": 0.7106955076487224,
+        "strong_plus_fourier": 0.7109295605738496
+      }
+    },
+    {
+      "dataset": "vscode_code",
+      "stratum": "application_code",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 7.94769751811554,
+      "final_ce_bits": 3.4602074807783785,
+      "learning_amount_bits": 4.487490037337161,
+      "fractional_learning": 0.564621422164602,
+      "normalized_curve_area": 0.7051402848374216,
+      "final_ce_fraction": 0.43537857783539813,
+      "predictions": {
+        "ordinary_baseline": 0.7312602465101934,
+        "ordinary_plus_fourier": 0.7353975700576614,
+        "strong_baseline": 0.7360859276117874,
+        "strong_plus_fourier": 0.7364758919799205
+      }
+    },
+    {
+      "dataset": "wells_prose",
+      "stratum": "prose",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.987226268563824,
+      "final_ce_bits": 2.7251974220732107,
+      "learning_amount_bits": 5.2620288464906135,
+      "fractional_learning": 0.6588058761553092,
+      "normalized_curve_area": 0.6675473812525528,
+      "final_ce_fraction": 0.34119412384469083,
+      "predictions": {
+        "ordinary_baseline": 0.6596082722237955,
+        "ordinary_plus_fourier": 0.6632299562087194,
+        "strong_baseline": 0.6622731227134666,
+        "strong_plus_fourier": 0.6627231077889673
+      }
+    },
+    {
+      "dataset": "wells_prose",
+      "stratum": "prose",
+      "architecture": "rope",
+      "initial_ce_bits": 8.004521875830493,
+      "final_ce_bits": 2.416048481668742,
+      "learning_amount_bits": 5.588473394161751,
+      "fractional_learning": 0.6981576564884138,
+      "normalized_curve_area": 0.6462190898393991,
+      "final_ce_fraction": 0.30184234351158623,
+      "predictions": {
+        "ordinary_baseline": 0.6364948758646125,
+        "ordinary_plus_fourier": 0.640188576166436,
+        "strong_baseline": 0.6391597263542836,
+        "strong_plus_fourier": 0.6396211177447216
+      }
+    },
+    {
+      "dataset": "wells_prose",
+      "stratum": "prose",
+      "architecture": "nope",
+      "initial_ce_bits": 8.004524025613629,
+      "final_ce_bits": 3.3551830933499636,
+      "learning_amount_bits": 4.649340932263666,
+      "fractional_learning": 0.5808367217135322,
+      "normalized_curve_area": 0.6712180838032071,
+      "final_ce_fraction": 0.4191632782864677,
+      "predictions": {
+        "ordinary_baseline": 0.6645070489730972,
+        "ordinary_plus_fourier": 0.6627570689375387,
+        "strong_baseline": 0.6671718994627683,
+        "strong_plus_fourier": 0.6667710927428393
+      }
+    },
+    {
+      "dataset": "wells_prose",
+      "stratum": "prose",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.004191669140837,
+      "final_ce_bits": 2.5587293734124863,
+      "learning_amount_bits": 5.445462295728351,
+      "fractional_learning": 0.680324332526172,
+      "normalized_curve_area": 0.6495328660707306,
+      "final_ce_fraction": 0.31967566747382803,
+      "predictions": {
+        "ordinary_baseline": 0.6402916098156817,
+        "ordinary_plus_fourier": 0.6410438934619294,
+        "strong_baseline": 0.6429564603053528,
+        "strong_plus_fourier": 0.6429519749864578
+      }
+    },
+    {
+      "dataset": "wells_prose",
+      "stratum": "prose",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.005197939631035,
+      "final_ce_bits": 3.365756328751033,
+      "learning_amount_bits": 4.639441610880002,
+      "fractional_learning": 0.5795531136396246,
+      "normalized_curve_area": 0.6714767518420766,
+      "final_ce_fraction": 0.42044688636037547,
+      "predictions": {
+        "ordinary_baseline": 0.6656820297787467,
+        "ordinary_plus_fourier": 0.6651215736190448,
+        "strong_baseline": 0.6683468802684177,
+        "strong_plus_fourier": 0.6681344764624065
+      }
+    },
+    {
+      "dataset": "wharton_prose",
+      "stratum": "prose",
+      "architecture": "learned_absolute",
+      "initial_ce_bits": 7.9881067337449165,
+      "final_ce_bits": 2.623294863723257,
+      "learning_amount_bits": 5.36481187002166,
+      "fractional_learning": 0.6715978499711562,
+      "normalized_curve_area": 0.664538664820741,
+      "final_ce_fraction": 0.32840215002884376,
+      "predictions": {
+        "ordinary_baseline": 0.6589469925091803,
+        "ordinary_plus_fourier": 0.6616359836043346,
+        "strong_baseline": 0.6612444952002006,
+        "strong_plus_fourier": 0.661641649161059
+      }
+    },
+    {
+      "dataset": "wharton_prose",
+      "stratum": "prose",
+      "architecture": "rope",
+      "initial_ce_bits": 8.008889203266504,
+      "final_ce_bits": 2.3940146663794772,
+      "learning_amount_bits": 5.614874536887027,
+      "fractional_learning": 0.7010815492025608,
+      "normalized_curve_area": 0.6427021666380093,
+      "final_ce_fraction": 0.2989184507974392,
+      "predictions": {
+        "ordinary_baseline": 0.6358335961499973,
+        "ordinary_plus_fourier": 0.6385926222010307,
+        "strong_baseline": 0.6381310988410177,
+        "strong_plus_fourier": 0.638539345298657
+      }
+    },
+    {
+      "dataset": "wharton_prose",
+      "stratum": "prose",
+      "architecture": "nope",
+      "initial_ce_bits": 8.008895910589887,
+      "final_ce_bits": 3.3391668220274004,
+      "learning_amount_bits": 4.6697290885624865,
+      "fractional_learning": 0.5830660480203893,
+      "normalized_curve_area": 0.6694678342582205,
+      "final_ce_fraction": 0.41693395197961075,
+      "predictions": {
+        "ordinary_baseline": 0.663845769258482,
+        "ordinary_plus_fourier": 0.6610311025082891,
+        "strong_baseline": 0.6661432719495024,
+        "strong_plus_fourier": 0.665668728253579
+      }
+    },
+    {
+      "dataset": "wharton_prose",
+      "stratum": "prose",
+      "architecture": "alibi",
+      "initial_ce_bits": 8.008197661027385,
+      "final_ce_bits": 2.539520631137619,
+      "learning_amount_bits": 5.468677029889765,
+      "fractional_learning": 0.6828806767129404,
+      "normalized_curve_area": 0.6466630680576473,
+      "final_ce_fraction": 0.3171193232870596,
+      "predictions": {
+        "ordinary_baseline": 0.6396303301010664,
+        "ordinary_plus_fourier": 0.639810474981016,
+        "strong_baseline": 0.6419278327920869,
+        "strong_plus_fourier": 0.6419276227763911
+      }
+    },
+    {
+      "dataset": "wharton_prose",
+      "stratum": "prose",
+      "architecture": "reverse_alibi",
+      "initial_ce_bits": 8.009280635779866,
+      "final_ce_bits": 3.336376489508477,
+      "learning_amount_bits": 4.6729041462713905,
+      "fractional_learning": 0.5834339905426534,
+      "normalized_curve_area": 0.6698080643504523,
+      "final_ce_fraction": 0.4165660094573466,
+      "predictions": {
+        "ordinary_baseline": 0.6650207500641314,
+        "ordinary_plus_fourier": 0.6633081309779992,
+        "strong_baseline": 0.6673182527551518,
+        "strong_plus_fourier": 0.6670182570404833
+      }
+    }
+  ]
+}

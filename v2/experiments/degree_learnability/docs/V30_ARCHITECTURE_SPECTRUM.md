@@ -168,3 +168,29 @@ data. Those are not the same coefficient directions under the same measure.
 
 Protocol: `configs/protocol_v3.1.json`. Artifacts:
 `runs/local/v30_architecture_spectrum/`.
+
+## v3.2 prospective source expansion
+
+The 2.04% ordinary-controls improvement was selected after observing the pilot,
+so v3.2 treats it as a new hypothesis. Before observing any expansion outcome,
+the protocol froze four pilot-fit OLS models and their predictions for the 48
+unused sources. The expansion then measured five architectures and two seeds per
+source, producing 480 H100 cells and 240 seed-median prediction rows.
+
+| frozen comparison | baseline RMSE | + overlap RMSE | relative change | 95% stratified corpus interval |
+|---|---:|---:|---:|---:|
+| ordinary entropy/compression controls | 0.024867 | 0.024593 | +1.10% | [-1.57%, 3.54%] |
+| strong degree/energy/locality controls | 0.023153 | 0.023225 | -0.31% | [-0.512%, -0.106%] |
+
+The primary interval crosses zero, so the frozen replication gate fails. The
+ordinary point effect is positive for learned absolute, RoPE, ALiBi, and reverse
+ALiBi and negative for NoPE; by source stratum it is positive for application
+code, formal text, languages, prose, and science but negative for documentation.
+The strong comparison worsens for every architecture. This localizes the result:
+aggregate Fourier structure can modestly supplement ordinary statistics, but
+the current exact-support character match supplies no robust information beyond
+the existing degree/energy/locality summaries.
+
+Protocol: `configs/protocol_v3.2.json`. Frozen predictions, expansion outcomes,
+analysis, and the independent PASS audit are under
+`runs/local/v30_architecture_spectrum/expansion_*`.

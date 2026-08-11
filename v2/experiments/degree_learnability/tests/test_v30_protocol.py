@@ -92,3 +92,21 @@ def test_v32_expansion_predictions_are_frozen_for_48_unseen_corpora() -> None:
         "strong_baseline",
         "strong_plus_fourier",
     }
+
+
+def test_v32_expansion_result_and_audit_are_complete() -> None:
+    analysis_path = OUT / "expansion_analysis.json"
+    audit_path = OUT / "expansion_audit.json"
+    assert file_sha256(analysis_path) == (
+        OUT / "expansion_analysis.sha256"
+    ).read_text().strip()
+    assert file_sha256(audit_path) == (
+        OUT / "expansion_audit.sha256"
+    ).read_text().strip()
+    analysis = json.loads(analysis_path.read_text())
+    audit = json.loads(audit_path.read_text())
+    assert analysis["verdict"] == "EXPANDED_FOURIER_SIGNAL_DOES_NOT_REPLICATE"
+    assert len(analysis["rows"]) == 48 * 5 == 240
+    assert not analysis["primary_gate"]["interval_strictly_positive"]
+    assert audit["status"] == "PASS"
+    assert audit["locks"]["results"] == file_sha256(OUT / "expansion_results.json")

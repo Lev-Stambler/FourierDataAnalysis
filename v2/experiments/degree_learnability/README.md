@@ -68,6 +68,16 @@ gate failed, so confirmation was not run. The result supports aggregate Fourier
 predictivity, not the proposed incremental exact-support architecture match. See
 [`docs/V30_ARCHITECTURE_SPECTRUM.md`](docs/V30_ARCHITECTURE_SPECTRUM.md).
 
+Protocol v3.2 then froze the narrower, pilot-derived ordinary-baseline claim
+before observing outcomes on the 48 unused sources. Across 240 held-out
+corpus–architecture rows, adding Fourier-CE overlap improved ordinary-baseline
+RMSE by 1.10% (`0.024867` to `0.024593`), but the preregistered stratified
+corpus-bootstrap interval was `[-1.57%, 3.54%]`; the prospective replication
+gate therefore failed. Against the stronger degree/energy/locality baseline,
+overlap worsened RMSE by 0.31%, with interval `[-0.512%, -0.106%]`. The larger
+panel supports a modest aggregate Fourier signal but not a conclusive unique
+exact-support matching effect. Expansion audit PASS.
+
 The exact basis and statistic are defined in [`LOCALITY_MATH.md`](LOCALITY_MATH.md).
 The research narrative—including the failed endpoint test and the post-hoc
 marginal-locality correction—is in [`BLOG.md`](BLOG.md).

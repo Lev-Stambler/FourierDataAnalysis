@@ -694,3 +694,28 @@ held-out signal beyond the existing spectrum summaries. The verdict is
 **PILOT_GATE_FAILED; NO_CONFIRMATION**. Audit PASS. Locks: protocol `a33dac68…`,
 Fourier response `ab650318…`, pilot analysis and diagnostics are in
 `runs/local/v30_architecture_spectrum/`.
+
+## v3.2 prospective 48-corpus expansion (2026-08-11)
+
+The narrower ordinary-baseline hypothesis was motivated by v3.1, then frozen
+before any outcomes from the 48 unused sources. Four OLS models and all 240
+corpus–architecture predictions were hash-locked before running 480 new H100
+training cells. The prediction unit was the median over two seeds, and the
+primary uncertainty calculation resampled eight corpora within each of six
+source strata while retaining all five architectures.
+
+The primary ordinary-controls comparison improved RMSE from `0.024867` to
+`0.024593`, or `1.10%`, but its 100,000-draw paired bootstrap interval was
+`[-1.57%, 3.54%]`. The frozen verdict is therefore
+**EXPANDED_FOURIER_SIGNAL_DOES_NOT_REPLICATE**. The point effect was positive in
+four of five architectures and five of six strata, so the result is
+inconclusive rather than evidence of a reversed aggregate effect.
+
+The secondary strong-controls result was negative and precise: RMSE changed
+from `0.023153` to `0.023225` (`-0.31%`), interval
+`[-0.512%, -0.106%]`, and all five architectures worsened. The expanded panel
+therefore reinforces the v3.1 conclusion: Fourier information is present, but
+this exact-support Fourier-CE overlap is redundant once degree, energy, and
+locality summaries are included. Audit PASS. Locks: protocol `a7dd59ec…`,
+predictions `a7de53cc…`, results `a1e8fc9d…`, analysis `d15d0b5f…`, audit
+`9891e056…`.
