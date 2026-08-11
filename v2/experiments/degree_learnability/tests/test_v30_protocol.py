@@ -65,3 +65,30 @@ def test_v31_degree_three_sentinel_bank_is_frozen() -> None:
     assert len(supports) == len(set(supports)) == 12
     assert all(len(support) == 3 for support in supports)
     assert config["cells"] == len(supports) * 5 * 3 == 180
+
+
+def test_v32_expansion_predictions_are_frozen_for_48_unseen_corpora() -> None:
+    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.2.json")
+    assert protocol["protocol_hash"] == (
+        "a7dd59ecaddeb5d7edc02ec139f84459171c87ae57b5e2d79a6133651b81f5a1"
+    )
+    prediction_path = OUT / "expansion_predictions.json"
+    assert file_sha256(prediction_path) == (
+        OUT / "expansion_predictions.sha256"
+    ).read_text().strip()
+    artifact = json.loads(prediction_path.read_text())
+    assert artifact["protocol_hash"] == protocol["protocol_hash"]
+    assert artifact["status"].endswith("before any v3.2 expansion training outcome")
+    assert len(artifact["predictions"]) == 48 * 5 == 240
+    assert len(
+        {
+            (row["dataset"], row["architecture"])
+            for row in artifact["predictions"]
+        }
+    ) == 240
+    assert set(artifact["models"]) == {
+        "ordinary_baseline",
+        "ordinary_plus_fourier",
+        "strong_baseline",
+        "strong_plus_fourier",
+    }

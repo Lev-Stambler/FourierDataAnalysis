@@ -397,15 +397,19 @@ def natural_train_cell(payload: dict) -> dict:
             token_grid.append(step * spec["target_tokens_per_step"])
             curve.append(validate())
     summary = curve_metrics(token_grid, curve, curve[0])
-    prefix = "P" if row["panel"] == "pilot" else "C"
+    default_prefix = "P" if row["panel"] == "pilot" else "C"
     return {
-        "cell_id": f"V31{prefix}/{row['dataset']}/{architecture['id']}/s{seed}",
+        "cell_id": payload.get(
+            "cell_id",
+            f"V31{default_prefix}/{row['dataset']}/{architecture['id']}/s{seed}",
+        ),
         "dataset": row["dataset"],
         "panel": row["panel"],
         "stratum": row["stratum"],
         "architecture": architecture["id"],
         "seed": seed,
         "protocol_hash": protocol["protocol_hash"],
+        "analysis_protocol_hash": payload.get("analysis_protocol_hash"),
         "data_manifest_hash": payload["data_manifest_hash"],
         "profile_manifest_hash": payload["profile_manifest_hash"],
         "fourier_ce_kernel_hash": payload["fourier_ce_kernel_hash"],
@@ -619,25 +623,37 @@ def _run_natural(stage: str, limit: int) -> None:
         OUT / "fourier_ce_kernel.json", OUT / "fourier_ce_kernel.sha256"
     )
     prediction_hash = None
+    analysis_protocol_hash = None
     if stage == "confirmation":
         prediction_hash = verify_hash_lock(
             OUT / "predictions.json", OUT / "predictions.sha256"
         )
+    elif stage == "expansion":
+        prediction_hash = verify_hash_lock(
+            OUT / "expansion_predictions.json",
+            OUT / "expansion_predictions.sha256",
+        )
+        expansion_protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.2.json")
+        analysis_protocol_hash = expansion_protocol["protocol_hash"]
     result_path = OUT / f"{stage}_results.json"
     existing = json.loads(result_path.read_text()) if result_path.exists() else []
     completed = {row["cell_id"] for row in existing}
     cells = [
         (row, architecture, seed)
         for row in CORPORA
-        if row["panel"] == stage
+        if row["panel"] == ("confirmation" if stage == "expansion" else stage)
         for architecture in PROTOCOL["architectures"]
         for seed in PROTOCOL["natural_training"]["seeds"]
     ]
     if limit:
         cells = cells[:limit]
     for row, architecture, seed in cells:
-        prefix = "P" if stage == "pilot" else "C"
-        cell_id = f"V31{prefix}/{row['dataset']}/{architecture['id']}/s{seed}"
+        if stage == "pilot":
+            cell_id = f"V31P/{row['dataset']}/{architecture['id']}/s{seed}"
+        elif stage == "confirmation":
+            cell_id = f"V31C/{row['dataset']}/{architecture['id']}/s{seed}"
+        else:
+            cell_id = f"V32E/{row['dataset']}/{architecture['id']}/s{seed}"
         if cell_id in completed:
             continue
         result = natural_train_cell.remote(
@@ -650,6 +666,8 @@ def _run_natural(stage: str, limit: int) -> None:
                 "profile_manifest_hash": profile_hash,
                 "fourier_ce_kernel_hash": fourier_ce_kernel_hash,
                 "prediction_lock_hash": prediction_hash,
+                "analysis_protocol_hash": analysis_protocol_hash,
+                "cell_id": cell_id,
             }
         )
         _save_cells(result_path, [result])
@@ -666,10 +684,10 @@ def main(stage: str = "character", limit: int = 0) -> None:
         _run_degree_two_completion(limit)
     elif stage == "profile":
         _run_profiles()
-    elif stage in {"pilot", "confirmation"}:
+    elif stage in {"pilot", "confirmation", "expansion"}:
         _run_natural(stage, limit)
     else:
         raise ValueError(
             "stage must be character, sentinel, degree2, profile, pilot, or "
-            "confirmation"
+            "confirmation, or expansion"
         )

@@ -1,0 +1,80 @@
+{
+  "version": "3.2",
+  "name": "prospective 48-corpus Fourier expansion",
+  "date_frozen": "2026-08-11",
+  "status": "pilot-derived hypothesis frozen before any expansion-corpus training outcome",
+  "scientific_scope": "prospective replication of the post-v3.1 observation that Fourier-CE overlap improves an ordinary entropy/compression baseline",
+  "measurement_protocol": {
+    "path": "configs/protocol_v3.1.json",
+    "protocol_hash": "a33dac6859746c7ea6e5aab8b36842a686bfb37e2ba4f6e53b02ff4ee18d298a",
+    "reason": "retain identical data splits, model training, validation, Fourier profiles, and response surface"
+  },
+  "locked_inputs": {
+    "data_manifest_sha256": "22ab699a300ec855b837fc4f8d3e0cf6aef52c7f58df8c50dd46173bc8672d58",
+    "profile_manifest_sha256": "b8f0e62947291f3cd6fafcd8416355c00de30826d9fd78cc371b135284d73ee2",
+    "fourier_ce_response_sha256": "ab6503186c3c2d1ae1e18ce2c5b3e76d2c2a440c71f029fc9537016f56c89ff1",
+    "pilot_results_sha256": "728194fceda094dd509515f21e83bfdf9384010093e2b4812ad4e06ce3b2401b",
+    "pilot_analysis_sha256": "e8b1a9a4513bb7f379e375f0fc431b53ef3b05fe2cdb870639b52bf05f7a6b48",
+    "pilot_diagnostics_sha256": "a9b8ab059eecee6024ab90dedc4e33ea860aff562834894de64116046d168b28"
+  },
+  "development_panel": {
+    "corpora": 24,
+    "rows": 120,
+    "outcomes_observed": true,
+    "role": "fit the two frozen OLS predictors"
+  },
+  "expansion_panel": {
+    "corpora": 48,
+    "source_strata": 6,
+    "corpora_per_stratum": 8,
+    "architectures": 5,
+    "seeds": 2,
+    "training_cells": 480,
+    "outcomes_observed_at_freeze": false,
+    "role": "prospective source-disjoint evaluation of predictions frozen from the 24-corpus development panel"
+  },
+  "primary_comparison": {
+    "model": "standardized unpenalized OLS with architecture and source-stratum fixed effects",
+    "baseline_features": [
+      "unigram_entropy_bits",
+      "heldout_bigram_ce_bits",
+      "lag1_mutual_information_bits",
+      "zlib_bits_per_byte"
+    ],
+    "fourier_addition": "fourier_ce_overlap",
+    "target": "normalized_curve_area",
+    "prediction_unit": "corpus-architecture median over two training seeds",
+    "motivation_disclosure": "selected after the v3.1 pilot because it improved grouped LOCO RMSE by 2.04%; this is a new prospective claim, not the original v3.1 confirmation"
+  },
+  "secondary_comparison": {
+    "status": "descriptive replication of the failed v3.1 gate",
+    "baseline_features": [
+      "unigram_entropy_bits",
+      "heldout_bigram_ce_bits",
+      "lag1_mutual_information_bits",
+      "zlib_bits_per_byte",
+      "sampled_nonconstant_energy_through_degree3",
+      "sampled_mean_degree_through_degree3",
+      "sampled_marginal_log1p_radius_through_degree3"
+    ],
+    "fourier_addition": "fourier_ce_overlap"
+  },
+  "decision": {
+    "bootstrap_samples": 100000,
+    "bootstrap_seed": 3201,
+    "resample": "corpora within source stratum, retaining all five architectures",
+    "success": "paired relative RMSE improvement interval for primary Fourier model strictly above zero",
+    "labels": [
+      "EXPANDED_FOURIER_SIGNAL_REPLICATES",
+      "EXPANDED_FOURIER_SIGNAL_DOES_NOT_REPLICATE",
+      "AUDIT_FAILED"
+    ]
+  },
+  "compute": {
+    "gpu": "H100",
+    "maximum_concurrent_h100s": 1,
+    "network_during_training": false,
+    "estimated_h100_minutes": 92
+  },
+  "protocol_hash": "a7dd59ecaddeb5d7edc02ec139f84459171c87ae57b5e2d79a6133651b81f5a1"
+}
