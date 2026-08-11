@@ -494,6 +494,30 @@ The resulting scalar is
 \]
 
 where \(e_D(A)\) is dataset Fourier support energy and \(h_m(A)\) is realized
-held-out CE character hardness. It will be compared against the strong ordinary
+held-out CE character hardness. It was compared against the strong ordinary
 controls by grouped leave-one-corpus-out prediction before any confirmation
-training begins.
+training began.
+
+That comparison is now complete. The character experiment found real, parsable
+architecture/support structure: RoPE's degree-two pairs containing lag 1 were
+easy while almost every pair excluding it was hard; ALiBi learned `(2,4)` more
+readily, but reverse-ALiBi did not. Degree-three characters were uniformly at the
+finite-budget ceiling across a frozen geometrically diverse sentinel bank, so
+the remaining triples were pooled by a rule fixed before their outcomes.
+
+The natural-data result is more sobering. Against four ordinary entropy and
+compression controls, adding the Fourier-CE overlap improved grouped
+leave-one-corpus-out RMSE by 2.04%. But the preregistered baseline already
+included low-degree energy, mean degree, and marginal locality. Against that
+strong spectrum baseline, overlap changed RMSE from `0.019488` to `0.019609`, a
+`-0.62%` improvement. A descriptive stratified corpus bootstrap interval was
+`[-1.18%,-0.07%]`, and the full-sample partial \(R^2\) was only `0.00094`.
+
+So Fourier summaries remain predictive, but the attempted exact-support
+architecture matching does not add held-out information beyond them. The likely
+mismatch is representational: binary uniform Walsh-parity learnability is being
+matched to order-averaged dependent-text projection increments, not to the same
+categorical coefficient directions under the same measure. Confirmation was
+therefore not run. A stronger next experiment must align the learned synthetic
+characters with the categorical text basis and estimator rather than adding
+more models to this failed bridge.

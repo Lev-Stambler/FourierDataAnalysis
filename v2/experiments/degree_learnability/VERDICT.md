@@ -671,14 +671,26 @@ not an independent source-disjoint replication. Audit PASS. Locks: protocol
 
 ## v3.1 Fourier-character CE matching (2026-08-11)
 
-The active experiment defines architecture response only through realized
-held-out cross-entropy learning curves on exact Fourier characters. It will cover
-all 63 supports through degree three, five positional geometries, and three
-seeds—945 controlled cells. Dataset Fourier support energy is then weighted by
-the corresponding empirical character CE hardness.
+The Fourier-only response experiment measured 675 H100 cells: every degree-one
+and degree-two support exactly, plus 17 degree-three supports per architecture.
+A frozen pre-outcome sentinel gate showed degree-three CE hardness was uniformly
+ceiling-saturated, permitting the remaining 18 triples to use the
+architecture-specific pooled median. All 72 corpus profiles and all 240 pilot
+training cells passed audit.
 
-This correction occurred before corpus profiling, pilot training, frozen
-predictions, or confirmation outcomes. Accordingly, no v3.1 transfer verdict is
-yet reported. The next gate is simply whether this Fourier-CE overlap improves
-grouped leave-one-corpus-out prediction beyond the strong baseline on the
-24-corpus pilot. Protocol lock: `a33dac68…`.
+The preregistered grouped leave-one-corpus-out gate **FAILED**. The strong
+baseline RMSE was `0.019488`; adding the Fourier-CE overlap produced `0.019609`,
+or `-0.62%` relative improvement. Its full-sample partial \(R^2\) was `0.00094`,
+and a descriptive 100,000-draw stratified corpus-bootstrap interval for the RMSE
+improvement was `[-1.18%,-0.07%]`. The double-centered dataset-by-architecture
+association was weakly negative (`r=-0.172`, `p=0.061`).
+
+There is a narrower positive result: relative to ordinary entropy, bigram,
+mutual-information, and compression controls, adding overlap improved RMSE by
+`2.04%`. That advantage disappears once the baseline includes low-degree energy,
+mean degree, and locality. Thus aggregate Fourier structure remains predictive,
+but this binary-character exact-support matching contributes no incremental
+held-out signal beyond the existing spectrum summaries. The verdict is
+**PILOT_GATE_FAILED; NO_CONFIRMATION**. Audit PASS. Locks: protocol `a33dac68…`,
+Fourier response `ab650318…`, pilot analysis and diagnostics are in
+`runs/local/v30_architecture_spectrum/`.

@@ -104,12 +104,10 @@ architecture outcomes within each bootstrap block.
 ## Status
 
 Protocol v3.1 corrected the experiment before any corpus profile, pilot outcome,
-or confirmation outcome existed. The full empirical response surface requires
-945 Fourier-character CE cells. Of those, 270 already-completed CE training
-outcomes were reusable because the removed side analysis never entered their
-optimization or validation computation. A bounded single-H100 continuation has
-now saved 36 additional cells, leaving 639. The runner is cell-level resumable;
-no partial cell is treated as an observation.
+or confirmation outcome existed. Of the initial character computations, 270 CE
+training outcomes were reusable because the removed side analysis never entered
+their optimization or validation computation. Every subsequent stage was
+cell-level resumable; no partial cell was treated as an observation.
 
 All 72 label-free corpus profiles are now complete and audit-locked. Within the
 measured nonconstant energy through degree three, the mean shares are 19.8% at
@@ -145,6 +143,28 @@ residual has standard deviation 0.00991, and the dataset-by-architecture
 interaction standard deviation is 0.00961. Thus the pilot is testing whether a
 small exact-support matching component predicts held-out CE beyond highly
 correlated degree, locality, entropy, and compression controls.
+
+The frozen pilot gate failed. Grouped leave-one-corpus-out results were:
+
+| model | RMSE | MAE | held-out \(R^2\) |
+|---|---:|---:|---:|
+| strong spectrum baseline | 0.019488 | 0.016591 | 0.5327 |
+| baseline + Fourier-CE overlap | 0.019609 | 0.016680 | 0.5269 |
+
+The relative RMSE improvement was `-0.62%`, so no confirmation predictions were
+frozen and no confirmation models were trained. The full-sample standardized
+overlap coefficient was `-0.00230` with partial \(R^2=0.00094\). A descriptive
+100,000-draw stratified corpus bootstrap interval for improvement was
+`[-1.18%,-0.07%]`.
+
+The null is specific. Adding overlap to four ordinary entropy/compression
+controls improved RMSE by `2.04%`; the increment vanished only after degree,
+energy, and locality summaries were present. Therefore the dataset Fourier
+spectrum remains predictive, but this exact-support learner match did not add
+information beyond the existing spectrum features. One likely cause is a basis
+mismatch: the learner surface uses binary uniform Walsh parities, whereas the
+text profiler supplies order-averaged increments from dependent categorical
+data. Those are not the same coefficient directions under the same measure.
 
 Protocol: `configs/protocol_v3.1.json`. Artifacts:
 `runs/local/v30_architecture_spectrum/`.

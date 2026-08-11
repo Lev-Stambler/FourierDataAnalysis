@@ -1,0 +1,131 @@
+{
+  "status": "post-gate diagnostic; does not reopen confirmation",
+  "pilot_analysis_hash": "e8b1a9a4513bb7f379e375f0fc431b53ef3b05fe2cdb870639b52bf05f7a6b48",
+  "pilot_results_sha256": "728194fceda094dd509515f21e83bfdf9384010093e2b4812ad4e06ce3b2401b",
+  "target": "normalized_curve_area",
+  "comparisons": {
+    "ordinary_controls": {
+      "baseline": {
+        "rmse": 0.017709962596174227,
+        "mae": 0.013792057110929002,
+        "r_squared": 0.6141038490576574
+      },
+      "plus_fourier_ce_overlap": {
+        "rmse": 0.017348284457544026,
+        "mae": 0.013578385645595962,
+        "r_squared": 0.6297046758446734
+      },
+      "relative_rmse_improvement": 0.020422298277938365
+    },
+    "strong": {
+      "baseline": {
+        "rmse": 0.019487993361201463,
+        "mae": 0.016591450521193738,
+        "r_squared": 0.5327283797933176
+      },
+      "plus_fourier_ce_overlap": {
+        "rmse": 0.019609296220158855,
+        "mae": 0.016679914434414946,
+        "r_squared": 0.5268932187486636
+      },
+      "relative_rmse_improvement": -0.0062244920094694164
+    }
+  },
+  "strong_full_sample": {
+    "standardized_overlap_coefficient": -0.0022973654414789975,
+    "partial_r_squared": 0.0009423258042885463
+  },
+  "double_centered_dataset_architecture_interaction": {
+    "pearson_r": -0.17153809430241665,
+    "pearson_p": 0.06102034062333541,
+    "spearman_rho": -0.1350232655045489,
+    "spearman_p": 0.14146255313078943
+  },
+  "architecture_comparisons": {
+    "alibi": {
+      "baseline": {
+        "rmse": 0.01968819490735281,
+        "mae": 0.01715121497674354,
+        "r_squared": 0.43967334316224027
+      },
+      "plus_fourier_ce_overlap": {
+        "rmse": 0.022062457300504466,
+        "mae": 0.019137089802104282,
+        "r_squared": 0.2963815024619936
+      },
+      "relative_rmse_improvement": -0.12059319832642233
+    },
+    "learned_absolute": {
+      "baseline": {
+        "rmse": 0.018889332044856693,
+        "mae": 0.01573544858105204,
+        "r_squared": 0.4370554726860304
+      },
+      "plus_fourier_ce_overlap": {
+        "rmse": 0.018660697979082586,
+        "mae": 0.015590301343652899,
+        "r_squared": 0.4506006167262345
+      },
+      "relative_rmse_improvement": 0.012103872451983326
+    },
+    "nope": {
+      "baseline": {
+        "rmse": 0.02012352454830058,
+        "mae": 0.016422919966199476,
+        "r_squared": 0.3600212083036465
+      },
+      "plus_fourier_ce_overlap": {
+        "rmse": 0.02284407119080253,
+        "mae": 0.018177606629970405,
+        "r_squared": 0.17528385562050997
+      },
+      "relative_rmse_improvement": -0.13519235340569108
+    },
+    "reverse_alibi": {
+      "baseline": {
+        "rmse": 0.02024086526614146,
+        "mae": 0.016413386316204398,
+        "r_squared": 0.3518576266039821
+      },
+      "plus_fourier_ce_overlap": {
+        "rmse": 0.023123352607793496,
+        "mae": 0.01836355651578156,
+        "r_squared": 0.15411003918298027
+      },
+      "relative_rmse_improvement": -0.14240929445214018
+    },
+    "rope": {
+      "baseline": {
+        "rmse": 0.019544618220365396,
+        "mae": 0.01719711164565285,
+        "r_squared": 0.4566360335479124
+      },
+      "plus_fourier_ce_overlap": {
+        "rmse": 0.020418484825893153,
+        "mae": 0.017587638749808277,
+        "r_squared": 0.40696069933098156
+      },
+      "relative_rmse_improvement": -0.044711367378728974
+    }
+  },
+  "descriptive_stratified_corpus_bootstrap": {
+    "baseline_rmse": 0.019487993361201463,
+    "matched_rmse": 0.019609296220158855,
+    "relative_rmse_improvement": -0.0062244920094694164,
+    "stratified_corpus_bootstrap_95_interval": [
+      -0.01178292843876454,
+      -0.0007212642396520171
+    ],
+    "samples": 100000,
+    "seed": 3106,
+    "strata": [
+      "application_code",
+      "documentation",
+      "formal",
+      "language",
+      "prose",
+      "science"
+    ]
+  },
+  "interpretation": "Fourier overlap helps relative to ordinary controls, but exact architecture-support matching adds no held-out information beyond the strong degree/energy/locality spectrum summaries."
+}

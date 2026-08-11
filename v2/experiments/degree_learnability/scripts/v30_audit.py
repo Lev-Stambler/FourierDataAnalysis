@@ -59,10 +59,12 @@ def main() -> dict:
     spec = protocol["fourier_character_training"]
     supports = enumerate_supports(spec["lags"], max_degree=spec["max_degree"])
     character = json.loads((OUT / "fourier_character_results.json").read_text())
+    kernel = json.loads((OUT / "fourier_ce_kernel.json").read_text())
+    exact_supports = set(kernel["exact_supports"])
     expected_character = (
-        len(protocol["architectures"]) * len(supports) * len(spec["seeds"])
+        len(protocol["architectures"]) * len(exact_supports) * len(spec["seeds"])
     )
-    _check(len(character) == expected_character == 945, "945 Fourier CE cells", checks)
+    _check(len(character) == expected_character == 675, "675 Fourier CE cells", checks)
     _check(
         len({row["cell_id"] for row in character}) == expected_character,
         "Fourier CE cell IDs unique",
@@ -78,10 +80,24 @@ def main() -> dict:
         "Fourier CE cells ran on H100",
         checks,
     )
-    kernel = json.loads((OUT / "fourier_ce_kernel.json").read_text())
     _check(
-        kernel["results_sha256"] == file_sha256(OUT / "fourier_character_results.json"),
+        kernel["character_results_sha256"]
+        == file_sha256(OUT / "fourier_character_results.json"),
         "CE kernel locks complete Fourier result grid",
+        checks,
+    )
+    _check(
+        len(kernel["pooled_degree_three_supports"]) == 18
+        and all(
+            len(key.split(",")) == 3
+            for key in kernel["pooled_degree_three_supports"]
+        ),
+        "only 18 degree-three supports are pooled",
+        checks,
+    )
+    _check(
+        all(len(values) == len(supports) == 63 for values in kernel["architecture_hardness"].values()),
+        "five complete 63-support Fourier response surfaces",
         checks,
     )
     completed_stage = "fourier_character_ce"

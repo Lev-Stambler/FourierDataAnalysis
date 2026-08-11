@@ -56,13 +56,16 @@ degree, energy, and locality interpreted jointly with learner geometry—not a
 model-independent scalar dataset-hardness law and not the specific `G_total`
 formula.
 
-Protocol v3.1 now tests the learner-conditional idea directly. For every
-architecture and every exact Fourier support through degree three, the response
-kernel is realized held-out CE learning-curve area. The dataset feature is its
-Fourier support energy weighted by that empirical CE hardness. No monotonic
-locality assumption or initialization proxy enters the hypothesis. The natural
-pilot remains unobserved while the complete 945-cell Fourier-character CE grid
-is assembled. See
+Protocol v3.1 tested the learner-conditional idea directly. The response surface
+is realized held-out CE learning-curve area on exact Fourier characters, and the
+dataset feature weights it by measured Fourier support energy. A frozen
+degree-three saturation gate reduced the response experiment to 675 measured
+cells, with all degree-one/two supports exact and 18 unmeasured degree-three
+supports pooled. On the 24-corpus pilot, adding the overlap to ordinary
+entropy/compression controls improved grouped LOCO RMSE by 2.04%, but adding it
+to the preregistered strong spectrum baseline worsened RMSE by 0.62%. The pilot
+gate failed, so confirmation was not run. The result supports aggregate Fourier
+predictivity, not the proposed incremental exact-support architecture match. See
 [`docs/V30_ARCHITECTURE_SPECTRUM.md`](docs/V30_ARCHITECTURE_SPECTRUM.md).
 
 The exact basis and statistic are defined in [`LOCALITY_MATH.md`](LOCALITY_MATH.md).
