@@ -122,5 +122,13 @@ triples. Pooling is allowed only if every sampled architecture/support median is
 at least 0.94 and each architecture's range over all 17 sampled triples is at
 most 0.04; otherwise all 35 triples are measured exactly.
 
+The 180-cell sentinel bank completed and the frozen pooling gate passed for all
+five architectures. The smallest architecture/support median was 0.96496, and
+the within-architecture ranges were 0.00715--0.01159. Degree-three response is
+therefore pooled by architecture under the predeclared rule; the pooled medians
+are 0.96905 (learned absolute), 0.97266 (RoPE), 0.97257 (NoPE), 0.97168
+(ALiBi), and 0.97247 (reverse-ALiBi). Exact support resolution remains necessary
+at degrees one and two, where the observed response variation is large.
+
 Protocol: `configs/protocol_v3.1.json`. Artifacts:
 `runs/local/v30_architecture_spectrum/`.
