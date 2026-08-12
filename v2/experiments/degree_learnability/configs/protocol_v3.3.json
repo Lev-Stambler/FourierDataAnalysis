@@ -1,0 +1,61 @@
+{
+  "version": "3.3",
+  "name": "paired architecture Fourier contrast diagnostic",
+  "date_frozen": "2026-08-12",
+  "status": "post-outcome exploratory analysis specified after inspecting v3.2 expansion contrasts",
+  "scientific_question": "does the RoPE-minus-NoPE Fourier-CE overlap contrast predict the corresponding paired learning-curve contrast across corpora",
+  "orientation": {
+    "predictor": "fourier_ce_overlap[rope] - fourier_ce_overlap[nope]",
+    "outcomes": "difficulty[rope] - difficulty[nope]",
+    "expected_slope": "positive because larger overlap and larger outcome both denote greater difficulty"
+  },
+  "locked_inputs": {
+    "data_manifest_sha256": "22ab699a300ec855b837fc4f8d3e0cf6aef52c7f58df8c50dd46173bc8672d58",
+    "profile_manifest_sha256": "b8f0e62947291f3cd6fafcd8416355c00de30826d9fd78cc371b135284d73ee2",
+    "fourier_ce_kernel_sha256": "ab6503186c3c2d1ae1e18ce2c5b3e76d2c2a440c71f029fc9537016f56c89ff1",
+    "pilot_results_sha256": "728194fceda094dd509515f21e83bfdf9384010093e2b4812ad4e06ce3b2401b",
+    "pilot_analysis_sha256": "e8b1a9a4513bb7f379e375f0fc431b53ef3b05fe2cdb870639b52bf05f7a6b48",
+    "expansion_results_sha256": "a1e8fc9d03ff8f799f131f6ebb7749229d8e356f701814a1dd11c49055c4f18b",
+    "expansion_analysis_sha256": "d15d0b5f9fcb8e3fd8a95e7eb481980d710db85b8f2d52076d880bf46282ec63",
+    "expansion_audit_sha256": "9891e056afc0b37bf54694ce9a868fd9b6e7559e65d87f1c828dc913507d674b"
+  },
+  "panels": {
+    "development": {"corpora": 24, "role": "fit predictor and baseline"},
+    "expansion": {"corpora": 48, "role": "unchanged transfer evaluation"}
+  },
+  "co_primary_targets": [
+    "normalized_curve_area",
+    "final_ce_fraction"
+  ],
+  "diagnostic_targets": [
+    "normalized_learning_time",
+    "final_ce_bits",
+    "initial_ce_bits"
+  ],
+  "models": {
+    "primary_baseline": "development mean outcome contrast",
+    "primary_fourier": "unpenalized OLS on development-standardized overlap contrast",
+    "sensitivity": "development-fit source-stratum fixed effects, without versus with standardized overlap contrast"
+  },
+  "inference": {
+    "association_bootstrap_samples": 100000,
+    "association_bootstrap_seed": 3301,
+    "blocked_permutations": 100000,
+    "blocked_permutation_seed": 3302,
+    "transfer_bootstrap_samples": 100000,
+    "transfer_bootstrap_seed": 3303,
+    "resampling": "corpora within each of six source strata",
+    "co_primary_adjustment": "Holm correction of expansion-panel two-sided Pearson p-values",
+    "alpha": 0.05
+  },
+  "interpretation": {
+    "confirmatory_verdict": false,
+    "requirements_for_aligned_bridge": [
+      "positive slope",
+      "held-out prediction improvement"
+    ],
+    "negative_slope_label": "directionally inverted bridge even if prediction improves"
+  },
+  "all_pair_diagnostic": "descriptive expansion and combined Pearson/Spearman associations for all ten unordered architecture pairs",
+  "protocol_hash": "c0a97d1fb7f72ec66deb9b8a095f9c6bfeb5effe3be8107dd36f2c2a61c74975"
+}

@@ -545,3 +545,30 @@ a useful aggregate dataset descriptor, but the exact binary-character CE match
 does not add unique predictive information beyond the simpler spectrum
 summaries. This is a real negative result for the current bridge, not a negative
 result for the dataset-Fourier program as a whole.
+
+### Pair the architectures, then check the sign
+
+Absolute corpus difficulty can swamp the architecture-specific quantity we were
+trying to measure. A post-outcome v3.3 diagnostic therefore formed matched
+contrasts for each corpus:
+
+\[
+\Delta\Omega_D=\Omega(D,\mathrm{RoPE})-\Omega(D,\mathrm{NoPE}),\qquad
+\Delta A_D=A(D,\mathrm{RoPE})-A(D,\mathrm{NoPE}).
+\]
+
+This did expose more signal, but not the hoped-for mechanism. On the 48-corpus
+expansion panel, `Delta Omega` correlated `r=-0.259` with curve-area difference
+and `r=-0.454` with final-CE-fraction difference. The latter survived Holm
+correction (`p=0.00238`). A one-slope model fitted only on the 24 development
+corpora improved expansion RMSE by 2.51% for area and 7.63% for final fraction,
+but both bootstrap intervals crossed zero. It worsened normalized-learning-time
+RMSE by 5.46%, while the initial-CE negative control was null.
+
+The negative sign matters. Greater measured RoPE-relative character hardness
+predicted *less* RoPE-relative natural-text difficulty. Descriptive results over
+all ten architecture pairs also mixed positive and negative signs rather than
+showing one universal orientation. Pairing therefore confirms that the overlap
+contains endpoint information while rejecting its present interpretation as a
+monotone hardness match. The next bridge must use data-conditioned categorical
+characteristics under the same dependent measure as the corpus profiler.

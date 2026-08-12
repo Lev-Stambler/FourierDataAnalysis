@@ -78,6 +78,17 @@ overlap worsened RMSE by 0.31%, with interval `[-0.512%, -0.106%]`. The larger
 panel supports a modest aggregate Fourier signal but not a conclusive unique
 exact-support matching effect. Expansion audit PASS.
 
+A post-outcome v3.3 diagnostic then removed corpus-wide difficulty by predicting
+paired architecture differences. For RoPE minus NoPE, the overlap contrast was
+associated with expansion final-CE-fraction contrast at `r=-0.454`
+(`p_Holm=0.00238`) and improved development-to-expansion RMSE by 7.63%, although
+the paired-bootstrap interval narrowly crossed zero (`[-0.24%,12.49%]`). The
+sign is opposite the hardness hypothesis. Curve-area transfer improved only
+2.51% with a wide interval, normalized learning time worsened 5.46%, and the
+initial-CE negative control was null. Pairing reveals endpoint information, but
+the current Walsh-character overlap is a directionally inverted bridge rather
+than a valid architecture-hardness match.
+
 The exact basis and statistic are defined in [`LOCALITY_MATH.md`](LOCALITY_MATH.md).
 The research narrative—including the failed endpoint test and the post-hoc
 marginal-locality correction—is in [`BLOG.md`](BLOG.md).

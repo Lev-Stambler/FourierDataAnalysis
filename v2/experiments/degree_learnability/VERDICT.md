@@ -719,3 +719,27 @@ this exact-support Fourier-CE overlap is redundant once degree, energy, and
 locality summaries are included. Audit PASS. Locks: protocol `a7dd59ec…`,
 predictions `a7de53cc…`, results `a1e8fc9d…`, analysis `d15d0b5f…`, audit
 `9891e056…`.
+
+## v3.3 paired architecture contrast diagnostic (2026-08-12)
+
+This analysis was specified after inspecting v3.2 outcomes and is explicitly
+exploratory. It predicts RoPE-minus-NoPE learning differences from the matching
+Fourier-CE overlap difference, fitting one OLS slope on 24 development corpora
+and transferring it unchanged to 48 expansion corpora.
+
+| paired target | expansion Pearson `r` | development-to-expansion RMSE change | 95% paired interval |
+|---|---:|---:|---:|
+| normalized curve area | -0.259 | +2.51% | [-9.24%, 12.40%] |
+| final CE fraction | -0.454 | +7.63% | [-0.24%, 12.49%] |
+| normalized learning time | +0.030 | -5.46% | [-16.20%, 6.48%] |
+| initial CE negative control | +0.228 | +0.52% | [-9.10%, 9.26%] |
+
+Final CE fraction is associated after correction for the two co-primary tests
+(`p_Holm=0.00238`), but its slope is negative; curve area is also negative and
+not significant. Within-stratum rank tests are not significant, and all ten
+architecture-pair diagnostics have mixed signs. The scientific classification
+is therefore **DIRECTIONALLY_INVERTED BRIDGE**: pairing finds endpoint-predictive
+information, but the uniform binary-Walsh hardness surface has the opposite
+orientation from the intended natural-text hardness mechanism. There is no new
+confirmatory verdict. Audit PASS. Protocol `c0a97d1f…`, analysis `9963bd6d…`,
+audit `cde26630…`.

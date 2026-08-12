@@ -110,3 +110,25 @@ def test_v32_expansion_result_and_audit_are_complete() -> None:
     assert not analysis["primary_gate"]["interval_strictly_positive"]
     assert audit["status"] == "PASS"
     assert audit["locks"]["results"] == file_sha256(OUT / "expansion_results.json")
+
+
+def test_v33_paired_contrast_is_hash_locked_and_exploratory() -> None:
+    protocol = load_frozen_protocol(ROOT / "configs/protocol_v3.3.json")
+    assert protocol["protocol_hash"] == (
+        "c0a97d1fb7f72ec66deb9b8a095f9c6bfeb5effe3be8107dd36f2c2a61c74975"
+    )
+    analysis_path = OUT / "paired_contrast_analysis.json"
+    audit_path = OUT / "paired_contrast_audit.json"
+    assert file_sha256(analysis_path) == (
+        OUT / "paired_contrast_analysis.sha256"
+    ).read_text().strip()
+    assert file_sha256(audit_path) == (
+        OUT / "paired_contrast_audit.sha256"
+    ).read_text().strip()
+    analysis = json.loads(analysis_path.read_text())
+    audit = json.loads(audit_path.read_text())
+    assert analysis["interpretation"]["confirmatory_verdict"] is None
+    assert analysis["interpretation"]["bridge_status"] == "DIRECTIONALLY_INVERTED"
+    assert len(analysis["rows"]) == 72
+    assert len(analysis["all_architecture_pair_diagnostic"]) == 10
+    assert audit["status"] == "PASS"

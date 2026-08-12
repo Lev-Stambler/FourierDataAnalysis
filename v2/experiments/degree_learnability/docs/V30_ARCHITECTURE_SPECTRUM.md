@@ -194,3 +194,29 @@ the existing degree/energy/locality summaries.
 Protocol: `configs/protocol_v3.2.json`. Frozen predictions, expansion outcomes,
 analysis, and the independent PASS audit are under
 `runs/local/v30_architecture_spectrum/expansion_*`.
+
+## v3.3 paired architecture contrasts
+
+The absolute-hardness model may obscure the architecture interaction, so the
+post-outcome v3.3 diagnostic compares RoPE and NoPE within each corpus. Both the
+predictor and target use `RoPE - NoPE`; consequently, a valid hardness bridge
+requires a positive slope.
+
+| outcome contrast | expansion Pearson | Spearman | transfer RMSE improvement | transfer interval |
+|---|---:|---:|---:|---:|
+| normalized curve area | -0.259 | -0.281 | +2.51% | [-9.24%, 12.40%] |
+| final CE fraction | -0.454 | -0.486 | +7.63% | [-0.24%, 12.49%] |
+| normalized learning time | +0.030 | +0.072 | -5.46% | [-16.20%, 6.48%] |
+| final CE bits | -0.448 | -0.476 | +7.23% | [-0.33%, 11.81%] |
+| initial CE bits control | +0.228 | +0.204 | +0.52% | [-9.10%, 9.26%] |
+
+The final-fraction Pearson test survives Holm correction across the two
+co-primary outcomes (`p=0.00238`), but it is significantly negative. Blocked
+within-stratum rank tests do not reject, and adding development-fit stratum
+effects makes endpoint transfer worse rather than better. Across all ten
+architecture pairs, signs are mixed. Thus paired differencing increases endpoint
+signal but does not repair the interpretation: the existing overlap is
+directionally inverted and does not predict learning speed.
+
+Protocol: `configs/protocol_v3.3.json`. Analysis and independent PASS audit:
+`runs/local/v30_architecture_spectrum/paired_contrast_*`.
