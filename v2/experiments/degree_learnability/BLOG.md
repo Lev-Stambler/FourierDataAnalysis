@@ -572,3 +572,40 @@ showing one universal orientation. Pairing therefore confirms that the overlap
 contains endpoint information while rejecting its present interpretation as a
 monotone hardness match. The next bridge must use data-conditioned categorical
 characteristics under the same dependent measure as the corpus profiler.
+
+### Intervene on locality directly
+
+The RoPE–NoPE comparison changed more than locality and gave us no monotone
+architecture axis. The next test therefore held the RoPE transformer fixed and
+changed only its hard attention window. Before training any limited-window
+model on natural data, we measured every degree-one and degree-two binary Walsh
+character at radii 8, 16, and 32 and compared them with the existing radius-64
+response. We then froze the resulting Fourier-weighted feature for all 48
+corpora, split evenly within six source strata.
+
+This narrower bridge works. On 24 held-out corpora, window identity alone
+predicted the paired curve-area change with `R²=0.286`. Adding the uniform
+Fourier fingerprint raised it to `0.543` and reduced RMSE by 19.97%; the frozen
+stratified bootstrap interval was `[16.10%,28.21%]`. A simple inaccessible
+far-energy feature reached `R²=0.419`; adding the empirical fingerprint on top
+reached `0.607` and improved RMSE by another 17.75%, interval
+`[12.96%,26.68%]`. Correlations remain large inside each window, so the result
+is not window size wearing a Fourier label.
+
+The absolute sign forces a more careful story. Every smaller-window model had a
+lower learning-curve area than its radius-64 pair at this budget. Hard locality
+acted as an optimization or regularization benefit, not an average penalty.
+What transfers is the *relative* effect: datasets whose Fourier energy falls on
+characters that become harder under a window receive less of that benefit (or
+would be penalized more). The independently measured architecture response has
+the expected positive conditional sign even though the mean intervention effect
+is negative.
+
+This signal is about learning dynamics, not entropy. Endpoint CE transfer is
+weak and adds nothing beyond far-energy. Nor is the basis bridge complete: the
+natural profile aggregates dependent 256-category coefficient directions by
+support, while the uniform response uses one binary parity per support. Still,
+v3.4.1 is the first clean positive result here for the central
+learner-conditional idea: a uniform-data Fourier fingerprint of an architecture
+predicts how that architecture's inductive bias changes learning on unseen
+natural corpora.

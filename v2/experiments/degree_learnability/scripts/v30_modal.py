@@ -99,7 +99,10 @@ def _model_config(
         grad_clip=training["grad_clip"],
         position_encoding=architecture["position_encoding"],
         rope_base=float(architecture.get("rope_base", 10_000.0)),
-        attention_window=attention_window,
+        # Later causal architecture probes reuse this frozen training function while
+        # changing only the receptive field.  Historical v3.1 architectures have no
+        # override, so their configurations and hashes are unchanged.
+        attention_window=int(architecture.get("attention_window", attention_window)),
     )
 
 
@@ -139,7 +142,7 @@ def character_train_cell(payload: dict) -> dict:
     train_rng = np.random.default_rng(
         _seed(
             spec["data_seed_namespace"],
-            architecture["id"],
+            payload.get("data_architecture_id", architecture["id"]),
             support,
             seed,
             "char_train",
@@ -200,8 +203,11 @@ def character_train_cell(payload: dict) -> dict:
     summary = curve_metrics(example_grid, curve, curve[0])
     support_id = "-".join(str(value) for value in support)
     return {
-        "cell_id": f"V31F/{architecture['id']}/A{support_id}/s{seed}",
+        "cell_id": payload.get(
+            "cell_id", f"V31F/{architecture['id']}/A{support_id}/s{seed}"
+        ),
         "protocol_hash": protocol["protocol_hash"],
+        "analysis_protocol_hash": payload.get("analysis_protocol_hash"),
         "data_seed_namespace": spec["data_seed_namespace"],
         "architecture": architecture["id"],
         "support": list(support),

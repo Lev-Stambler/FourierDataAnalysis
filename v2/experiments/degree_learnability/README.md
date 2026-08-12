@@ -89,6 +89,22 @@ initial-CE negative control was null. Pairing reveals endpoint information, but
 the current Walsh-character overlap is a directionally inverted bridge rather
 than a valid architecture-hardness match.
 
+Protocol v3.4.1 made the architecture intervention causal and narrower: the
+same two-layer RoPE transformer was trained with hard attention windows 8, 16,
+32, and 64. Uniform degree-one/two Walsh-character responses were frozen before
+any limited-window natural outcome, the paired model was fitted on 24 corpora,
+and it transferred unchanged to 24 balanced held-out corpora. Adding the
+uniform Fourier fingerprint to window fixed effects improved held-out
+curve-area RMSE by **19.97%**, interval `[16.10%,28.21%]`, and raised `R²` from
+`0.286` to `0.543`. It also improved RMSE by **17.75%** beyond inaccessible
+far-energy, interval `[12.96%,26.68%]`; within-window Pearson correlations were
+`0.680/0.767/0.718`. The gate **PASSES**. Smaller windows actually learned
+faster on average at this budget, so the supported claim is conditional: the
+uniform Fourier fingerprint predicts which datasets gain less (or are penalized
+more) under the architecture intervention after its mean regularization benefit
+is removed. Endpoint CE prediction remained weak. See
+[`docs/V34_LOCAL_WINDOW.md`](docs/V34_LOCAL_WINDOW.md).
+
 The exact basis and statistic are defined in [`LOCALITY_MATH.md`](LOCALITY_MATH.md).
 The research narrative—including the failed endpoint test and the post-hoc
 marginal-locality correction—is in [`BLOG.md`](BLOG.md).

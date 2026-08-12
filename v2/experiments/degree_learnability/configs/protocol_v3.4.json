@@ -1,0 +1,101 @@
+{
+  "version": "3.4.1",
+  "name": "causal local-window Fourier transfer",
+  "date_frozen": "2026-08-12",
+  "status": "architecture intervention and corpus split amended from per-layer receptive-field algebra before any limited-window natural-training outcomes",
+  "amendment": "After six uniform cells and before any natural-window outcome, clarified that attention_window is a per-layer mask. Added the algebraic effective-reach control; no empirical result motivated the change and the primary measured-uniform-fingerprint test is unchanged.",
+  "question": "Does an architecture's CE response to exact Fourier characters under uniform inputs predict its learning penalty on unseen natural corpora when only its receptive field is changed?",
+  "measurement_protocol": {
+    "path": "configs/protocol_v3.1.json",
+    "protocol_hash": "a33dac6859746c7ea6e5aab8b36842a686bfb37e2ba4f6e53b02ff4ee18d298a",
+    "file_sha256": "c748c05185dd99185e9f9c9b96dc0021a93ccddfae45c07f8e5ccec057c7a14f",
+    "reuse": "identical transformer size, optimizer, token budget, data splits, validation chunks, and profile estimator"
+  },
+  "panel": {
+    "path": "configs/local_window_panel_v3.4.json",
+    "sha256": "cbd9ef6ae38bdccdece9019856f06f5c891e75989a8f556135fd67745ebb2b96",
+    "development_corpora": 24,
+    "confirmation_corpora": 24,
+    "source_strata": 6,
+    "outcomes_observed_at_freeze": false
+  },
+  "intervention": {
+    "base_architecture": "rope",
+    "attention_windows": [8, 16, 32, 64],
+    "new_attention_windows": [8, 16, 32],
+    "mask_semantics": "In each layer, window w permits attention distances 0 through w-1; at a next-token prediction these are direct target lags 1 through w.",
+    "layers": 2,
+    "effective_target_lag_reach": {"8": 15, "16": 31, "32": 63, "64": 127},
+    "effective_reach_formula": "1 + n_layers * (w - 1); this is graph reach, not a claim that every function inside the reach is easy",
+    "controlled_components": ["parameterization", "RoPE", "depth", "width", "heads", "optimizer", "examples or target-token budget"]
+  },
+  "uniform_character_probe": {
+    "input_measure": "independent uniform Bernoulli coordinates",
+    "basis": "real Walsh characters, parity of the selected binary lag coordinates",
+    "lags": [1, 2, 4, 8, 16, 32, 64],
+    "degrees": [1, 2],
+    "supports": 28,
+    "seeds": [0, 1],
+    "hardness": "median normalized held-out CE curve area over two seeds",
+    "new_training_cells": 168,
+    "radius64_reuse": {
+      "path": "runs/local/v30_architecture_spectrum/fourier_character_results.json",
+      "sha256": "21b185e3da54038cb7553d4155bdd844792bb561143cad5b16a01bf994f3cee0",
+      "filter": "architecture=rope, degree<=2, seed in {0,1}"
+    }
+  },
+  "dataset_fourier_features": {
+    "profile_manifest": "runs/local/v30_architecture_spectrum/profile_manifest.json",
+    "profile_manifest_sha256": "b8f0e62947291f3cd6fafcd8416355c00de30826d9fd78cc371b135284d73ee2",
+    "energy_scope": "positive exact-support nested-projection increments through degree two, normalized to unit mass within that scope",
+    "uniform_overlap": "sum_A p_D(A) h_w(A)",
+    "primary_feature": "delta_uniform_overlap(D,w)=uniform_overlap(D,w)-uniform_overlap(D,64)",
+    "mechanistic_controls": {
+      "direct_far_energy_fraction": "sum_{A:max(A)>w} p_D(A)",
+      "unreachable_energy_fraction": "sum_{A:max(A)>1+n_layers*(w-1)} p_D(A)"
+    },
+    "feature_freeze": "all 48 by 3 feature rows are hash-locked after uniform probes and before limited-window natural training"
+  },
+  "natural_training": {
+    "new_cells": 288,
+    "new_windows": [8, 16, 32],
+    "corpora": 48,
+    "seeds": [0, 1],
+    "radius64_reuse": {
+      "path": "runs/local/v30_architecture_spectrum/expansion_results.json",
+      "sha256": "a1e8fc9d03ff8f799f131f6ebb7749229d8e356f701814a1dd11c49055c4f18b",
+      "filter": "architecture=rope"
+    },
+    "primary_target": "delta_normalized_curve_area=A(D,w)-A(D,64); positive means the smaller window learned worse",
+    "secondary_target": "delta_final_ce_fraction"
+  },
+  "analysis": {
+    "fit_panel": "development",
+    "test_panel": "confirmation",
+    "baseline": "window fixed effects",
+    "models": [
+      "window fixed effects plus delta_uniform_overlap",
+      "window fixed effects plus direct_far_energy_fraction",
+      "window fixed effects plus unreachable_energy_fraction",
+      "window fixed effects plus unreachable_energy_fraction plus delta_uniform_overlap"
+    ],
+    "primary_comparison": "held-out relative RMSE improvement of delta_uniform_overlap model over window-fixed-effect baseline",
+    "mechanism_comparison": "held-out incremental RMSE improvement from adding delta_uniform_overlap to the algebraic unreachable_energy_fraction; direct_far_energy_fraction is a diagnostic",
+    "within_window_diagnostics": ["Pearson", "Spearman"],
+    "bootstrap": {
+      "samples": 100000,
+      "seed": 3401,
+      "resample": "corpora within source stratum, retaining all three window rows",
+      "confidence": 0.95
+    },
+    "success": "primary delta-overlap coefficient is positive and the confirmation bootstrap lower bound for RMSE improvement over window fixed effects is above zero",
+    "labels": ["LOCAL_WINDOW_UNIFORM_FINGERPRINT_TRANSFERS", "LOCAL_WINDOW_UNIFORM_FINGERPRINT_DOES_NOT_TRANSFER", "AUDIT_FAILED"]
+  },
+  "compute": {
+    "gpu": "H100",
+    "maximum_concurrent_h100s": 1,
+    "network_during_remote_cells": false,
+    "total_new_cells": 456
+  },
+  "protocol_hash": "06ae1e6cbc9cfe35b35bfff8280da11f6b12e0e61879bfde3ce9f834851bc6f7"
+}

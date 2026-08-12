@@ -743,3 +743,33 @@ information, but the uniform binary-Walsh hardness surface has the opposite
 orientation from the intended natural-text hardness mechanism. There is no new
 confirmatory verdict. Audit PASS. Protocol `c0a97d1f…`, analysis `9963bd6d…`,
 audit `cde26630…`.
+
+## v3.4.1 causal local-window transfer (2026-08-12)
+
+The same two-layer RoPE transformer was intervened on only through hard
+per-layer attention windows 8, 16, and 32, with the existing radius-64 runs as
+paired baselines. Before any new natural-window outcome, 168 uniform binary
+degree-one/two character cells were used to freeze 144
+corpus-by-window Fourier-overlap contrasts. A one-feature OLS was then fitted on
+24 balanced development corpora and evaluated unchanged on 24 balanced
+confirmation corpora after 288 new H100 cells.
+
+The preregistered curve-area gate **PASSES**. Window-only held-out RMSE/R² were
+`0.003432/0.286`; adding the uniform Fourier fingerprint produced
+`0.002746/0.543`, a 19.97% improvement with 95% stratified corpus-bootstrap
+interval `[16.10%,28.21%]`. Adding the fingerprint beyond unreachable
+degree-one/two Fourier energy improved RMSE by 17.75%, interval
+`[12.96%,26.68%]`, and reached `R²=0.607`. Within-window confirmation Pearson
+correlations were `0.680/0.767/0.718`, so this is not merely a window main
+effect.
+
+The absolute intervention sign is surprising but consistent: every corpus had
+lower curve area under every smaller window than under radius 64. The result is
+therefore not “local windows make data harder.” It is that, after controlling
+for the smaller windows' average optimization benefit, the independently
+measured uniform Fourier response predicts which natural datasets benefit less
+or are relatively penalized. Final-CE-fraction transfer was weak (`R²=0.052`)
+and did not add beyond far-energy. The supported object is finite-budget,
+architecture-conditioned learning-curve geometry—not intrinsic dataset entropy
+or model-independent hardness. Audit PASS. Protocol `06ae1e6c…`, analysis
+`7cac8d99…`, audit `4f179c42…`.
